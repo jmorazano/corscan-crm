@@ -10,7 +10,7 @@
 > ningún otro archivo**: Coolify construye directo desde GitHub y los secretos
 > viven como variables de la plataforma.
 
-**Repositorio**: `https://github.com/kevinrivm/vocero-crm` (público, rama `main`,
+**Repositorio**: `https://github.com/jmorazano/corscan-crm` (público, rama `main`,
 `Dockerfile` en la raíz).
 
 ## Reglas para el asistente
@@ -56,7 +56,7 @@
    (`database` tipo `postgresql`), con la contraseña generada y base `vocero`.
    Anota su host interno (algo como `<uuid>:5432`).
 2. **Aplicación**: crea una app tipo **repositorio público** apuntando a
-   `https://github.com/kevinrivm/vocero-crm` (rama `main`, build pack
+   `https://github.com/jmorazano/corscan-crm` (rama `main`, build pack
    `dockerfile`, puerto expuesto `3000`) — no requiere GitHub App ni deploy
    keys. Asigna el dominio del usuario con HTTPS.
 3. **Variables**: configura las variables de la tabla en la app (runtime, no
@@ -71,7 +71,7 @@
 ## Ruta B — docker compose (VPS con Docker)
 
 ```bash
-git clone https://github.com/kevinrivm/vocero-crm.git vocero && cd vocero
+git clone https://github.com/jmorazano/corscan-crm.git vocero && cd vocero
 cp .env.example .env
 # rellena .env con el dominio del usuario y los secretos generados
 docker compose up -d --build
