@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { getEnv, isEmbeddedSignupConfigured, isMockEnabled } from "@/lib/env";
 import {
   getCredentialsByOrg,
   saveCredentials,
@@ -9,10 +10,27 @@ import { subscribeAppToWaba, testConnection } from "@/server/whatsapp/connect";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Config pública de Embedded Signup para el browser. El App Secret JAMÁS sale
+ * de aquí: app id y config id son públicos por diseño (viajan en el popup).
+ */
+function embeddedSignupConfig() {
+  if (!isEmbeddedSignupConfigured()) return null;
+  const env = getEnv();
+  return {
+    appId: env.META_APP_ID!,
+    configId: env.META_ES_CONFIG_ID!,
+    graphVersion: env.META_GRAPH_API_VERSION,
+    mock: isMockEnabled(),
+  };
+}
+
 export const GET = withAuth(async (session) => {
+  const embeddedSignup = embeddedSignupConfig();
   const creds = await getCredentialsByOrg(session.organizationId);
-  if (!creds) return Response.json({ connection: null });
+  if (!creds) return Response.json({ connection: null, embeddedSignup });
   return Response.json({
+    embeddedSignup,
     connection: {
       wabaId: creds.wabaId,
       phoneNumberId: creds.phoneNumberId,

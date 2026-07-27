@@ -83,6 +83,67 @@ export async function graphRequest<T>(
 }
 
 /**
+ * Intercambia el `code` de Embedded Signup por un token de acceso.
+ *
+ * A diferencia del resto de la Graph API este endpoint NO lleva Authorization:
+ * se autentica con client_id + client_secret en la query. Igual pasa por
+ * META_GRAPH_BASE_URL para que el wa-mock lo pueda imitar en el self-test.
+ */
+export async function exchangeCodeForToken(code: string): Promise<string> {
+  const env = getEnv();
+  if (!env.META_APP_ID || !env.META_APP_SECRET) {
+    throw new MetaApiError(
+      "Embedded Signup no está configurado: faltan META_APP_ID o META_APP_SECRET",
+      { status: 0 }
+    );
+  }
+  const qs = new URLSearchParams({
+    client_id: env.META_APP_ID,
+    client_secret: env.META_APP_SECRET,
+    code,
+  });
+  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/oauth/access_token?${qs}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "GET" });
+  } catch (cause) {
+    throw new MetaApiError("No se pudo contactar la API de Meta", {
+      status: 0,
+      details: cause,
+    });
+  }
+
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // respuesta no-JSON: se conserva el texto crudo en details
+  }
+
+  if (!res.ok) {
+    const err = (json as { error?: { message?: string; code?: number; type?: string } })
+      ?.error;
+    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
+      status: res.status,
+      code: err?.code ?? null,
+      type: err?.type ?? null,
+      details: json ?? text,
+    });
+  }
+
+  const token = (json as { access_token?: string } | null)?.access_token;
+  if (!token) {
+    throw new MetaApiError("Meta no devolvió access_token en el intercambio", {
+      status: res.status,
+      details: json ?? text,
+    });
+  }
+  return token;
+}
+
+/**
  * Normaliza el destinatario para el envío. Números móviles de México llegan
  * de Meta como `521` + 10 dígitos (13 en total); enviar con ese `1` extra
  * produce el error 131030 — se envía como `52` + 10 dígitos.

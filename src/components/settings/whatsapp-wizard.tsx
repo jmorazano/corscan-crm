@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -30,9 +30,31 @@ type WebhookInfo = {
   signatureLayer: boolean;
 };
 
+type EsConfig = {
+  appId: string;
+  configId: string;
+  graphVersion: string;
+  mock: boolean;
+};
+
+type FbLoginResponse = { authResponse?: { code?: string } | null };
+
+declare global {
+  interface Window {
+    FB?: {
+      init: (opts: Record<string, unknown>) => void;
+      login: (
+        cb: (res: FbLoginResponse) => void,
+        opts: Record<string, unknown>
+      ) => void;
+    };
+  }
+}
+
 export function WhatsappWizard() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
+  const [esConfig, setEsConfig] = useState<EsConfig | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -40,7 +62,10 @@ export function WhatsappWizard() {
       fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/settings/webhook").then((r) => (r.ok ? r.json() : null)),
     ]).catch(() => [null, null]);
-    if (c) setConnection(c.connection);
+    if (c) {
+      setConnection(c.connection);
+      setEsConfig(c.embeddedSignup ?? null);
+    }
     if (w) setWebhook(w);
     setLoaded(true);
   }, []);
@@ -86,18 +111,188 @@ export function WhatsappWizard() {
         </div>
       )}
 
-      <ConnectForm existing={connection} onSaved={() => void refetch()} />
+      {esConfig && (
+        <EmbeddedSignupCard
+          config={esConfig}
+          existing={connection}
+          onConnected={() => void refetch()}
+        />
+      )}
+
+      <ConnectForm
+        existing={connection}
+        secondary={Boolean(esConfig)}
+        onSaved={() => void refetch()}
+      />
 
       {webhook && <WebhookCard webhook={webhook} />}
     </div>
   );
 }
 
+/**
+ * Embedded Signup: el negocio autoriza en un popup de Meta y el backend cierra
+ * el flujo. El browser nunca ve el token — solo el `code` de un solo uso.
+ */
+function EmbeddedSignupCard({
+  config,
+  existing,
+  onConnected,
+}: {
+  config: EsConfig;
+  existing: Connection | null;
+  onConnected: () => void;
+}) {
+  const [sdkReady, setSdkReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // El evento `message` de Meta y el callback de FB.login llegan en orden no
+  // garantizado: se guardan los ids en un ref para no depender de cuál gane.
+  const assets = useRef<{ wabaId: string; phoneNumberId: string } | null>(null);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (!/(^|\.)facebook\.com$/.test(new URL(event.origin).hostname)) return;
+      try {
+        const data = JSON.parse(String(event.data)) as {
+          type?: string;
+          event?: string;
+          data?: { waba_id?: string; phone_number_id?: string };
+        };
+        if (data.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (data.data?.waba_id && data.data.phone_number_id) {
+          assets.current = {
+            wabaId: data.data.waba_id,
+            phoneNumberId: data.data.phone_number_id,
+          };
+        }
+      } catch {
+        // mensajes no-JSON de facebook.com: irrelevantes para este flujo
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
+    if (config.mock) return; // en self-test no se carga el SDK real
+    if (window.FB) {
+      setSdkReady(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true;
+    script.onload = () => {
+      window.FB?.init({
+        appId: config.appId,
+        autoLogAppEvents: true,
+        xfbml: false,
+        version: config.graphVersion,
+      });
+      setSdkReady(true);
+    };
+    script.onerror = () =>
+      setError("No se pudo cargar el SDK de Meta. Revisa tu conexión o si un bloqueador lo está frenando.");
+    document.body.appendChild(script);
+  }, [config]);
+
+  async function finish(code: string) {
+    if (!assets.current) {
+      setBusy(false);
+      setError(
+        "Meta no informó qué número se conectó. Volvé a ejecutar la conexión y completá todos los pasos del popup."
+      );
+      return;
+    }
+    const res = await fetch("/api/settings/whatsapp/embedded-signup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, ...assets.current }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo completar la conexión");
+      return;
+    }
+    assets.current = null;
+    onConnected();
+  }
+
+  function launch() {
+    setError(null);
+    setBusy(true);
+    assets.current = null;
+    window.FB?.login(
+      (res) => {
+        const code = res.authResponse?.code;
+        if (!code) {
+          setBusy(false);
+          setError("Cancelaste la conexión o Meta no devolvió el código.");
+          return;
+        }
+        void finish(code);
+      },
+      {
+        config_id: config.configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: { setup: {} },
+      }
+    );
+  }
+
+  /** Self-test: simula el retorno del popup sin cargar el SDK de Meta. */
+  function simulate() {
+    setError(null);
+    setBusy(true);
+    assets.current = { wabaId: "waba_mock_1", phoneNumberId: "pn_mock_1" };
+    void finish("mock-code-1");
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {existing ? "Reconectar con Meta" : "Conectar WhatsApp con Meta"}
+        </CardTitle>
+        <CardDescription>
+          Autorizás en una ventana de Meta y listo: no hay que copiar tokens ni
+          IDs a mano. El token se intercambia en el servidor y se guarda cifrado.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {config.mock ? (
+          <Button disabled={busy} onClick={simulate}>
+            {busy ? "Conectando…" : "Simular Embedded Signup (mock)"}
+          </Button>
+        ) : (
+          <Button disabled={!sdkReady || busy} onClick={launch}>
+            {busy
+              ? "Conectando…"
+              : sdkReady
+                ? existing
+                  ? "Reconectar con Meta"
+                  : "Conectar con Meta"
+                : "Cargando Meta…"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ConnectForm({
   existing,
+  secondary,
   onSaved,
 }: {
   existing: Connection | null;
+  secondary?: boolean;
   onSaved: () => void;
 }) {
   const [wabaId, setWabaId] = useState(existing?.wabaId ?? "");
@@ -168,9 +363,16 @@ function ConnectForm({
     <Card>
       <CardHeader>
         <CardTitle>
-          {existing ? "Reconectar / actualizar el número" : "Conectar tu número de WhatsApp"}
+          {secondary
+            ? "Conexión manual (avanzado)"
+            : existing
+              ? "Reconectar / actualizar el número"
+              : "Conectar tu número de WhatsApp"}
         </CardTitle>
         <CardDescription>
+          {secondary
+            ? "Alternativa si preferís pegar las credenciales vos mismo o si el popup de Meta falla. "
+            : ""}
           Pega las credenciales de WhatsApp Cloud API. El token se valida
           contra Meta ANTES de guardarse y se almacena cifrado.
         </CardDescription>

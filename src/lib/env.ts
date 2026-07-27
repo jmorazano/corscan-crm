@@ -20,6 +20,8 @@ const envSchema = z.object({
     }),
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(8),
   META_APP_SECRET: z.string().optional(),
+  META_APP_ID: z.string().optional(),
+  META_ES_CONFIG_ID: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
   OPENROUTER_API_TOKEN: z.string().optional(),
@@ -80,6 +82,16 @@ export function isMockEnabled(): boolean {
     process.env.WA_MOCK_ENABLED === "true" &&
     process.env.NODE_ENV !== "production"
   );
+}
+
+/**
+ * true si Embedded Signup está configurado: hacen falta las tres piezas
+ * (app id y config id van al browser; el secret solo se usa en el servidor
+ * para intercambiar el `code`). Sin las tres, la UI cae al modo manual.
+ */
+export function isEmbeddedSignupConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(env.META_APP_ID && env.META_ES_CONFIG_ID && env.META_APP_SECRET);
 }
 
 /** true si hay proveedor de IA configurado (token presente y no vacío). */

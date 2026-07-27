@@ -42,6 +42,31 @@ export async function GET(req: Request, ctx: Params) {
   const guard = mockGuard();
   if (guard) return guard;
   const path = normalizePath((await ctx.params).path);
+
+  // GET oauth/access_token?code=… → intercambio de Embedded Signup.
+  // No lleva Authorization: se autentica por query, igual que el real.
+  if (path.length === 2 && path[0] === "oauth" && path[1] === "access_token") {
+    const code = new URL(req.url).searchParams.get("code") ?? "";
+    if (code.endsWith("-invalid")) {
+      return Response.json(
+        {
+          error: {
+            message: "This authorization code has expired.",
+            type: "OAuthException",
+            code: 100,
+            fbtrace_id: "mock",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    return Response.json({
+      access_token: `mock-es-token-${code}`,
+      token_type: "bearer",
+      expires_in: 5184000,
+    });
+  }
+
   const token = bearerToken(req);
   if (token.endsWith("-invalid")) return invalidTokenResponse();
 
