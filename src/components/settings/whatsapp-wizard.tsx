@@ -379,29 +379,20 @@ function ConnectForm({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 rounded-md border bg-background/40 p-4 text-sm">
-          <p className="font-medium">¿De dónde sale el token?</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-md border p-3">
-              <p className="mb-1 font-medium text-primary">Modo directo</p>
-              <p className="text-muted-foreground">
-                El negocio tiene su propia app en{" "}
-                <span className="text-foreground">developers.facebook.com</span>:
-                usa un token de <span className="text-foreground">usuario del sistema</span>{" "}
-                (no expira) con permisos de WhatsApp. En este modo conviene
-                configurar también el App Secret para la firma del webhook.
-              </p>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="mb-1 font-medium text-primary">Modo agencia (Tech Provider)</p>
-              <p className="text-muted-foreground">
-                Tu agencia hace el Embedded Signup en SU plataforma y su
-                backend obtiene el token del cliente; te lo entrega para
-                pegarlo aquí. El webhook se conecta con el{" "}
-                <span className="text-foreground">override por WABA</span>{" "}
-                (checklist de 5 pasos en el README).
-              </p>
-            </div>
-          </div>
+          <p className="font-medium">¿Cuándo usar esta opción?</p>
+          <p className="text-muted-foreground">
+            Lo normal es conectar con el botón de arriba. Esta vía es para dos
+            casos: que el popup de Meta no abra (bloqueador de ventanas
+            emergentes o navegador embebido), o que ya tengas un{" "}
+            <span className="text-foreground">token de usuario del sistema</span>{" "}
+            generado en tu propia app de Meta y prefieras usarlo.
+          </p>
+          <p className="text-muted-foreground">
+            Necesitás el WABA ID y el Phone Number ID de tu cuenta de WhatsApp
+            Business, que están en{" "}
+            <span className="text-foreground">business.facebook.com</span> →
+            WhatsApp Manager.
+          </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

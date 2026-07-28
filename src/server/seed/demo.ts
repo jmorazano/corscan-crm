@@ -4,11 +4,12 @@ import { schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 
 /**
- * Negocio de demostración "Ferretería El Martillo" (FR-075).
- * Idempotente: borra los datos demo previos de la organización (scoped por
- * los teléfonos demo) y reinserta. El KB queda lleno EXCEPTO garantías y
- * devoluciones — hueco INTENCIONAL para que el Laboratorio encuentre algo
- * real en la primera corrida.
+ * Negocio de demostración "Clima Córdoba" (FR-075): instalación y service de
+ * aire acondicionado, un rubro que en Argentina se vende casi entero por
+ * WhatsApp. Idempotente: borra los datos demo previos de la organización
+ * (scoped por los teléfonos demo) y reinserta. El KB queda lleno EXCEPTO
+ * garantía de los trabajos — hueco INTENCIONAL para que el Laboratorio
+ * encuentre algo real en la primera corrida.
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -23,93 +24,93 @@ const DEMO_CONTACTS: {
   thread: { dir: "in" | "out"; text: string; hoursAgo: number; ai?: boolean }[];
 }[] = [
   {
-    phone: "5215612340001",
+    phone: "5493512340001",
     name: "María Fernanda López",
     stage: "Interesado",
-    notes: "Remodela su cocina; busca herramienta eléctrica.",
+    notes: "Reforma el departamento; quiere split para el living.",
     thread: [
-      { dir: "in", text: "Hola, ¿tienen taladros inalámbricos?", hoursAgo: 5 },
-      { dir: "out", text: "¡Hola María! Sí: tenemos el Truper 20V en $1,899 MXN y el DeWalt 20V MAX en $3,450 MXN, ambos con batería incluida.", hoursAgo: 5, ai: true },
-      { dir: "in", text: "¿El Truper incluye brocas?", hoursAgo: 4 },
-      { dir: "out", text: "Incluye un juego básico de 5 brocas para concreto y madera. Si necesitas más, el juego de 30 piezas está en $349 MXN.", hoursAgo: 4, ai: true },
-      { dir: "in", text: "Perfecto, me interesa el Truper. ¿Me lo apartan?", hoursAgo: 3 },
+      { dir: "in", text: "Hola, ¿instalan aires acondicionados?", hoursAgo: 5 },
+      { dir: "out", text: "¡Hola María! Sí, instalamos y hacemos service. Para un ambiente de living, el split 3500 frigorías instalado sale $985.000 y el de 4500 $1.240.000, equipo y mano de obra incluidos.", hoursAgo: 5, ai: true },
+      { dir: "in", text: "¿La instalación incluye la caños y el soporte?", hoursAgo: 4 },
+      { dir: "out", text: "Sí: incluye hasta 3 metros de cañería, soporte, vacío con bomba y puesta en marcha. Si hace falta más recorrido, el metro adicional sale $38.000.", hoursAgo: 4, ai: true },
+      { dir: "in", text: "Perfecto, me interesa el de 3500. ¿Me lo reservan?", hoursAgo: 3 },
     ],
   },
   {
-    phone: "5215612340002",
+    phone: "5493512340002",
     name: "Carlos Ramírez",
     stage: "En conversación",
     thread: [
-      { dir: "in", text: "Buenas, ¿cuánto el bulto de cemento gris?", hoursAgo: 8 },
-      { dir: "out", text: "¡Hola Carlos! El bulto de 50 kg está en $245 MXN. Por 10 o más te queda en $232 MXN cada uno.", hoursAgo: 8, ai: true },
-      { dir: "in", text: "Ocupo 15 bultos, ¿hacen entrega en Naucalpan?", hoursAgo: 7 },
-      { dir: "out", text: "Sí, entregamos en toda la zona. El flete es de $150 MXN y llega el mismo día si confirmas antes de la 1 pm. Total: 15 × $232 + $150 = $3,630 MXN.", hoursAgo: 7, ai: true },
+      { dir: "in", text: "Buenas, ¿cuánto sale la limpieza de un split?", hoursAgo: 8 },
+      { dir: "out", text: "¡Hola Carlos! La limpieza profunda con desinfección sale $62.000 por equipo. Si son 3 o más, queda $54.000 cada uno.", hoursAgo: 8, ai: true },
+      { dir: "in", text: "Tengo 4 equipos, ¿van hasta Villa Allende?", hoursAgo: 7 },
+      { dir: "out", text: "Sí, cubrimos Sierras Chicas. El viático a Villa Allende es $25.000. Total: 4 × $54.000 + $25.000 = $241.000. ¿Te agendo esta semana?", hoursAgo: 7, ai: true },
     ],
   },
   {
-    phone: "5215612340003",
-    name: "Lupita Hernández",
+    phone: "5493512340003",
+    name: "Lucía Fernández",
     stage: "Cliente",
-    notes: "Compra recurrente para su taller de carpintería.",
+    notes: "Service recurrente de los equipos de su consultorio.",
     thread: [
-      { dir: "in", text: "Hola de nuevo, ya me quedé sin barniz 😅", hoursAgo: 30 },
-      { dir: "out", text: "¡Hola Lupita! Te apartamos 2 litros del barniz marino que siempre llevas: $520 MXN. ¿Te los mando con tu pedido de lijas?", hoursAgo: 30, ai: true },
-      { dir: "in", text: "Sí porfa, junto todo en un solo envío", hoursAgo: 29 },
-      { dir: "out", text: "Listo, sale hoy mismo. Total: $780 MXN con las lijas. ¡Gracias por tu compra!", hoursAgo: 29, ai: true },
+      { dir: "in", text: "Hola de nuevo, se largó a gotear el del consultorio 😅", hoursAgo: 30 },
+      { dir: "out", text: "¡Hola Lucía! Suele ser el drenaje tapado. Te agendamos la visita técnica: $48.000, y si hay que destapar y limpiar queda todo incluido. ¿Mañana a la mañana te sirve?", hoursAgo: 30, ai: true },
+      { dir: "in", text: "Sí dale, mañana temprano mejor", hoursAgo: 29 },
+      { dir: "out", text: "Listo, te agendamos 9:30. ¡Gracias Lucía!", hoursAgo: 29, ai: true },
     ],
   },
   {
-    phone: "5215612340004",
+    phone: "5493512340004",
     name: "Jorge Castillo",
     stage: "Nuevo",
     thread: [
-      { dir: "in", text: "ke onda, tienen pintura vinilica blanka de 19 lts?", hoursAgo: 2 },
-      { dir: "out", text: "¡Qué tal Jorge! Sí: la cubeta de 19 L de vinílica blanca está en $1,150 MXN (rinde ~90 m²). ¿La quieres mate o satinada?", hoursAgo: 2, ai: true },
+      { dir: "in", text: "buenas tienen aires de 3000 frigorias inverter?", hoursAgo: 2 },
+      { dir: "out", text: "¡Hola Jorge! Sí: el 3000 frigorías inverter frío/calor está en $890.000 instalado. ¿Es para un dormitorio o para living?", hoursAgo: 2, ai: true },
     ],
   },
   {
-    phone: "5215612340005",
+    phone: "5493512340005",
     name: "Ana Sofía Torres",
     stage: "Interesado",
     thread: [
-      { dir: "in", text: "Hola, vi su anuncio. ¿Manejan material eléctrico?", hoursAgo: 12 },
-      { dir: "out", text: "¡Hola Ana! Sí: cable, contactos, pastillas y centros de carga. ¿Qué necesitas para tu proyecto?", hoursAgo: 12, ai: true },
-      { dir: "in", text: "Necesito 100 m de cable calibre 12 y 10 contactos dobles", hoursAgo: 11 },
-      { dir: "out", text: "Te cotizo: rollo de 100 m cal. 12 THW $1,890 MXN + 10 contactos dobles Volteck $35 c/u = $2,240 MXN. ¿Te lo preparo?", hoursAgo: 11, ai: true },
-      { dir: "in", text: "Déjame confirmar con el electricista y te digo", hoursAgo: 10 },
+      { dir: "in", text: "Hola, vi el anuncio. ¿Hacen instalaciones para oficinas?", hoursAgo: 12 },
+      { dir: "out", text: "¡Hola Ana! Sí, trabajamos con oficinas y locales. ¿Cuántos ambientes son y qué superficie tienen?", hoursAgo: 12, ai: true },
+      { dir: "in", text: "Son 3 oficinas de unos 20 m² cada una", hoursAgo: 11 },
+      { dir: "out", text: "Te paso el presupuesto: 3 splits de 3000 frigorías inverter instalados, $890.000 cada uno = $2.670.000. Por ser 3 equipos te hacemos 10% off: $2.403.000. ¿Coordinamos una visita para medir?", hoursAgo: 11, ai: true },
+      { dir: "in", text: "Dejame confirmar con el arquitecto y te aviso", hoursAgo: 10 },
     ],
   },
   {
-    phone: "5215612340006",
+    phone: "5493512340006",
     name: "Roberto Mendoza",
     stage: "Perdido",
-    notes: "Buscaba precio de mayoreo que no podemos igualar.",
+    notes: "Buscaba un precio que no podemos igualar.",
     thread: [
-      { dir: "in", text: "¿A cómo la tonelada de varilla 3/8?", hoursAgo: 96 },
-      { dir: "out", text: "Hola Roberto: la tonelada de varilla 3/8 está en $17,800 MXN. ¿Para cuándo la necesitas?", hoursAgo: 96, ai: true },
-      { dir: "in", text: "Uy no, en otro lado me la dan en 16", hoursAgo: 95 },
-      { dir: "out", text: "Entiendo. Ese precio no lo alcanzamos, pero si tu proveedor queda mal aquí estamos con entrega el mismo día. ¡Éxito con la obra!", hoursAgo: 95, ai: true },
+      { dir: "in", text: "¿Cuánto la instalación sola? El equipo ya lo tengo", hoursAgo: 96 },
+      { dir: "out", text: "Hola Roberto: la instalación sola de un split hasta 4500 frigorías sale $340.000, con materiales incluidos. ¿Para cuándo lo necesitás?", hoursAgo: 96, ai: true },
+      { dir: "in", text: "Uh no, me lo hacen por 200 acá a la vuelta", hoursAgo: 95 },
+      { dir: "out", text: "Te entiendo. A ese precio no llegamos, pero si el trabajo no queda bien acá estamos, con garantía por escrito. ¡Éxitos!", hoursAgo: 95, ai: true },
     ],
   },
   {
-    phone: "5215612340007",
+    phone: "5493512340007",
     name: "Paty Domínguez",
     stage: "En conversación",
     thread: [
-      { dir: "in", text: "Hola, ¿tienen impermeabilizante? Se me llueve la azotea 😩", hoursAgo: 26 },
-      { dir: "out", text: "¡Hola Paty! Claro: el impermeabilizante acrílico 5 años (cubeta 19 L) está en $1,680 MXN, cubre ~40 m². ¿De cuántos metros es tu azotea?", hoursAgo: 26, ai: true },
-      { dir: "in", text: "Como de 60 metros, ¿me alcanzaría con dos?", hoursAgo: 25 },
+      { dir: "in", text: "Hola, el aire no enfría nada y hace un ruido raro 😩", hoursAgo: 26 },
+      { dir: "out", text: "¡Hola Paty! Puede ser falta de gas o el ventilador. La visita técnica con diagnóstico sale $48.000 y se descuenta si hacés la reparación con nosotros. ¿Qué modelo es y hace cuánto lo tenés?", hoursAgo: 26, ai: true },
+      { dir: "in", text: "Es un Surrey de unos 6 años, ¿le hará falta carga de gas?", hoursAgo: 25 },
     ],
   },
   {
-    phone: "5215612340008",
-    name: "Don Chuy Aguilar",
+    phone: "5493512340008",
+    name: "Héctor Aguilar",
     stage: "Cliente",
     thread: [
-      { dir: "in", text: "Joven, mándeme la lista de lo de siempre para la cuadrilla", hoursAgo: 50 },
-      { dir: "out", text: "¡Con gusto Don Chuy! Su pedido habitual: 5 bultos de cemento, 2 de mortero, 1 rollo de alambre recocido y 3 kg de clavo. Total: $1,585 MXN. ¿Se lo mandamos a la obra de Av. Juárez?", hoursAgo: 50, ai: true },
-      { dir: "in", text: "Ándele, ahí mismo. Se paga contra entrega como siempre", hoursAgo: 49 },
-      { dir: "out", text: "Perfecto, sale en la camioneta de las 4. ¡Gracias Don Chuy!", hoursAgo: 49, ai: true },
+      { dir: "in", text: "Che, mandame el presupuesto del service de siempre para el galpón", hoursAgo: 50 },
+      { dir: "out", text: "¡Cómo no, Héctor! El service semestral de los 4 equipos del galpón: limpieza, control de gas y ajuste de consumos. Total: $216.000. ¿Lo agendamos para el jueves en Alta Gracia?", hoursAgo: 50, ai: true },
+      { dir: "in", text: "Dale, el jueves está bien. Factura A como siempre", hoursAgo: 49 },
+      { dir: "out", text: "Perfecto, jueves a la mañana y factura A. ¡Gracias Héctor!", hoursAgo: 49, ai: true },
     ],
   },
 ];
@@ -118,23 +119,44 @@ const DEMO_KB: { kind: "qa" | "block"; question?: string; answer?: string; conte
   {
     kind: "block",
     content:
-      "Ferretería El Martillo — ferretería familiar con 20 años en la colonia Centro. Vendemos herramienta manual y eléctrica, material de construcción, pintura, plomería y material eléctrico. Atendemos a público general, maestros de obra y talleres.",
+      "Clima Córdoba — empresa familiar con 15 años instalando y manteniendo equipos de aire acondicionado en Córdoba capital y Sierras Chicas. Hacemos instalación de splits, service y limpieza, carga de gas y reparaciones. Atendemos casas, oficinas, consultorios y locales comerciales.",
   },
-  { kind: "qa", question: "¿Cuál es el horario?", answer: "Lunes a sábado de 8:00 a 19:00 y domingos de 9:00 a 14:00." },
-  { kind: "qa", question: "¿Dónde están ubicados?", answer: "Av. Hidalgo 245, colonia Centro. Hay estacionamiento gratuito para clientes en la calle lateral." },
-  { kind: "qa", question: "¿Hacen envíos a domicilio?", answer: "Sí: entrega el mismo día en la zona si confirmas antes de la 1 pm. Flete local $150 MXN; gratis en compras mayores a $3,000 MXN." },
-  { kind: "qa", question: "¿Qué métodos de pago aceptan?", answer: "Efectivo, tarjeta (crédito/débito), transferencia SPEI y pago contra entrega en pedidos locales." },
-  { kind: "qa", question: "¿Dan factura?", answer: "Sí, facturamos el mismo día. Envíanos tu constancia de situación fiscal y el ticket de compra." },
-  { kind: "qa", question: "¿Tienen precios de mayoreo?", answer: "Sí: en cemento, mortero y varilla hay precio especial a partir de 10 unidades; en pintura a partir de 5 cubetas. Pide tu cotización por WhatsApp." },
-  { kind: "qa", question: "¿Qué marcas de herramienta manejan?", answer: "Truper, Pretul, DeWalt, Makita y Ryobi en eléctrica; Volteck y Condulac en material eléctrico; Comex y Berel en pintura." },
-  // HUECO INTENCIONAL: nada sobre garantías ni devoluciones (lo encuentra el Laboratorio).
+  { kind: "qa", question: "¿Cuál es el horario?", answer: "Lunes a viernes de 8:00 a 18:00 y sábados de 9:00 a 13:00." },
+  { kind: "qa", question: "¿Dónde están ubicados?", answer: "Av. Colón 1450, barrio Alberdi, Córdoba capital. Atendemos a domicilio en toda la ciudad." },
+  { kind: "qa", question: "¿Hasta dónde llegan?", answer: "Córdoba capital sin cargo. Sierras Chicas (Villa Allende, Río Ceballos, Unquillo) con viático de $25.000, y Alta Gracia con viático de $30.000." },
+  { kind: "qa", question: "¿Qué formas de pago aceptan?", answer: "Efectivo, transferencia bancaria y tarjeta de crédito en 3 o 6 cuotas. En instalaciones se pide una seña del 50% para reservar el equipo." },
+  { kind: "qa", question: "¿Hacen factura?", answer: "Sí, somos Responsables Inscriptos. Emitimos factura A o B; para factura A necesitamos tu CUIT y razón social." },
+  { kind: "qa", question: "¿Tienen descuentos por cantidad?", answer: "Sí: a partir de 3 equipos hacemos 10% de descuento en instalación, y en service a partir de 3 equipos el precio por unidad baja." },
+  { kind: "qa", question: "¿Con qué marcas trabajan?", answer: "Instalamos Surrey, BGH, Philco, Midea y Samsung. Hacemos service de cualquier marca, incluso equipos que no vendimos nosotros." },
+  // HUECO INTENCIONAL: nada sobre la garantía de los trabajos (lo encuentra el Laboratorio).
+];
+
+/**
+ * Teléfonos de datasets demo anteriores. La limpieza previa busca por número,
+ * así que al cambiar el dataset hay que seguir barriendo los viejos: si no, un
+ * re-seed deja los contactos de la versión anterior conviviendo con los nuevos
+ * (regla IV: seeds re-ejecutables). Nunca borrar esta lista, solo agregarle.
+ */
+const LEGACY_DEMO_PHONES = [
+  // Dataset mexicano "Ferretería El Martillo", reemplazado por "Clima Córdoba".
+  "5215612340001",
+  "5215612340002",
+  "5215612340003",
+  "5215612340004",
+  "5215612340005",
+  "5215612340006",
+  "5215612340007",
+  "5215612340008",
 ];
 
 export async function seedDemo(
   db: Db,
   organizationId: string
 ): Promise<{ contacts: number; kbEntries: number }> {
-  const demoPhones = DEMO_CONTACTS.map((c) => c.phone);
+  const demoPhones = [
+    ...DEMO_CONTACTS.map((c) => c.phone),
+    ...LEGACY_DEMO_PHONES,
+  ];
 
   // --- Idempotencia: limpiar datos demo previos (orden inverso de FKs) ---
   const prevContacts = await db
@@ -253,13 +275,13 @@ export async function seedDemo(
   await db
     .update(schema.agentProfile)
     .set({
-      name: "Martillito",
-      tone: "Cercano y práctico, de ferretería de confianza. Tutea al cliente.",
+      name: "Clari",
+      tone: "Cercana y resolutiva, de empresa de barrio que cumple. Trata de vos al cliente (voseo rioplatense).",
       instructions:
-        "Ayuda a cotizar y cerrar ventas. Da precios en MXN solo si están en el conocimiento. Si piden mayoreo, menciona los mínimos. Nunca inventes existencias.",
+        "Ayudá a presupuestar y a cerrar la visita o la instalación. Dá precios en pesos argentinos solo si están en el conocimiento. Si preguntan por descuentos, mencioná los mínimos por cantidad. Nunca inventes disponibilidad de equipos ni plazos de entrega.",
       escalationRules:
-        "Escala a un humano si piden factura con datos fiscales complejos, si hay una queja de producto dañado o si lo piden explícitamente.",
-      greeting: "¡Hola! Soy Martillito, el asistente de Ferretería El Martillo 🔨",
+        "Escalá a una persona si el equipo está en garantía y hay un reclamo, si piden factura A con datos fiscales que no tenés, o si lo piden explícitamente.",
+      greeting: "¡Hola! Soy Clari, la asistente de Clima Córdoba ❄️",
       updatedAt: new Date(),
     })
     .where(eq(schema.agentProfile.organizationId, organizationId));
@@ -285,10 +307,10 @@ export async function seedDemo(
       veredicto: "verde",
       hallazgos: [],
       transcript: [
-        { role: "cliente", text: "¿Tienen taladros inalámbricos disponibles?" },
-        { role: "agente", text: "¡Sí! Truper 20V en $1,899 MXN y DeWalt 20V MAX en $3,450 MXN." },
-        { role: "cliente", text: "Me convence, lo compro. ¿Cómo pago?" },
-        { role: "agente", text: "Aceptamos efectivo, tarjeta, SPEI o contra entrega. Te lo aparto ahora mismo." },
+        { role: "cliente", text: "¿Tienen splits de 3000 frigorías inverter?" },
+        { role: "agente", text: "¡Sí! El 3000 frigorías inverter frío/calor está en $890.000 instalado." },
+        { role: "cliente", text: "Me convence, lo quiero. ¿Cómo pago?" },
+        { role: "agente", text: "Efectivo, transferencia o tarjeta en 3 o 6 cuotas. Con el 50% de seña te reservo el equipo." },
       ],
     },
     {
@@ -296,8 +318,8 @@ export async function seedDemo(
       veredicto: "verde",
       hallazgos: [],
       transcript: [
-        { role: "cliente", text: "¿Qué precio tiene el martillo?" },
-        { role: "agente", text: "Tenemos varios; el más pedido es el Truper de uña. ¿Te confirmo precio y existencia con el equipo?" },
+        { role: "cliente", text: "¿Cuánto sale un aire?" },
+        { role: "agente", text: "Depende de la superficie del ambiente. ¿Cuántos metros tiene? Así te paso el precio del equipo que corresponde." },
       ],
     },
     {
@@ -307,12 +329,12 @@ export async function seedDemo(
         {
           tipo: "tono",
           evidencia:
-            "El agente respondió correcto pero algo frío ante 'es una porquería'; faltó empatizar antes de escalar.",
+            "El agente respondió correcto pero algo frío ante 'un desastre'; faltó empatizar antes de escalar.",
         },
       ],
       transcript: [
-        { role: "cliente", text: "Compré una lijadora la semana pasada y ya no prende, es una porquería" },
-        { role: "agente", text: "Lamento el problema. Paso tu caso a un compañero del equipo para resolverlo." },
+        { role: "cliente", text: "Me instalaron el aire la semana pasada y ya está goteando adentro, un desastre" },
+        { role: "agente", text: "Lamento el inconveniente. Paso tu caso a un compañero del equipo para resolverlo." },
       ],
     },
     {
@@ -322,17 +344,17 @@ export async function seedDemo(
         {
           tipo: "fuera_de_kb",
           evidencia:
-            "El cliente preguntó por garantías y devoluciones y el conocimiento no lo cubre.",
+            "El cliente preguntó por la garantía de los trabajos y el conocimiento no lo cubre.",
           sugerencia: {
-            pregunta: "¿Cuál es la política de garantías y devoluciones?",
+            pregunta: "¿Qué garantía tienen los trabajos?",
             respuesta:
-              "Aceptamos devoluciones dentro de los 30 días con ticket de compra; la garantía depende del fabricante.",
+              "La instalación tiene 12 meses de garantía sobre la mano de obra; el equipo mantiene la garantía oficial del fabricante.",
           },
         },
       ],
       transcript: [
-        { role: "cliente", text: "¿Cuál es su política de garantías y devoluciones?" },
-        { role: "agente", text: "Déjame confirmarlo con el equipo y te digo en un momento." },
+        { role: "cliente", text: "¿Qué garantía me dan por la instalación?" },
+        { role: "agente", text: "Dejame confirmarlo con el equipo y te aviso en un momento." },
       ],
     },
     {
@@ -340,7 +362,7 @@ export async function seedDemo(
       veredicto: "verde",
       hallazgos: [],
       transcript: [
-        { role: "cliente", text: "Prefiero que me atienda una persona, quiero hablar con un humano" },
+        { role: "cliente", text: "Prefiero que me atienda una persona, quiero hablar con alguien del equipo" },
         { role: "agente", text: "(handoff: la conversación pasó a atención humana)" },
       ],
     },
@@ -349,8 +371,8 @@ export async function seedDemo(
       veredicto: "verde",
       hallazgos: [],
       transcript: [
-        { role: "cliente", text: "ke onda, si benden pintura?" },
-        { role: "agente", text: "¡Claro! Manejamos Comex y Berel. ¿Qué necesitas pintar?" },
+        { role: "cliente", text: "ola asen servis de aires?" },
+        { role: "agente", text: "¡Claro que sí! Hacemos service de cualquier marca. ¿Qué equipo tenés y qué le pasa?" },
       ],
     },
   ];
