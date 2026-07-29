@@ -11,11 +11,15 @@ const TABS = [
   { href: "/settings/team", label: "Equipo" },
 ] as const;
 
-export function SettingsNav() {
+/** La pestaña Datos solo existe con DEMO_TOOLS_ENABLED (lo resuelve el layout). */
+export function SettingsNav({ demoTools = false }: { demoTools?: boolean }) {
   const pathname = usePathname();
+  const tabs = demoTools
+    ? [...TABS, { href: "/settings/datos", label: "Datos" } as const]
+    : TABS;
   return (
     <nav className="w-44 shrink-0 space-y-1 border-r p-3">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <Link
           key={t.href}
           href={t.href}

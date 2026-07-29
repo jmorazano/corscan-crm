@@ -31,6 +31,7 @@ const envSchema = z.object({
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
+  DEMO_TOOLS_ENABLED: z.string().optional(),
   NODE_ENV: z.string().default("development"),
 });
 
@@ -82,6 +83,17 @@ export function isMockEnabled(): boolean {
     process.env.WA_MOCK_ENABLED === "true" &&
     process.env.NODE_ENV !== "production"
   );
+}
+
+/**
+ * true si las herramientas de demo están habilitadas (DEMO_TOOLS_ENABLED).
+ * A diferencia de los mocks, esto SÍ puede activarse en producción: sirve para
+ * recargar el negocio de ejemplo mientras se prepara o se muestra la
+ * instancia. Apagarlo hace desaparecer la pestaña y bloquea la recarga
+ * forzada, que es destructiva.
+ */
+export function isDemoToolsEnabled(): boolean {
+  return process.env.DEMO_TOOLS_ENABLED === "true";
 }
 
 /**
