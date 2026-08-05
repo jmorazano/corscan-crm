@@ -60,6 +60,72 @@ export async function testConnection(
   }
 }
 
+export type WabaPhoneNumber = {
+  id: string;
+  displayPhoneNumber: string;
+  verifiedName: string | null;
+};
+
+export type PhoneNumberDiscovery =
+  | { ok: true; numbers: WabaPhoneNumber[] }
+  | {
+      ok: false;
+      code: "invalid_token" | "meta_unavailable" | "meta_error";
+      message: string;
+    };
+
+/**
+ * Lista los números de una WABA. Lo necesita el onboarding con coexistence:
+ * ese flujo devuelve solo `waba_id` —nunca el phone_number_id— así que el
+ * número hay que descubrirlo acá, con el token ya intercambiado.
+ */
+export async function listWabaPhoneNumbers(
+  wabaId: string,
+  token: string
+): Promise<PhoneNumberDiscovery> {
+  try {
+    const res = await graphRequest<{
+      data?: {
+        id?: string;
+        display_phone_number?: string;
+        verified_name?: string;
+      }[];
+    }>(`${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`, {
+      token,
+    });
+    const numbers: WabaPhoneNumber[] = (res.data ?? [])
+      .filter(
+        (n): n is { id: string; display_phone_number: string; verified_name?: string } =>
+          Boolean(n.id) && Boolean(n.display_phone_number)
+      )
+      .map((n) => ({
+        id: n.id,
+        displayPhoneNumber: n.display_phone_number,
+        verifiedName: n.verified_name ?? null,
+      }));
+    return { ok: true, numbers };
+  } catch (err) {
+    if (err instanceof MetaApiError) {
+      if (err.isAuthError) {
+        return {
+          ok: false,
+          code: "invalid_token",
+          message: "El token obtenido no da acceso a esta cuenta de WhatsApp.",
+        };
+      }
+      if (err.status === 0 || err.status >= 500) {
+        return {
+          ok: false,
+          code: "meta_unavailable",
+          message: "Meta no está disponible en este momento; intenta de nuevo",
+        };
+      }
+      return { ok: false, code: "meta_error", message: err.message };
+    }
+    throw err;
+  }
+}
+
 /**
  * Suscribe la app a la WABA tras guardar (necesario para recibir webhooks en
  * modo directo). Best-effort: en modo agencia el override lo configura el

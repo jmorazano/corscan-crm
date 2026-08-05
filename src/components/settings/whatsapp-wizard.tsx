@@ -148,7 +148,12 @@ function EmbeddedSignupCard({
   const [error, setError] = useState<string | null>(null);
   // El evento `message` de Meta y el callback de FB.login llegan en orden no
   // garantizado: se guardan los ids en un ref para no depender de cuál gane.
-  const assets = useRef<{ wabaId: string; phoneNumberId: string } | null>(null);
+  // phoneNumberId puede quedar en null: con coexistence Meta manda solo la
+  // WABA y el servidor descubre el número.
+  const assets = useRef<{
+    wabaId: string;
+    phoneNumberId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -160,10 +165,14 @@ function EmbeddedSignupCard({
           data?: { waba_id?: string; phone_number_id?: string };
         };
         if (data.type !== "WA_EMBEDDED_SIGNUP") return;
-        if (data.data?.waba_id && data.data.phone_number_id) {
+        // Solo los eventos de cierre traen los assets definitivos: "FINISH"
+        // en el flujo estándar y "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" en
+        // coexistence. Los intermedios y CANCEL no deben pisar nada.
+        if (!data.event?.startsWith("FINISH")) return;
+        if (data.data?.waba_id) {
           assets.current = {
             wabaId: data.data.waba_id,
-            phoneNumberId: data.data.phone_number_id,
+            phoneNumberId: data.data.phone_number_id ?? null,
           };
         }
       } catch {
@@ -208,7 +217,15 @@ function EmbeddedSignupCard({
     const res = await fetch("/api/settings/whatsapp/embedded-signup", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, ...assets.current }),
+      body: JSON.stringify({
+        code,
+        wabaId: assets.current.wabaId,
+        // Omitido (no null) cuando Meta no lo informó: el schema lo espera
+        // ausente y el servidor descubre el número desde la WABA.
+        ...(assets.current.phoneNumberId
+          ? { phoneNumberId: assets.current.phoneNumberId }
+          : {}),
+      }),
     }).catch(() => null);
     setBusy(false);
     if (!res?.ok) {
@@ -222,7 +239,13 @@ function EmbeddedSignupCard({
     onConnected();
   }
 
-  function launch() {
+  /**
+   * `coexistence` cambia el flujo del popup: el negocio conecta el número que
+   * YA usa en la app de WhatsApp Business y el celular sigue funcionando.
+   * `sessionInfoVersion: "3"` es el session logging que Meta exige para este
+   * modo; el valor `coexistence` de featureType quedó obsoleto.
+   */
+  function launch(coexistence: boolean) {
     setError(null);
     setBusy(true);
     assets.current = null;
@@ -240,16 +263,25 @@ function EmbeddedSignupCard({
         config_id: config.configId,
         response_type: "code",
         override_default_response_type: true,
-        extras: { setup: {} },
+        extras: coexistence
+          ? {
+              setup: {},
+              featureType: "whatsapp_business_app_onboarding",
+              sessionInfoVersion: "3",
+            }
+          : { setup: {}, sessionInfoVersion: "3" },
       }
     );
   }
 
   /** Self-test: simula el retorno del popup sin cargar el SDK de Meta. */
-  function simulate() {
+  function simulate(coexistence: boolean) {
     setError(null);
     setBusy(true);
-    assets.current = { wabaId: "waba_mock_1", phoneNumberId: "pn_mock_1" };
+    assets.current = {
+      wabaId: "waba_mock_1",
+      phoneNumberId: coexistence ? null : "pn_mock_1",
+    };
     void finish("mock-code-1");
   }
 
@@ -266,21 +298,47 @@ function EmbeddedSignupCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {config.mock ? (
-          <Button disabled={busy} onClick={simulate}>
-            {busy ? "Conectando…" : "Simular Embedded Signup (mock)"}
+
+        <div className="rounded-lg border p-4">
+          <p className="text-sm font-medium">
+            Ya uso este número en el celular
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            El número sigue funcionando en la app de WhatsApp Business y además
+            entra al CRM. Requiere la app en versión 2.24.17 o superior. No
+            quedan disponibles los grupos, las llamadas ni el catálogo.
+          </p>
+          <Button
+            className="mt-3"
+            disabled={(!sdkReady && !config.mock) || busy}
+            onClick={() => (config.mock ? simulate(true) : launch(true))}
+          >
+            {busy ? "Conectando…" : "Conectar sin perder el celular"}
           </Button>
-        ) : (
-          <Button disabled={!sdkReady || busy} onClick={launch}>
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <p className="text-sm font-medium">Es un número nuevo, solo para el CRM</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ojo: si el número ya está en uso en la app del celular, esta opción
+            lo deja fuera de servicio ahí. Elegila solo para un número que no
+            usás desde el teléfono.
+          </p>
+          <Button
+            className="mt-3"
+            variant="outline"
+            disabled={(!sdkReady && !config.mock) || busy}
+            onClick={() => (config.mock ? simulate(false) : launch(false))}
+          >
             {busy
               ? "Conectando…"
-              : sdkReady
+              : sdkReady || config.mock
                 ? existing
                   ? "Reconectar con Meta"
                   : "Conectar con Meta"
                 : "Cargando Meta…"}
           </Button>
-        )}
+        </div>
       </CardContent>
     </Card>
   );

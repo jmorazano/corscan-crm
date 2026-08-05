@@ -133,22 +133,38 @@ que sí le da membresía en la organización existente. Como la organización ti
 datos de demostración (Clima Córdoba) y ningún cliente real, no se expone nada
 sensible.
 
-## Después de la aprobación: lo que falta para coexistence
+## Coexistence: qué quedó implementado y qué falta
 
-Confirmado en la documentación de Meta, y **no** es solo prender una bandera:
+**Implementado** (el código ya está listo para el día que aprueben):
 
-1. El evento del popup es distinto: `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`,
-   y trae **solo `waba_id`** — no viene `phone_number_id`. Nuestro
-   `completeEmbeddedSignup()` hoy exige ambos y valida con `testConnection`,
-   así que necesita una rama nueva que descubra el número vía
-   `GET {waba}/phone_numbers` después de canjear el token.
-2. Hay que **saltear el registro del número**. Es el paso que mata al celular.
-3. Sincronización opcional, con ventana de **24 horas** desde el onboarding o
-   el negocio debe empezar de nuevo:
+- Ajustes → WhatsApp ofrece dos caminos explícitos: *"Ya uso este número en el
+  celular"* (coexistence) y *"Es un número nuevo, solo para el CRM"*. El
+  segundo lleva la advertencia de que deja al celular fuera de servicio.
+- El popup se lanza con `featureType: "whatsapp_business_app_onboarding"` y
+  `sessionInfoVersion: "3"` — este último es el *session logging* que Meta
+  exige para coexistence. Ojo: el valor `coexistence` de `featureType` quedó
+  **obsoleto**, no usarlo.
+- El listener acepta ambos eventos de cierre (`FINISH` y
+  `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`) e ignora los intermedios y el
+  CANCEL, que antes podían pisar los assets.
+- `completeEmbeddedSignup()` acepta que no venga `phone_number_id` y descubre
+  el número con `GET {waba}/phone_numbers`. Si la WABA tiene **más de un
+  número, rechaza en vez de adivinar**: elegir mal significaría conectar una
+  línea que el negocio no autorizó.
+- **Nunca se registra el número.** No hay ninguna llamada a `/register` en el
+  código, y ese es justamente el paso que mata la app del celular.
+
+**Falta**, y no se puede hacer todavía:
+
+1. Probarlo en vivo. Requiere ser Tech Provider: hasta la aprobación, el popup
+   con `featureType` de coexistence va a fallar del lado de Meta. Lo que está
+   verificado hoy son los tests unitarios de la rama nueva, no el flujo real.
+2. Sincronización de contactos e historial (opcional), con ventana de **24
+   horas** desde el onboarding o el negocio debe empezar de nuevo:
    - contactos: `POST {phone_number_id}/smb_app_data` con `sync_type: "smb_app_state_sync"`
    - historial: mismo endpoint con `sync_type: "history"` — 180 días de
      mensajes, 14 días de archivos multimedia.
-4. El negocio necesita WhatsApp Business app **2.24.17 o superior**.
+3. El negocio necesita WhatsApp Business app **2.24.17 o superior**.
 
 ### Lo que se pierde al activar coexistence
 

@@ -5,10 +5,12 @@ import { completeEmbeddedSignup } from "@/server/whatsapp/embedded-signup";
 
 export const dynamic = "force-dynamic";
 
+// phoneNumberId es opcional a propósito: el onboarding con coexistence lo
+// omite porque Meta no lo informa, y el servidor lo descubre desde la WABA.
 const postSchema = z.object({
   code: z.string().trim().min(1),
   wabaId: z.string().trim().min(1),
-  phoneNumberId: z.string().trim().min(1),
+  phoneNumberId: z.string().trim().min(1).optional(),
 });
 
 /**

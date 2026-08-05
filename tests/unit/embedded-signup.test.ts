@@ -25,6 +25,11 @@ function setEnv() {
 
 beforeEach(() => {
   vi.resetModules();
+  // vi.doMock queda registrado para todo el archivo: sin limpiarlo, un test
+  // que mockea connect contamina a los que ejercitan el módulo real.
+  vi.doUnmock("@/lib/meta/client");
+  vi.doUnmock("@/server/whatsapp/connect");
+  vi.doUnmock("@/server/whatsapp/credentials");
   setEnv();
 });
 
@@ -153,6 +158,7 @@ describe("completeEmbeddedSignup", () => {
         displayPhoneNumber: "+54 9 351 688-2234",
         verifiedName: "CorScan",
       })),
+      listWabaPhoneNumbers: vi.fn(),
       subscribeAppToWaba,
     }));
     vi.doMock("@/server/whatsapp/credentials", () => ({ saveCredentials }));
@@ -194,6 +200,7 @@ describe("completeEmbeddedSignup", () => {
         code: "invalid_token" as const,
         message: "no",
       })),
+      listWabaPhoneNumbers: vi.fn(),
       subscribeAppToWaba,
     }));
     vi.doMock("@/server/whatsapp/credentials", () => ({ saveCredentials }));
@@ -227,6 +234,7 @@ describe("completeEmbeddedSignup", () => {
     });
     vi.doMock("@/server/whatsapp/connect", () => ({
       testConnection: vi.fn(),
+      listWabaPhoneNumbers: vi.fn(),
       subscribeAppToWaba: vi.fn(),
     }));
     vi.doMock("@/server/whatsapp/credentials", () => ({
@@ -243,6 +251,183 @@ describe("completeEmbeddedSignup", () => {
       phoneNumberId: "p",
     });
     expect(res).toMatchObject({ ok: false, code: "meta_unavailable" });
+  });
+});
+
+/**
+ * Coexistence: el popup emite FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING con SOLO
+ * waba_id. Sin phone_number_id que validar, el número se descubre desde la
+ * WABA — y ahí aparece un riesgo nuevo: elegir mal el número significaría
+ * conectar una línea que no es la que el negocio autorizó.
+ */
+describe("completeEmbeddedSignup con coexistence (sin phoneNumberId)", () => {
+  type SaveInput = {
+    organizationId: string;
+    wabaId: string;
+    phoneNumberId: string;
+    token: string;
+    displayPhoneNumber?: string | null;
+    verifiedName?: string | null;
+  };
+
+  type Discovery =
+    | {
+        ok: true;
+        numbers: {
+          id: string;
+          displayPhoneNumber: string;
+          verifiedName: string | null;
+        }[];
+      }
+    | { ok: false; code: string; message: string };
+
+  async function withDiscovery(discovery: Discovery) {
+    const saveCredentials = vi.fn(async (_input: SaveInput) => undefined);
+    const subscribeAppToWaba = vi.fn(
+      async (_wabaId: string, _token: string) => undefined
+    );
+    const testConnection = vi.fn();
+
+    vi.doMock("@/lib/meta/client", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/meta/client")>(
+        "@/lib/meta/client"
+      );
+      return { ...actual, exchangeCodeForToken: vi.fn(async () => "EAAG-ok") };
+    });
+    vi.doMock("@/server/whatsapp/connect", () => ({
+      testConnection,
+      listWabaPhoneNumbers: vi.fn(async () => discovery),
+      subscribeAppToWaba,
+    }));
+    vi.doMock("@/server/whatsapp/credentials", () => ({ saveCredentials }));
+
+    const { completeEmbeddedSignup } = await import(
+      "@/server/whatsapp/embedded-signup"
+    );
+    const res = await completeEmbeddedSignup({
+      organizationId: "org_1",
+      code: "code-1",
+      wabaId: "waba_1",
+    });
+    return { res, saveCredentials, subscribeAppToWaba, testConnection };
+  }
+
+  it("un solo número en la WABA → lo descubre y guarda", async () => {
+    const { res, saveCredentials, subscribeAppToWaba, testConnection } =
+      await withDiscovery({
+        ok: true,
+        numbers: [
+          {
+            id: "pn_descubierto",
+            displayPhoneNumber: "+54 9 351 688-2234",
+            verifiedName: "CorScan",
+          },
+        ],
+      });
+
+    expect(res).toMatchObject({
+      ok: true,
+      phoneNumberId: "pn_descubierto",
+      displayPhoneNumber: "+54 9 351 688-2234",
+    });
+    expect(saveCredentials.mock.calls[0]?.[0]).toMatchObject({
+      wabaId: "waba_1",
+      phoneNumberId: "pn_descubierto",
+      token: "EAAG-ok",
+    });
+    expect(subscribeAppToWaba).toHaveBeenCalledWith("waba_1", "EAAG-ok");
+    // testConnection valida un phone_number_id que en este flujo no existe.
+    expect(testConnection).not.toHaveBeenCalled();
+  });
+
+  it("WABA sin números → invalid_assets y no persiste", async () => {
+    const { res, saveCredentials } = await withDiscovery({
+      ok: true,
+      numbers: [],
+    });
+    expect(res).toMatchObject({ ok: false, code: "invalid_assets" });
+    expect(saveCredentials).not.toHaveBeenCalled();
+  });
+
+  it("GUARDRAIL: con varios números NO adivina, rechaza", async () => {
+    const { res, saveCredentials } = await withDiscovery({
+      ok: true,
+      numbers: [
+        { id: "pn_a", displayPhoneNumber: "+54 351 111", verifiedName: null },
+        { id: "pn_b", displayPhoneNumber: "+54 351 222", verifiedName: null },
+      ],
+    });
+    expect(res).toMatchObject({ ok: false, code: "invalid_assets" });
+    expect(saveCredentials).not.toHaveBeenCalled();
+  });
+
+  it("Meta caída al descubrir → meta_unavailable (reintentable)", async () => {
+    const { res, saveCredentials } = await withDiscovery({
+      ok: false,
+      code: "meta_unavailable",
+      message: "caída",
+    });
+    expect(res).toMatchObject({ ok: false, code: "meta_unavailable" });
+    expect(saveCredentials).not.toHaveBeenCalled();
+  });
+});
+
+describe("listWabaPhoneNumbers", () => {
+  it("mapea la respuesta de Graph y descarta entradas incompletas", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "pn_1",
+                  display_phone_number: "+54 9 351 688-2234",
+                  verified_name: "CorScan",
+                },
+                { id: "pn_sin_numero" },
+              ],
+            }),
+            { status: 200 }
+          )
+      )
+    );
+
+    const { listWabaPhoneNumbers } = await import("@/server/whatsapp/connect");
+    const res = await listWabaPhoneNumbers("waba_1", "EAAG-ok");
+
+    expect(res).toEqual({
+      ok: true,
+      numbers: [
+        {
+          id: "pn_1",
+          displayPhoneNumber: "+54 9 351 688-2234",
+          verifiedName: "CorScan",
+        },
+      ],
+    });
+  });
+
+  it("token revocado → invalid_token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: { message: "expirado", type: "OAuthException", code: 190 },
+            }),
+            { status: 401 }
+          )
+      )
+    );
+
+    const { listWabaPhoneNumbers } = await import("@/server/whatsapp/connect");
+    await expect(listWabaPhoneNumbers("waba_1", "t")).resolves.toMatchObject({
+      ok: false,
+      code: "invalid_token",
+    });
   });
 });
 
