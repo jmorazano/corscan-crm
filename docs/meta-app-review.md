@@ -50,6 +50,11 @@ Requisitos de grabación (los rechazan por esto más que por el contenido):
   resolución del monitor antes de grabar.
 - Sin cortes que salteen pasos: el revisor tiene que ver el flujo completo.
 
+> **Instructivo paso a paso**: [meta-numero-de-prueba.md](meta-numero-de-prueba.md)
+> cubre cómo activar el número de prueba, conectarlo al CRM, dejar una plantilla
+> aprobada y preparar la escena del envío. Ojo: el número de prueba **no** puede
+> pasar por Embedded Signup, y eso condiciona el guion — está explicado ahí.
+
 ## Guion del Video 1 — enviar un mensaje
 
 Precondición: número de prueba conectado en Ajustes → WhatsApp, y un teléfono
