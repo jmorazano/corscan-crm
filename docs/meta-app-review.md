@@ -13,7 +13,9 @@ API).
 |---|---|
 | App de Meta con caso de uso WhatsApp + portfolio conectado | ✅ App ID `2262662764507422` |
 | Verificación de negocio | ✅ **Verified** — 29 de julio de 2026 |
-| Ajustes básicos de la app (ícono, privacidad, categoría) | ⚠️ verificar ícono y categoría |
+| Ajustes básicos (ícono, privacidad, términos, borrado, categoría) | ✅ verificado vía API |
+| WABA + número de prueba aprovisionados | ❌ **no existen todavía** |
+| Al menos 1 llamada exitosa por permiso | ❌ **0 llamadas en 30 días** |
 | App Review → Advanced Access de los 2 permisos | 🔜 **el trabajo de ahora** |
 | Tech Provider | 🔒 se desbloquea al aprobarse el App Review |
 | Coexistence | 🔒 requiere Tech Provider + cambios de código (ver abajo) |
@@ -114,15 +116,26 @@ propia WABA**.
 
 ## Antes de enviar — checklist
 
-- [ ] Ícono de la app cargado (no puede quedar el genérico)
-- [ ] Categoría de la app elegida
-- [ ] URL de política de privacidad → `https://corscan.com.ar/privacidad`
-- [ ] URL de términos → `https://corscan.com.ar/terminos`
-- [ ] URL de eliminación de datos → `https://corscan.com.ar/eliminacion-datos`
-- [ ] Dominio `crm.corscan.com.ar` en "Dominios permitidos para el SDK de JavaScript"
-- [ ] `crm.corscan.com.ar` en "URI de redireccionamiento de OAuth válidos"
+Verificado contra la API de Meta el 6 de agosto de 2026 (no de memoria):
+
+- [x] Ícono cargado — **debe ser 1024×1024**, verificar el archivo original
+- [x] Categoría de la app → `BUSINESS`
+- [x] URL de política de privacidad → `https://corscan.com.ar/privacidad` (200)
+- [x] URL de términos → `https://corscan.com.ar/terminos` (200)
+- [x] URL de eliminación de datos → `https://corscan.com.ar/eliminacion-datos` (200)
+- [x] Dominio `crm.corscan.com.ar` en "Dominios permitidos para el SDK de JavaScript"
+- [x] `crm.corscan.com.ar` en "URI de redireccionamiento de OAuth válidos"
+- [x] Verificación de negocio → `business_verification_passes: true`
+- [ ] **Al menos 1 llamada exitosa por cada permiso pedido, dentro de los 30 días
+      previos al envío** — hoy `total_calls: 0`. Vale desde la app o desde el
+      Graph API Explorer. Requiere la WABA, así que depende del Quickstart.
 - [ ] `DEMO_TOOLS_ENABLED` **apagado** antes de grabar (que no se vea la pestaña de recarga de demo)
 - [ ] Cuenta de prueba para el revisor, si la piden (ver más abajo)
+
+**No es requisito**: la verificación del correo de contacto de la app
+(`contact_email_verified`). No figura en la documentación de App Review y el
+endpoint de requisitos de Meta solo evalúa `has_privacy_policy` y
+`business_verification_passes`. No perder tiempo ahí.
 
 ## Cuenta de prueba para el revisor
 
