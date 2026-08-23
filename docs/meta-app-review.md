@@ -14,10 +14,12 @@ API).
 | App de Meta con caso de uso WhatsApp + portfolio conectado | ✅ App ID `2262662764507422` |
 | Verificación de negocio | ✅ **Verified** — 29 de julio de 2026 |
 | Ajustes básicos (ícono, privacidad, términos, borrado, categoría) | ✅ verificado vía API |
-| WABA + número de prueba | ⚠️ existen y la app quedó suscrita por API, pero el panel de API Setup está roto **server-side** (confirmado en incógnito): la allowlist de destinatarios es inaccesible → el número de prueba NO puede enviar. Plan B: número real por API, ver [meta-conectar-numero-prueba.md](meta-conectar-numero-prueba.md) |
+| Número emisor | ✅ **+1 555-320-3036** (número 555 de negocio, gratis, sin allowlist) en la WABA nueva **Corscan CRM** `1615824000141383` — conectado al CRM y funcionando. El test number viejo y su WABA huérfana quedan abandonados. |
 | Llamada real con `whatsapp_business_management` | ✅ `GET {waba}/phone_numbers` + `POST {waba}/subscribed_apps` + validación del CRM |
-| Llamada real con `whatsapp_business_messaging` | ❌ pendiente — requiere el número real del plan B |
-| App Review → Advanced Access de los 2 permisos | 🔜 **el trabajo de ahora** |
+| Llamada real con `whatsapp_business_messaging` | ✅ respuesta enviada desde la Bandeja del CRM al celular, entregada |
+| App Review → Advanced Access de los 2 permisos | 🔜 **solo faltan los videos y el envío** |
+| App en modo Live | ✅ |
+| Circuito completo entrante + saliente en el CRM | ✅ probado en vivo |
 | Tech Provider | 🔒 se desbloquea al aprobarse el App Review |
 | Coexistence | 🔒 requiere Tech Provider + cambios de código (ver abajo) |
 
@@ -60,8 +62,16 @@ Requisitos de grabación (los rechazan por esto más que por el contenido):
 
 ## Guion del Video 1 — enviar un mensaje
 
-Precondición: número de prueba conectado en Ajustes → WhatsApp, y un teléfono
-propio agregado como destinatario permitido en el panel de Meta.
+Precondición: el CRM conectado al **+1 555-320-3036** (ya está). Antes de
+grabar, mandate un mensaje desde el celular al 555 para que la **ventana de
+24 h esté abierta** — sin eso el compositor de texto libre no aparece. No hay
+allowlist: cualquier teléfono sirve de receptor.
+
+Tip anti-rechazo: en la toma 2 (Ajustes → WhatsApp), mostrá también la tarjeta
+"Conectar con Meta" y hacé clic para que se vea el popup de Embedded Signup
+abriéndose (cancelalo y seguí). Las notas de permisos mencionan Embedded
+Signup, y que el video lo muestre existiendo evita el patrón de rechazo "el
+screencast no coincide con las notas".
 
 | # | Toma | Subtítulo en inglés |
 |---|---|---|
@@ -127,9 +137,10 @@ Verificado contra la API de Meta el 6 de agosto de 2026 (no de memoria):
 - [x] Dominio `crm.corscan.com.ar` en "Dominios permitidos para el SDK de JavaScript"
 - [x] `crm.corscan.com.ar` en "URI de redireccionamiento de OAuth válidos"
 - [x] Verificación de negocio → `business_verification_passes: true`
-- [ ] **Al menos 1 llamada exitosa por cada permiso pedido, dentro de los 30 días
-      previos al envío** — hoy `total_calls: 0`. Vale desde la app o desde el
-      Graph API Explorer. Requiere la WABA, así que depende del Quickstart.
+- [x] **Al menos 1 llamada exitosa por cada permiso**: management (phone_numbers,
+      subscribed_apps, validación de conexión) y messaging (respuesta real desde
+      la Bandeja, entregada). Ojo: valen por 30 días — no dejar pasar un mes
+      antes de enviar el App Review.
 - [ ] `DEMO_TOOLS_ENABLED` **apagado** antes de grabar (que no se vea la pestaña de recarga de demo)
 - [ ] Cuenta de prueba para el revisor, si la piden (ver más abajo)
 
