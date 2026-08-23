@@ -66,11 +66,17 @@ grabar, mandate un mensaje desde el celular al 555 para que la **ventana de
 24 h esté abierta** — sin eso el compositor de texto libre no aparece. No hay
 allowlist: cualquier teléfono sirve de receptor.
 
-Tip anti-rechazo: en la toma 2 (Ajustes → WhatsApp), mostrá también la tarjeta
-"Conectar con Meta" y hacé clic para que se vea el popup de Embedded Signup
-abriéndose (cancelalo y seguí). Las notas de permisos mencionan Embedded
-Signup, y que el video lo muestre existiendo evita el patrón de rechazo "el
-screencast no coincide con las notas".
+Tip anti-rechazo: en la toma 2 (Ajustes → WhatsApp), hacé clic en
+"Reconectar con Meta" para que se vea el popup de Embedded Signup abriéndose
+(cancelalo y seguí). Las notas de permisos mencionan Embedded Signup, y que el
+video lo muestre existiendo evita el patrón de rechazo "el screencast no
+coincide con las notas".
+
+La opción de coexistence ("Conectar sin perder el celular") está **oculta
+detrás de `COEXISTENCE_UI_ENABLED`** y NO debe verse en el video ni existir
+para el revisor: hasta tener Tech Provider aprobado su popup falla al final, y
+un botón que termina en error lee como "app incompleta" — causa de rechazo
+documentada. Se enciende en Railway recién después de la aprobación.
 
 | # | Toma | Subtítulo en inglés |
 |---|---|---|

@@ -35,6 +35,8 @@ type EsConfig = {
   configId: string;
   graphVersion: string;
   mock: boolean;
+  /** Coexistence visible: requiere Tech Provider aprobado (flag de instancia). */
+  coexistence: boolean;
 };
 
 type FbLoginResponse = { authResponse?: { code?: string } | null };
@@ -299,23 +301,29 @@ function EmbeddedSignupCard({
       <CardContent className="space-y-4">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="rounded-lg border p-4">
-          <p className="text-sm font-medium">
-            Ya uso este número en el celular
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            El número sigue funcionando en la app de WhatsApp Business y además
-            entra al CRM. Requiere la app en versión 2.24.17 o superior. No
-            quedan disponibles los grupos, las llamadas ni el catálogo.
-          </p>
-          <Button
-            className="mt-3"
-            disabled={(!sdkReady && !config.mock) || busy}
-            onClick={() => (config.mock ? simulate(true) : launch(true))}
-          >
-            {busy ? "Conectando…" : "Conectar sin perder el celular"}
-          </Button>
-        </div>
+        {/* Coexistence detrás de flag: hasta tener Tech Provider aprobado el
+            popup falla al final, y un botón que termina en error lee como
+            "app incompleta" ante el revisor de Meta. */}
+        {config.coexistence && (
+          <div className="rounded-lg border p-4">
+            <p className="text-sm font-medium">
+              Ya uso este número en el celular
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              El número sigue funcionando en la app de WhatsApp Business y
+              además entra al CRM. Requiere la app en versión 2.24.17 o
+              superior. No quedan disponibles los grupos, las llamadas ni el
+              catálogo.
+            </p>
+            <Button
+              className="mt-3"
+              disabled={(!sdkReady && !config.mock) || busy}
+              onClick={() => (config.mock ? simulate(true) : launch(true))}
+            >
+              {busy ? "Conectando…" : "Conectar sin perder el celular"}
+            </Button>
+          </div>
+        )}
 
         <div className="rounded-lg border p-4">
           <p className="text-sm font-medium">Es un número nuevo, solo para el CRM</p>

@@ -32,6 +32,7 @@ const envSchema = z.object({
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
   DEMO_TOOLS_ENABLED: z.string().optional(),
+  COEXISTENCE_UI_ENABLED: z.string().optional(),
   NODE_ENV: z.string().default("development"),
 });
 
@@ -104,6 +105,17 @@ export function isDemoToolsEnabled(): boolean {
 export function isEmbeddedSignupConfigured(): boolean {
   const env = getEnv();
   return Boolean(env.META_APP_ID && env.META_ES_CONFIG_ID && env.META_APP_SECRET);
+}
+
+/**
+ * true si la opción de coexistence ("Conectar sin perder el celular") debe
+ * mostrarse. Apagada por defecto: el flujo requiere estatus de Tech Provider
+ * aprobado por Meta, y hasta entonces el popup falla al final — un botón
+ * visible que termina en error lee como "app incompleta" en el App Review.
+ * En el mock de self-test se muestra siempre, para poder probar el flujo.
+ */
+export function isCoexistenceUiEnabled(): boolean {
+  return process.env.COEXISTENCE_UI_ENABLED === "true" || isMockEnabled();
 }
 
 /** true si hay proveedor de IA configurado (token presente y no vacío). */

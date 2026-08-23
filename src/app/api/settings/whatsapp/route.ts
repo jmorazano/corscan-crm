@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
-import { getEnv, isEmbeddedSignupConfigured, isMockEnabled } from "@/lib/env";
+import {
+  getEnv,
+  isCoexistenceUiEnabled,
+  isEmbeddedSignupConfigured,
+  isMockEnabled,
+} from "@/lib/env";
 import {
   getCredentialsByOrg,
   saveCredentials,
@@ -22,6 +27,7 @@ function embeddedSignupConfig() {
     configId: env.META_ES_CONFIG_ID!,
     graphVersion: env.META_GRAPH_API_VERSION,
     mock: isMockEnabled(),
+    coexistence: isCoexistenceUiEnabled(),
   };
 }
 
