@@ -92,3 +92,49 @@ adentro. Nunca.
 El número de prueba figura con estado **Unverified**. Es lo habitual en números
 de prueba (se refiere al nombre para mostrar, no a la capacidad de enviar), pero
 no lo damos por cierto hasta que salga el primer mensaje.
+
+## Actualización (verificado con investigación adversarial)
+
+Lo aprendido después de escribir este documento, que corrige partes de arriba:
+
+- **La allowlist de destinatarios es exclusiva del panel** (API Setup → "To" →
+  "Manage phone number list"). No hay endpoint de Graph API ni pantalla en
+  WhatsApp Manager: usa la API interna del dashboard con la sesión del
+  navegador. Si el panel está roto, no hay rodeo.
+- **La ventana de 24 h NO exime de la allowlist.** Aunque el cliente escriba
+  primero, todo saliente del número de prueba falla con
+  `(#131030) Recipient phone number not in allowed list` (reportado por dos
+  fuentes independientes, una con números argentinos).
+- **El matching de la allowlist es exacto contra el `wa_id`.** Gotcha
+  argentino: registrar `549...` tal cual llega en el webhook, no `54...`.
+  Máximo 5 números y según reportes no se pueden borrar después.
+- **El desplegable "From" no lee `subscribed_apps`** (eso solo suscribe
+  webhooks); lee la conexión app↔WABA que crea el propio flujo del panel. Hay
+  hilos del foro de Meta con paneles rotos por semanas donde ni incógnito ni
+  otros navegadores ayudaron: cuando falla así, suele ser server-side de Meta.
+- **Los webhooks de mensajes reales no llegan con la app en modo desarrollo**
+  (dashboard nuevo, reportes 2025-2026 consistentes; lo oficial dice "some
+  webhooks will not be sent" sin especificar). Hay que pasar la app a **Live**:
+  es un toggle, es reversible, no requiere App Review y con acceso standard la
+  app sigue operando sus propios activos igual.
+- Los entrantes al número de prueba **sí** llegan y generan webhook desde
+  cualquier teléfono (reportado). Si el número no aparece como contacto de
+  WhatsApp (numeración 555 ficticia), probar el link directo
+  `wa.me/15556598579`, que saltea el descubrimiento de contactos.
+
+### Plan B si el panel no revive: número real por API, sin panel
+
+Con un **número real no existe allowlist** (el 131030 es exclusivo del número
+de prueba). Y todo el alta se puede hacer por API, sin tocar el panel:
+
+1. Chip prepago nuevo, jamás registrado en WhatsApp.
+2. Alta en la WABA vacía "Corscan Ingeniería" (NO la de prueba, NO la del
+   celular): `POST /{waba_id}/phone_numbers`.
+3. Verificación: `POST /{phone_id}/request_code` (SMS) →
+   `POST /{phone_id}/verify_code`.
+4. Registro en Cloud API: `POST /{phone_id}/register` (con PIN).
+5. Webhook ya está; conectar el CRM con ese phone_id.
+
+Costos: los entrantes y las respuestas free-form dentro de la ventana de 24 h
+no requieren método de pago. Solo el ENVÍO de plantillas lo requiere — y el
+Video 2 del App Review solo necesita la CREACIÓN de la plantilla, no su envío.
