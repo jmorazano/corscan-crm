@@ -34,10 +34,17 @@ export function InboxClient() {
   selectedIdRef.current = selectedId;
   const lastFetchRef = useRef<string | null>(null);
 
+  // Secuencia de refetch: una respuesta vieja que resuelva tarde no puede
+  // pisar a una nueva — sin esto, un snapshot previo a un borrado podía
+  // "resucitar" la conversación eliminada en el sidebar.
+  const conversationsSeqRef = useRef(0);
+
   const refetchConversations = useCallback(async () => {
+    const seq = ++conversationsSeqRef.current;
     const res = await fetch("/api/conversations").catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { conversations: ConversationDto[] };
+    if (seq !== conversationsSeqRef.current) return; // llegó una más nueva
     setConversations(data.conversations);
     lastFetchRef.current = new Date().toISOString();
   }, []);
@@ -108,6 +115,15 @@ export function InboxClient() {
       // El agente movió de etapa o cambió el handoff: refresca el panel en vivo.
       setDetailRev((v) => v + 1);
     },
+    onConversationDeleted: ({ conversationId }) => {
+      // Si otro operador (u otra pestaña) la borró, soltar la selección para
+      // no dejar un hilo fantasma en pantalla.
+      if (selectedIdRef.current === conversationId) {
+        setSelectedId(null);
+        setMessages([]);
+      }
+      void refetchConversations();
+    },
     onReconnect: () => {
       // Catch-up tras reconexión (contrato sse.md): refetch completo.
       void refetchConversations();
@@ -154,6 +170,33 @@ export function InboxClient() {
       void refetchConversations();
     },
     [refetchConversations]
+  );
+
+  // Borrado local al CRM (la Cloud API no tiene noción de borrar chats).
+  const deleteSelected = useCallback(
+    async (target: "conversation" | "contact"): Promise<string | null> => {
+      const conversationId = selectedIdRef.current;
+      const contactId = conversations?.find((c) => c.id === conversationId)
+        ?.contact.id;
+      if (!conversationId) return "Sin conversación seleccionada";
+      const url =
+        target === "contact" && contactId
+          ? `/api/contacts/${contactId}`
+          : `/api/conversations/${conversationId}`;
+      const res = await fetch(url, { method: "DELETE" }).catch(() => null);
+      if (!res) return "Sin conexión con el servidor";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo borrar";
+      }
+      setSelectedId(null);
+      setMessages([]);
+      void refetchConversations();
+      return null;
+    },
+    [conversations, refetchConversations]
   );
 
   return (
@@ -234,6 +277,7 @@ export function InboxClient() {
               conversation={selected}
               refreshKey={detailRev}
               onPatchConversation={patchConversation}
+              onDelete={deleteSelected}
               onClose={() => togglePanel(false)}
             />
           </div>

@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, MessageSquareText, Search } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  MessageSquareText,
+  Search,
+  Trash2,
+} from "lucide-react";
 import type { ContactDto } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -16,6 +22,10 @@ export function ContactsClient() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  // Id del contacto con confirmación de borrado pendiente (dos pasos).
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const params = new URLSearchParams();
@@ -38,6 +48,33 @@ export function ContactsClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
+    void refetch();
+  }
+
+  // Borra el contacto y sus conversaciones (solo del CRM; WhatsApp no cambia).
+  // Es la vía de los pedidos de eliminación de datos: un fallo jamás puede
+  // pasar en silencio como si hubiera borrado.
+  async function remove(id: string) {
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" }).catch(
+      () => null
+    );
+    setDeleting(false);
+    setConfirmingDelete(null);
+    if (!res) {
+      setDeleteError("Sin conexión con el servidor: el contacto NO se borró.");
+      return;
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setDeleteError(
+        data?.error?.message ?? "No se pudo borrar el contacto; reintentá."
+      );
+      return;
+    }
     void refetch();
   }
 
@@ -68,6 +105,11 @@ export function ContactsClient() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {deleteError && (
+          <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {deleteError}
+          </p>
+        )}
         {contacts.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium">Sin contactos</p>
@@ -123,6 +165,36 @@ export function ContactsClient() {
                       <Archive className="h-4 w-4" />
                     )}
                   </Button>
+                  {confirmingDelete === c.id ? (
+                    <>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deleting}
+                        onClick={() => void remove(c.id)}
+                      >
+                        {deleting ? "Borrando…" : "Borrar todo"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={deleting}
+                        onClick={() => setConfirmingDelete(null)}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Eliminar contacto"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setConfirmingDelete(c.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}

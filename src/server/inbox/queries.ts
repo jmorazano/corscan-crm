@@ -156,3 +156,25 @@ export async function updateConversation(
     .returning();
   return updated[0] ?? null;
 }
+
+/**
+ * Borra una conversación (los mensajes caen por cascada; los casos del
+ * Laboratorio quedan con conversation_id en null). Devuelve false si no
+ * existe en la organización.
+ */
+export async function deleteConversation(
+  organizationId: string,
+  conversationId: string
+): Promise<boolean> {
+  const db = getDb();
+  const deleted = await db
+    .delete(schema.conversation)
+    .where(
+      and(
+        eq(schema.conversation.organizationId, organizationId),
+        eq(schema.conversation.id, conversationId)
+      )
+    )
+    .returning({ id: schema.conversation.id });
+  return deleted.length > 0;
+}

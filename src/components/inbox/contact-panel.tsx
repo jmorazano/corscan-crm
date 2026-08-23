@@ -20,6 +20,7 @@ export function ContactPanel({
   conversation,
   refreshKey = 0,
   onPatchConversation,
+  onDelete,
   onClose,
 }: {
   conversation: ConversationDto;
@@ -29,6 +30,8 @@ export function ContactPanel({
     aiEnabled?: boolean;
     reactivate?: boolean;
   }) => Promise<void>;
+  /** Borra la conversación o el contacto entero; null = éxito. */
+  onDelete: (target: "conversation" | "contact") => Promise<string | null>;
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState("");
@@ -41,8 +44,29 @@ export function ContactPanel({
   // cuando el agente aún no se ha configurado/encendido.
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
+  // Confirmación en dos pasos del borrado (mismo patrón que Ajustes → Datos).
+  const [confirmDelete, setConfirmDelete] = useState<
+    "conversation" | "contact" | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const contactId = conversation.contact.id;
+
+  // Cambiar de conversación descarta cualquier confirmación pendiente.
+  useEffect(() => {
+    setConfirmDelete(null);
+    setDeleteError(null);
+  }, [conversation.id]);
+
+  async function runDelete(target: "conversation" | "contact") {
+    setDeleting(true);
+    setDeleteError(null);
+    const err = await onDelete(target);
+    setDeleting(false);
+    setConfirmDelete(null);
+    if (err) setDeleteError(err);
+  }
 
   const agentReady = aiConfigured && agentEnabled;
   const aiActive =
@@ -304,6 +328,83 @@ export function ContactPanel({
           >
             {savingNotes ? "Guardando…" : "Guardar notas"}
           </Button>
+        </section>
+
+        {/* Borrado — solo afecta al CRM, WhatsApp no se entera */}
+        <section className="border-t p-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+            Borrar datos
+          </p>
+          <p className="mb-3 text-[11px] leading-relaxed text-text-3">
+            Borra del CRM; los chats en WhatsApp del cliente no cambian. No se
+            puede deshacer.
+          </p>
+          {deleteError && (
+            <p className="mb-2 text-xs text-destructive">{deleteError}</p>
+          )}
+          <div className="flex flex-col gap-2">
+            {confirmDelete === "conversation" ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={deleting}
+                  onClick={() => void runDelete("conversation")}
+                >
+                  {deleting ? "Borrando…" : "Sí, borrar conversación"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={deleting}
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={deleting}
+                onClick={() => setConfirmDelete("conversation")}
+              >
+                Eliminar conversación
+              </Button>
+            )}
+            {confirmDelete === "contact" ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={deleting}
+                  onClick={() => void runDelete("contact")}
+                >
+                  {deleting ? "Borrando…" : "Sí, borrar contacto y chats"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={deleting}
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={deleting}
+                className="text-destructive hover:text-destructive"
+                onClick={() => setConfirmDelete("contact")}
+              >
+                Eliminar contacto y sus conversaciones
+              </Button>
+            )}
+          </div>
         </section>
       </div>
     </div>

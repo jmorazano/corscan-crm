@@ -10,6 +10,7 @@ export type EventHandlers = {
     status: string;
   }) => void;
   onConversationUpdated?: (data: { conversation: unknown }) => void;
+  onConversationDeleted?: (data: { conversationId: string }) => void;
   onLabRun?: (data: {
     runId: string;
     status: string;
@@ -49,6 +50,9 @@ export function useEvents(handlers: EventHandlers): void {
     );
     listen("conversation.updated", (d) =>
       handlersRef.current.onConversationUpdated?.(d as never)
+    );
+    listen("conversation.deleted", (d) =>
+      handlersRef.current.onConversationDeleted?.(d as never)
     );
     listen("lab.run", (d) => handlersRef.current.onLabRun?.(d as never));
 

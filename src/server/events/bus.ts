@@ -13,6 +13,7 @@ export type SseEvent =
       data: { conversationId: string; messageId: string; status: string };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
+  | { type: "conversation.deleted"; data: { conversationId: string } }
   | {
       type: "lab.run";
       data: {

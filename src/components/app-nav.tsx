@@ -54,6 +54,8 @@ export function AppNav({
   useEvents({
     onMessageNew: () => void refetchUnread(),
     onConversationUpdated: () => void refetchUnread(),
+    // Borrar una conversación con no leídos debe descontarlos del badge.
+    onConversationDeleted: () => void refetchUnread(),
   });
 
   return (

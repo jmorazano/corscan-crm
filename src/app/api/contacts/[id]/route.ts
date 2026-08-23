@@ -4,10 +4,12 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
+  deleteContact,
   getContactById,
   getContactStage,
   serializeContact,
 } from "@/server/contacts";
+import { publish } from "@/server/events/bus";
 
 export const dynamic = "force-dynamic";
 
@@ -64,4 +66,22 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Contacto no encontrado");
   return Response.json({ contact: serializeContact(updated[0]) });
+});
+
+/**
+ * Borra el contacto con sus conversaciones y mensajes (cascada). Es la vía
+ * con la que la instancia cumple un pedido de eliminación de datos; del lado
+ * de WhatsApp no cambia nada (los datos viven solo en este CRM).
+ */
+export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+  const { id } = await ctx.params;
+  const result = await deleteContact(session.organizationId, id);
+  if (!result) return apiError(404, "not_found", "Contacto no encontrado");
+  for (const conversationId of result.conversationIds) {
+    publish(session.organizationId, {
+      type: "conversation.deleted",
+      data: { conversationId },
+    });
+  }
+  return Response.json({ ok: true });
 });

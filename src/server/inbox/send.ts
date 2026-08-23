@@ -93,20 +93,37 @@ export async function sendText(input: {
     text: { body: input.text },
   });
 
-  const inserted = await db
-    .insert(schema.message)
-    .values({
-      id: newId("message"),
-      organizationId: input.organizationId,
-      conversationId: input.conversationId,
-      waMessageId,
-      direction: "out",
-      type: "text",
-      text: input.text,
-      status: "pending",
-      aiGenerated: input.aiGenerated ?? false,
-    })
-    .returning();
+  let inserted: (typeof schema.message.$inferSelect)[];
+  try {
+    inserted = await db
+      .insert(schema.message)
+      .values({
+        id: newId("message"),
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        waMessageId,
+        direction: "out",
+        type: "text",
+        text: input.text,
+        status: "pending",
+        aiGenerated: input.aiGenerated ?? false,
+      })
+      .returning();
+  } catch (err) {
+    // El mensaje YA salió por la Graph API; si la conversación fue borrada en
+    // paralelo, la FK revienta y no hay dónde registrarlo. Dejar constancia
+    // del wa_message_id en el log y devolver un error entendible en vez de
+    // un 500 opaco.
+    console.warn(
+      `[send] mensaje ${waMessageId} entregado pero sin registro local: ` +
+        `la conversación ${input.conversationId} ya no existe`,
+      err instanceof Error ? err.message : err
+    );
+    throw new SendError(
+      "meta_error",
+      "El mensaje se envió pero la conversación fue borrada mientras tanto; no quedó registrado en el CRM"
+    );
+  }
   const message = inserted[0]!;
 
   await db
