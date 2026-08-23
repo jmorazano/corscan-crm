@@ -13,7 +13,7 @@ anteriores (que quedan como referencia de detalle).
 | App **Masterbrand** | Otro proyecto tuyo. | Ídem: sondear primero, decidir después. |
 | WABA **Test WhatsApp Business Account** (`1596377001926229`) | La de prueba, con el `+1 555-659-8579`. Sin método de pago (correcto). | El emisor para el App Review — si el sondeo encuentra su panel. |
 | WABA **Corscan Ingenieria — WhatsApp Business App** | El número nuevo del negocio, vivo en el celular. | **Candidato a coexistence. NO TOCAR hasta la Fase D.** |
-| WABA **Corscan Ingeniería** (vacía, sin números) | Resto de algún experimento. | Ignorar. No molesta. |
+| ~~WABA "Corscan Ingeniería" vacía~~ | **No existe.** La tercera fila de Business Manager es la entrada de la app móvil (mismo número), no una WABA. WABAs reales hay dos: la de prueba y la `1777760663660067` del celular. | El 555 necesita una **WABA nueva** creada desde Business Manager. |
 | Tu número personal | Tu WhatsApp de toda la vida. | Solo como **receptor** en las pruebas y videos. Recibir mensajes no registra nada ni toca tu cuenta. |
 | El número nuevo del negocio | En la app WhatsApp Business del otro teléfono. | Se conecta por **coexistence al final del plan**, nunca antes, nunca por la vía normal. |
 
