@@ -14,8 +14,9 @@ API).
 | App de Meta con caso de uso WhatsApp + portfolio conectado | ✅ App ID `2262662764507422` |
 | Verificación de negocio | ✅ **Verified** — 29 de julio de 2026 |
 | Ajustes básicos (ícono, privacidad, términos, borrado, categoría) | ✅ verificado vía API |
-| WABA + número de prueba | ✅ existen (`1596377001926229` / `+1 555-659-8579`) — falta suscribir la app, ver [meta-conectar-numero-prueba.md](meta-conectar-numero-prueba.md) |
-| Al menos 1 llamada exitosa por permiso | ❌ **0 llamadas en 30 días** |
+| WABA + número de prueba | ⚠️ existen y la app quedó suscrita por API, pero el panel de API Setup está roto **server-side** (confirmado en incógnito): la allowlist de destinatarios es inaccesible → el número de prueba NO puede enviar. Plan B: número real por API, ver [meta-conectar-numero-prueba.md](meta-conectar-numero-prueba.md) |
+| Llamada real con `whatsapp_business_management` | ✅ `GET {waba}/phone_numbers` + `POST {waba}/subscribed_apps` + validación del CRM |
+| Llamada real con `whatsapp_business_messaging` | ❌ pendiente — requiere el número real del plan B |
 | App Review → Advanced Access de los 2 permisos | 🔜 **el trabajo de ahora** |
 | Tech Provider | 🔒 se desbloquea al aprobarse el App Review |
 | Coexistence | 🔒 requiere Tech Provider + cambios de código (ver abajo) |
