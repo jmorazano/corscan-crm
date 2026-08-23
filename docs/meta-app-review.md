@@ -207,8 +207,8 @@ Esto conviene decidirlo con la cabeza fría antes de conectar el número real:
 
 | Función | Con coexistence |
 |---|---|
-| Grupos | No soportados, no se sincronizan |
-| Llamadas de voz y video | No soportadas |
+| Grupos | Siguen funcionando **en el celular**; no se sincronizan ni se ven en el CRM |
+| Llamadas de voz y video | No soportadas — las llamadas **por WhatsApp** dejan de funcionar en el número (las llamadas telefónicas comunes no se ven afectadas) |
 | Catálogo, pedidos y herramientas de negocio | No soportadas |
 | Listas de difusión | Deshabilitadas |
 | Mensajes temporales / ver una vez / ubicación en vivo | Deshabilitados en chats 1:1 |
