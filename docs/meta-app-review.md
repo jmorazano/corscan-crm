@@ -25,12 +25,11 @@ API).
 
 ## Regla de oro durante todo este proceso
 
-**No conectar el número real por Embedded Signup todavía.** El flujo actual lo
-registra por la vía normal y eso deja el celular fuera de servicio, que es
-justo lo que no podemos permitirnos. Para el App Review se usa el **número de
-prueba** que Meta regala con cada app de WhatsApp: manda mensajes gratis hasta
-a 5 destinatarios y no toca el número productivo. El número real recién se
-conecta cuando coexistence esté disponible y probada.
+**No conectar el número real por Embedded Signup todavía.** El flujo normal lo
+registra en Cloud API y eso deja el celular fuera de servicio, que es justo lo
+que no podemos permitirnos. Para el App Review se usa el **número 555 de
+negocio** (+1 555-320-3036), que es gratis y no toca el número productivo. El
+número real recién se conecta cuando coexistence esté disponible y probada.
 
 ## Lo que Meta pide en el App Review
 
@@ -55,10 +54,10 @@ Requisitos de grabación (los rechazan por esto más que por el contenido):
   resolución del monitor antes de grabar.
 - Sin cortes que salteen pasos: el revisor tiene que ver el flujo completo.
 
-> **Instructivo paso a paso**: [meta-numero-de-prueba.md](meta-numero-de-prueba.md)
-> cubre cómo activar el número de prueba, conectarlo al CRM, dejar una plantilla
-> aprobada y preparar la escena del envío. Ojo: el número de prueba **no** puede
-> pasar por Embedded Signup, y eso condiciona el guion — está explicado ahí.
+> Histórico: [meta-numero-de-prueba.md](meta-numero-de-prueba.md) y
+> [meta-conectar-numero-prueba.md](meta-conectar-numero-prueba.md) documentan la
+> saga del número de prueba, que quedó **abandonado** (su panel está roto del
+> lado de Meta). El emisor definitivo es el 555 de negocio, ya conectado.
 
 ## Guion del Video 1 — enviar un mensaje
 
