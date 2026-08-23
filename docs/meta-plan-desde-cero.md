@@ -66,22 +66,52 @@ ST-dev - Test1, Masterbrand) → WhatsApp → **API Setup** → desplegable **Fr
    la app vieja. La llamada queda atribuida a Corscan CRM, que es lo que Meta
    mira.
 
-## Fase B — Si ningún panel muestra el número (los caminos sin chip)
+## Fase B — El camino principal: número 555 de negocio (sin chip, sin panel)
 
-En orden de preferencia:
+**Resultado de la investigación (verificado contra doc oficial):** Meta permite
+reclamar hasta **dos números 555 de negocio** gratis por business — números
+reales de la plataforma, NO el test number. Diferencias clave con el de prueba:
 
-1. **¿Tenés un teléfono fijo?** (casa u oficina, que no esté en WhatsApp).
-   Los fijos se registran con verificación por **llamada de voz** y el alta
-   completa va por API, sin panel: `POST /{waba_id}/phone_numbers` en la WABA
-   vacía → `request_code` (VOICE) → `verify_code` → `register`. Con número
-   real no hay allowlist. Gratis: las respuestas dentro de la ventana de 24 h
-   no requieren método de pago.
-2. **Bug report a Meta** (texto listo en el chat / dashboard → WhatsApp →
-   Resources → Bug tool) y esperar el arreglo del panel. Sin fecha, pero
-   legítimo: tenemos evidencia de que la API funciona y el panel no.
-3. Si aparece cualquier otra línea a la que tengas acceso legítimo (una SIM
-   vieja en un cajón, el fijo de un familiar directo con su permiso), sirve
-   igual que el fijo: solo tiene que recibir una llamada o SMS una vez.
+- **Sin allowlist de 5 destinatarios** (el 131030 no existe acá).
+- Se verifican solos (no hay SMS que recibir → no hace falta SIM).
+- Las conversaciones de servicio en ventana de 24 h no requieren método de pago.
+- Único trámite: aprobar el **display name** antes de enviar (con el negocio
+  verificado suele ser rápido).
+
+Y lo mejor: se reclama desde **WhatsApp Manager** (Business Manager), que en
+esta cuenta funciona perfecto — no toca el panel roto del App Dashboard.
+
+**Pasos:**
+
+1. WhatsApp Manager (`business.facebook.com/wa/manage`) → portfolio Corscan
+   Ingeniería → la WABA **vacía** "Corscan Ingeniería" → Phone numbers → Add.
+2. En el alta, elegir la opción del **número provisto por Meta (555)**.
+3. Display name: "Corscan" (debe corresponder al negocio). Enviar a aprobación.
+4. Registrar el número en Cloud API por API (`POST /{phone_id}/register`).
+5. `POST /{waba_id}/subscribed_apps` con el token de Corscan CRM (ya sabemos
+   que funciona) y asignar la WABA al usuario del sistema.
+6. Conectar el CRM a ese número (conexión manual, como ya se hizo).
+7. Desde el celular personal, escribirle al 555 → aparece en la Bandeja →
+   responder desde el CRM → `whatsapp_business_messaging` ✅.
+
+Si WhatsApp Manager no ofreciera la opción 555 en la cuenta (rollout regional
+sin confirmar), los fallbacks quedan: bug report + caso en Business Support
+Home contra el asset WABA huérfana (nunca contra el portfolio).
+
+## Lo que la investigación descartó (no gastar más tiempo acá)
+
+- **La teoría "la huérfana bloquea el botón": no confirmada.** El botón muerto
+  de "Get new test number" es un bug/freno recurrente de Meta que ocurre
+  también en cuentas sin WABA huérfana (rate-limit interno o "test numbers are
+  currently unavailable"). Un caso casi idéntico creó una app nueva en el mismo
+  portfolio y el botón siguió muerto. Crear más apps no lo arregla.
+- **Borrar la test WABA aislada: no existe** (sin DELETE en la API, sin opción
+  en Business Manager). La huérfana es inerte: sin panel no envía, no factura,
+  no molesta. **Dejarla quieta.**
+- **Borrar el test number** (basura en WhatsApp Manager): evidencia
+  contradictoria y sin casos de que revivir el botón. Opcional, valor bajo.
+- El botón **"Delete your business"** sigue prohibido para siempre en apps
+  atadas al portfolio real: borra el portfolio con la verificación adentro.
 
 ## Fase C — Videos y envío del App Review
 
