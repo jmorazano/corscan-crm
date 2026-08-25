@@ -5,7 +5,7 @@ WhatsApp y, con eso, el estatus de **Tech Provider** que habilita
 **coexistence** (que el celular siga funcionando mientras el CRM usa la Cloud
 API).
 
-Última actualización: 5 de agosto de 2026.
+Última actualización: 24 de agosto de 2026.
 
 ## Dónde estamos
 
@@ -17,11 +17,27 @@ API).
 | Número emisor | ✅ **+1 555-320-3036** (número 555 de negocio, gratis, sin allowlist) en la WABA nueva **Corscan CRM** `1615824000141383` — conectado al CRM y funcionando. El test number viejo y su WABA huérfana quedan abandonados. |
 | Llamada real con `whatsapp_business_management` | ✅ `GET {waba}/phone_numbers` + `POST {waba}/subscribed_apps` + validación del CRM |
 | Llamada real con `whatsapp_business_messaging` | ✅ respuesta enviada desde la Bandeja del CRM al celular, entregada |
-| App Review → Advanced Access de los 2 permisos | 🔜 **solo faltan los videos y el envío** |
+| App Review → Advanced Access de los 2 permisos | 📨 **ENVIADO el 24 de agosto de 2026** — esperando respuesta de Meta (típico: hasta ~5 días hábiles; puede tardar más) |
 | App en modo Live | ✅ |
 | Circuito completo entrante + saliente en el CRM | ✅ probado en vivo |
 | Tech Provider | 🔒 se desbloquea al aprobarse el App Review |
 | Coexistence | 🔒 requiere Tech Provider + cambios de código (ver abajo) |
+
+## Mientras Meta revisa (enviado el 24-ago-2026)
+
+- **No tocar la configuración de la app** (permisos, URLs, modo Live, webhook)
+  hasta que llegue el veredicto: cambios a mitad de revisión confunden al
+  revisor.
+- **Mantener el circuito vivo**: el CRM en Railway funcionando, el 555
+  conectado y la cuenta del revisor (Ajustes → Equipo) activa. El revisor
+  puede entrar en cualquier momento.
+- **Revisar a diario** el correo de la cuenta de developers y
+  Revisión de la app → Solicitudes: si el revisor pregunta algo, el reloj
+  corre — contestar rápido.
+- **Si rechazan**: el feedback queda en la solicitud. Se corrige lo señalado y
+  se reenvía — no hay penalidad por reintentar. Ojo con la ventana de 30 días
+  de las llamadas de API (hechas el 23/24-ago): si el reenvío se estira, hacer
+  una llamada fresca de cada permiso antes de reenviar.
 
 ## Regla de oro durante todo este proceso
 
