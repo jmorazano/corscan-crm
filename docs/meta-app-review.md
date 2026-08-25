@@ -103,6 +103,23 @@ cámara o espejalo en pantalla.
 Esto ejercita `POST {waba}/message_templates` y el sync de estados — o sea, es
 exactamente la evidencia de uso de `whatsapp_business_management`.
 
+## Dónde se llena el formulario
+
+Todo pasa en el panel de developers, dentro de la app
+(`https://developers.facebook.com/apps/2262662764507422/`):
+
+1. Barra lateral → **Revisión de la app → Permisos y funciones**
+   (atajo: `/app-review/permissions/`).
+2. Buscar `whatsapp_business_messaging` → **"Solicitar acceso avanzado"**.
+   Repetir con `whatsapp_business_management`. Esto NO envía nada todavía:
+   solo arma una solicitud en borrador.
+3. Barra lateral → **Revisión de la app → Solicitudes**: abrir el borrador.
+   Ahí está el formulario real, con una sección por permiso: el campo "cómo
+   usás este permiso" (pegar los textos de abajo) y la carga del screencast
+   de ese permiso (Video 1 → messaging, Video 2 → management).
+4. El botón **Enviar para revisión** al pie se habilita recién cuando las dos
+   secciones están completas.
+
 ## Textos para el formulario
 
 **`whatsapp_business_messaging`**
