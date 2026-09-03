@@ -17,11 +17,11 @@ API).
 | Número emisor | ✅ **+1 555-320-3036** (número 555 de negocio, gratis, sin allowlist) en la WABA nueva **Corscan CRM** `1615824000141383` — conectado al CRM y funcionando. El test number viejo y su WABA huérfana quedan abandonados. |
 | Llamada real con `whatsapp_business_management` | ✅ `GET {waba}/phone_numbers` + `POST {waba}/subscribed_apps` + validación del CRM |
 | Llamada real con `whatsapp_business_messaging` | ✅ respuesta enviada desde la Bandeja del CRM al celular, entregada |
-| App Review → Advanced Access de los 2 permisos | 📨 **ENVIADO el 24 de agosto de 2026** — esperando respuesta de Meta (típico: hasta ~5 días hábiles; puede tardar más) |
+| App Review → Advanced Access de los 2 permisos | ✅ **APROBADO el 3 de septiembre de 2026** |
 | App en modo Live | ✅ |
 | Circuito completo entrante + saliente en el CRM | ✅ probado en vivo |
-| Tech Provider | 🔒 se desbloquea al aprobarse el App Review |
-| Coexistence | 🔒 requiere Tech Provider + cambios de código (ver abajo) |
+| Tech Provider | ✅ (verificación de negocio + Advanced Access = Tech Provider; no hay registro extra) |
+| Coexistence | 🔜 desbloqueada — falta: migrar Embedded Signup a v4, prender `COEXISTENCE_UI_ENABLED`, conectar el número real |
 
 ## Mientras Meta revisa (enviado el 24-ago-2026)
 
