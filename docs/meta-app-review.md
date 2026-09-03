@@ -21,7 +21,7 @@ API).
 | App en modo Live | ✅ |
 | Circuito completo entrante + saliente en el CRM | ✅ probado en vivo |
 | Tech Provider | ✅ (verificación de negocio + Advanced Access = Tech Provider; no hay registro extra) |
-| Coexistence | 🔜 desbloqueada — falta: migrar Embedded Signup a v4, prender `COEXISTENCE_UI_ENABLED`, conectar el número real |
+| Coexistence | 🔜 desbloqueada — código migrado a ES v4; faltan los pasos de panel + Railway de [meta-es-v4.md](meta-es-v4.md) y conectar el número real |
 
 ## Mientras Meta revisa (enviado el 24-ago-2026)
 

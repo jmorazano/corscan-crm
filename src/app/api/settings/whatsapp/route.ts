@@ -25,6 +25,9 @@ function embeddedSignupConfig() {
   return {
     appId: env.META_APP_ID!,
     configId: env.META_ES_CONFIG_ID!,
+    // v4: coexistence puede usar su propia Configuration; si no existe,
+    // cae a la config estándar (lo documentado es que una sola alcanza).
+    coexConfigId: env.META_ES_COEX_CONFIG_ID ?? env.META_ES_CONFIG_ID!,
     graphVersion: env.META_GRAPH_API_VERSION,
     mock: isMockEnabled(),
     coexistence: isCoexistenceUiEnabled(),

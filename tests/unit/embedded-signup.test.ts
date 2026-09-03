@@ -19,6 +19,8 @@ function setEnv() {
   process.env.META_APP_ID = "2262662764507422";
   process.env.META_APP_SECRET = "app-secret-test";
   process.env.META_ES_CONFIG_ID = "1051070220642813";
+  // Opcional (plan B de v4): cada test la setea si la necesita.
+  delete process.env.META_ES_COEX_CONFIG_ID;
   process.env.META_GRAPH_BASE_URL = "https://graph.test";
   process.env.META_GRAPH_API_VERSION = "v25.0";
 }
@@ -30,6 +32,7 @@ beforeEach(() => {
   vi.doUnmock("@/lib/meta/client");
   vi.doUnmock("@/server/whatsapp/connect");
   vi.doUnmock("@/server/whatsapp/credentials");
+  vi.doUnmock("@/lib/api");
   setEnv();
 });
 
@@ -427,6 +430,68 @@ describe("listWabaPhoneNumbers", () => {
     await expect(listWabaPhoneNumbers("waba_1", "t")).resolves.toMatchObject({
       ok: false,
       code: "invalid_token",
+    });
+  });
+});
+
+/**
+ * v4: el camino coexistence puede usar una Configuration propia
+ * (META_ES_COEX_CONFIG_ID) con fallback a la estándar — lo documentado por
+ * Meta es que una sola alcanza; la var separada es el plan B sin redeploy.
+ * Se ejercita vía el GET del route porque embeddedSignupConfig no se exporta
+ * (Next solo admite exports de handlers en un route.ts).
+ */
+describe("embeddedSignupConfig (GET /api/settings/whatsapp)", () => {
+  async function fetchEmbeddedSignup() {
+    vi.doMock("@/lib/api", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/api")>(
+        "@/lib/api"
+      );
+      return {
+        ...actual,
+        withAuth:
+          (
+            handler: (
+              session: { organizationId: string },
+              ...rest: unknown[]
+            ) => Promise<Response>
+          ) =>
+          (...rest: unknown[]) =>
+            handler({ organizationId: "org_1" }, ...rest),
+      };
+    });
+    vi.doMock("@/server/whatsapp/credentials", () => ({
+      getCredentialsByOrg: vi.fn(async () => null),
+      saveCredentials: vi.fn(),
+      tokenLast4: vi.fn(() => "1234"),
+    }));
+    vi.doMock("@/server/whatsapp/connect", () => ({
+      subscribeAppToWaba: vi.fn(),
+      testConnection: vi.fn(),
+    }));
+
+    const { GET } = await import("@/app/api/settings/whatsapp/route");
+    const res = await GET();
+    const body = (await res.json()) as {
+      embeddedSignup: { configId: string; coexConfigId: string } | null;
+    };
+    return body.embeddedSignup;
+  }
+
+  it("sin META_ES_COEX_CONFIG_ID → coexConfigId cae a la config estándar", async () => {
+    const es = await fetchEmbeddedSignup();
+    expect(es).toMatchObject({
+      configId: "1051070220642813",
+      coexConfigId: "1051070220642813",
+    });
+  });
+
+  it("con META_ES_COEX_CONFIG_ID → coexConfigId la refleja", async () => {
+    process.env.META_ES_COEX_CONFIG_ID = "cfg_coex_test";
+    const es = await fetchEmbeddedSignup();
+    expect(es).toMatchObject({
+      configId: "1051070220642813",
+      coexConfigId: "cfg_coex_test",
     });
   });
 });

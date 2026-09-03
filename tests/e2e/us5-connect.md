@@ -20,10 +20,31 @@
    informativo (no error) si META_APP_SECRET no está configurado; nota de
    seguridad del token en la URL.
 
+## Embedded Signup en modo mock (v4)
+
+> Requiere `WA_MOCK_ENABLED=true` + las tres vars de Embedded Signup con
+> valores de prueba (META_APP_ID / META_ES_CONFIG_ID / META_APP_SECRET). En
+> mock el wizard no carga el SDK de Meta: los botones llaman a `simulate()`.
+
+7. Camino estándar: botón "Conectar con Meta".
+   ✅ `simulate(false)` manda code + waba_mock_1 + pn_mock_1; el server canjea
+   el code contra el mock (`oauth/access_token`), valida el número y termina
+   en estado "Conectado" con pn_mock_1.
+8. Camino coexistence: botón "Conectar sin perder el celular" (visible
+   siempre en mock, sin necesidad de COEXISTENCE_UI_ENABLED).
+   ✅ `simulate(true)` manda code + waba_mock_1 SIN phoneNumberId; el server
+   descubre el número vía `GET {waba}/phone_numbers` del mock (pn_mock_1) y
+   termina en "Conectado". GUARDRAIL: la conexión debe completarse sin
+   ninguna llamada a `{phone_number_id}/register` (registrar el número
+   desconectaría la app móvil del cliente). Ojo: el wa-mock no registra las
+   rutas desconocidas que recibe, así que este run NO lo demuestra por sí
+   solo — verificarlo por inspección: `grep -rn "/register" src/` debe dar
+   cero resultados en el código de WhatsApp.
+
 ## Caminos infelices
 
-5. Token con sufijo `-invalid` → "Probar conexión".
+9. Token con sufijo `-invalid` → "Probar conexión".
    ✅ Error claro de token inválido; NO se guarda (la conexión previa queda
    intacta).
-6. Webhook GET handshake con verify token correcto → challenge; segmento
-   incorrecto → 404 (cubierto también en guion US1).
+10. Webhook GET handshake con verify token correcto → challenge; segmento
+    incorrecto → 404 (cubierto también en guion US1).

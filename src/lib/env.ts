@@ -22,6 +22,7 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_APP_ID: z.string().optional(),
   META_ES_CONFIG_ID: z.string().optional(),
+  META_ES_COEX_CONFIG_ID: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
   OPENROUTER_API_TOKEN: z.string().optional(),

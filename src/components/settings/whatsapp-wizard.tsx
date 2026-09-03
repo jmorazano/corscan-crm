@@ -33,6 +33,8 @@ type WebhookInfo = {
 type EsConfig = {
   appId: string;
   configId: string;
+  /** Config para coexistence; el server ya resolvió el fallback a configId. */
+  coexConfigId: string;
   graphVersion: string;
   mock: boolean;
   /** Coexistence visible: requiere Tech Provider aprobado (flag de instancia). */
@@ -168,8 +170,11 @@ function EmbeddedSignupCard({
         };
         if (data.type !== "WA_EMBEDDED_SIGNUP") return;
         // Solo los eventos de cierre traen los assets definitivos: "FINISH"
-        // en el flujo estándar y "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" en
-        // coexistence. Los intermedios y CANCEL no deben pisar nada.
+        // en el flujo estándar, "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" en
+        // coexistence, y en v4 también FINISH_ONLY_WABA (completó sin número)
+        // y FINISH_GRANT_ONLY_API_ACCESS. Los intermedios y CANCEL no deben
+        // pisar nada. FINISH_ONLY_WABA trae solo waba_id: el server intenta
+        // descubrir el número y degrada limpio a invalid_assets si no hay.
         if (!data.event?.startsWith("FINISH")) return;
         if (data.data?.waba_id) {
           assets.current = {
@@ -242,10 +247,14 @@ function EmbeddedSignupCard({
   }
 
   /**
-   * `coexistence` cambia el flujo del popup: el negocio conecta el número que
-   * YA usa en la app de WhatsApp Business y el celular sigue funcionando.
-   * `sessionInfoVersion: "3"` es el session logging que Meta exige para este
-   * modo; el valor `coexistence` de featureType quedó obsoleto.
+   * En v4 la versión de Embedded Signup la determina la Configuration creada
+   * en el panel de Meta (no este código). `coexistence` se sigue eligiendo en
+   * runtime: featureType "whatsapp_business_app_onboarding" cambia el popup
+   * para conectar el número que el negocio YA usa en la app de WhatsApp
+   * Business, sin sacarlo del celular. `sessionInfoVersion: "3"` se conserva
+   * SOLO en ese camino porque es lo que muestra el snippet vigente de la guía
+   * de coexistence; en el estándar el sample v4 la omite (solo era
+   * obligatoria en v2).
    */
   function launch(coexistence: boolean) {
     setError(null);
@@ -262,7 +271,7 @@ function EmbeddedSignupCard({
         void finish(code);
       },
       {
-        config_id: config.configId,
+        config_id: coexistence ? config.coexConfigId : config.configId,
         response_type: "code",
         override_default_response_type: true,
         extras: coexistence
@@ -271,7 +280,7 @@ function EmbeddedSignupCard({
               featureType: "whatsapp_business_app_onboarding",
               sessionInfoVersion: "3",
             }
-          : { setup: {}, sessionInfoVersion: "3" },
+          : { setup: {} },
       }
     );
   }

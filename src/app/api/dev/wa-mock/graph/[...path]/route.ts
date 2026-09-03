@@ -85,6 +85,22 @@ export async function GET(req: Request, ctx: Params) {
     });
   }
 
+  // GET {wabaId}/phone_numbers → descubrimiento del número en coexistence
+  // (el simulate() del wizard manda phoneNumberId null y el server descubre).
+  // Exactamente 1 número: el camino feliz; los casos 0/>1 se cubren en unit
+  // tests con fetch mockeado.
+  if (path.length === 2 && path[1] === "phone_numbers") {
+    return Response.json({
+      data: [
+        {
+          id: "pn_mock_1",
+          display_phone_number: "+52 55 0000 0000",
+          verified_name: "Número de prueba Vocero",
+        },
+      ],
+    });
+  }
+
   // GET {phoneNumberId}?fields=... → validación del wizard
   if (path.length === 1) {
     return Response.json({

@@ -1,0 +1,80 @@
+# Migración a Embedded Signup v4 — pasos del panel
+
+El código ya está migrado (ver commit de esta fecha). Lo que falta es de
+**panel de Meta + Railway**, y lo hace el dueño a mano. Verificado contra las
+docs vivas de Meta el 3 de septiembre de 2026.
+
+**Por qué importa**: las Configurations v2/v3 dejan de funcionar el
+**15-oct-2026**. Coexistence está en la lista de features que NO se
+auto-migran: pasada la fecha, el popup de "Conectar sin perder el celular"
+caería al flujo estándar — que registra el número y **desconecta la app móvil
+del cliente**. Es el único escenario donde nuestro guardrail de servidor no
+alcanza (el registro lo haría el propio popup). Meta: hacerlo antes del
+**1-oct** con margen.
+
+**Dato clave de la investigación**: en v4 NO hay Configurations separadas por
+flujo — coexistence se sigue eligiendo en runtime con
+`featureType: "whatsapp_business_app_onboarding"`. La migración es crear UNA
+Configuration v4 y rotar `META_ES_CONFIG_ID`. (Si la prueba empírica
+demostrara lo contrario, existe el plan B sin redeploy: la env var opcional
+`META_ES_COEX_CONFIG_ID`.)
+
+## Paso 1 — Crear la Configuration v4
+
+1. `developers.facebook.com/apps` → app **2262662764507422**.
+2. Menú izquierdo → **Inicio de sesión de Facebook para empresas** → **Configuraciones**.
+3. **Crear configuración**. Elegí la variación "WhatsApp Embedded Signup".
+   **NO** elijas la plantilla *"…With 60 Expiration Token"*: emite tokens que
+   expiran a los 60 días y los clientes verían "reconectar" cada dos meses.
+4. Permisos: `whatsapp_business_management` + `whatsapp_business_messaging`.
+5. Productos del flujo: **Cloud API**. Si aparece "WhatsApp Business app user
+   onboarding" como producto, marcalo también (cubre la ambigüedad de la doc;
+   marcarlo de más no rompe el flujo estándar). NO marques Marketing
+   Messages, Conversions API ni otros.
+6. Guardá y verificá que la fila diga **v4** (seleccionar productos ya te
+   pone en v4; no hay selector de versión).
+7. **Copiá el ID** de la config nueva → es el valor nuevo de `META_ES_CONFIG_ID`.
+
+## Paso 2 — Verificar dominios (2 min)
+
+Mismo producto → **Configuración**: `crm.corscan.com.ar` debe seguir en
+"Dominios permitidos para el SDK de JavaScript" y en "URI de
+redireccionamiento de OAuth válidos". Sin esto el popup no manda el evento y
+el wizard muestra "Meta no informó qué número se conectó".
+
+## Paso 3 — Webhook fields de coexistence
+
+WhatsApp → Configuración → Webhooks → **Administrar**: además de `messages`,
+suscribir **`history`**, **`smb_app_state_sync`** y **`smb_message_echoes`**.
+Son requisito de coexistence; sin ellos el onboarding no sincroniza.
+
+## Paso 4 — Probar ANTES de rotar producción
+
+Con `META_ES_CONFIG_ID=<id nuevo>` (staging o local con la app real):
+
+- Botón "Conectar sin perder el celular" → la pantalla de selección de WABA
+  debe estar **reemplazada** por la de conectar la app de WhatsApp Business
+  (QR / vincular teléfono). Si ves el flujo estándar de crear WABA, esa
+  config no honra el featureType → plan B: crear una segunda config y ponerla
+  en `META_ES_COEX_CONFIG_ID`.
+- Botón "Conectar con Meta" (estándar) → debe terminar en "Conectado".
+
+## Paso 5 — Rotar producción
+
+1. Railway: `META_ES_CONFIG_ID=<id nuevo>` (runtime) + restart. Ahí mismo:
+   `COEXISTENCE_UI_ENABLED=true` (Tech Provider aprobado el 3-sep-2026).
+2. Verificar con `railway deployment list` (no comparar hashes de chunks).
+3. **NO borrar** la config vieja `1051070220642813` hasta verificar v4 en
+   producción con una conexión real: es el rollback instantáneo (volver a
+   poner el ID viejo). Muere sola el 15-oct.
+
+## Después de esto
+
+El gran momento: en Ajustes → WhatsApp, conectar **+54 9 351 688-2234** con
+"Ya uso este número en el celular" (con la app de WhatsApp Business
+actualizada a ≥2.24.17). Tras el FINISH hay una ventana de **24 h** para la
+sincronización de contactos/historial. Recordatorios del costo: dispositivos
+vinculados se desvinculan; llamadas POR WhatsApp dejan de andar en el número
+(las comunes no); los grupos siguen en el celular (solo no se ven en el CRM).
+
+Contexto general del proceso en [meta-app-review.md](meta-app-review.md).

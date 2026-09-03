@@ -25,6 +25,11 @@ Intercepción: `META_GRAPH_BASE_URL` apunta a `http://localhost:3000/api/dev/wa-
     mágico `-invalid` → `401 { error: { code: 190, ... } }` (test camino infeliz del
     wizard); si no → `200 { display_phone_number, verified_name, id }`.
   - `POST .../{wabaId}/message_templates` → `200 { id: "tplmock..." , status: "PENDING" }`.
+  - `GET .../{wabaId}/phone_numbers` → `200 { data: [ un único número pn_mock_1 ] }`
+    (descubrimiento del número en el camino coexistence de Embedded Signup,
+    donde Meta no informa `phone_number_id`).
+  - `GET .../oauth/access_token` → canje del `code` de Embedded Signup por un
+    token de prueba.
 - `GET /api/dev/wa-mock/outbox` — lista de envíos capturados (aserciones E2E).
 - `DELETE /api/dev/wa-mock/outbox` — limpia el estado del harness.
 
