@@ -1,5 +1,13 @@
 # Migración a Embedded Signup v4 — pasos del panel
 
+> **Estado (4-sep-2026)**: Pasos 1–3 y 5 HECHOS. Configuration v4 creada:
+> **`2178471596350641`** (solo Cloud API, asset permission MANAGE por defecto,
+> token sin expiración). Webhook fields `history` + `smb_app_state_sync` +
+> `smb_message_echoes` suscriptos. Railway rotado:
+> `META_ES_CONFIG_ID=2178471596350641` + `COEXISTENCE_UI_ENABLED=true`.
+> Falta: la prueba del popup (Paso 4, ahora en producción) y conectar el
+> número real. Rollback vigente: config vieja `1051070220642813`.
+
 El código ya está migrado (ver commit de esta fecha). Lo que falta es de
 **panel de Meta + Railway**, y lo hace el dueño a mano. Verificado contra las
 docs vivas de Meta el 3 de septiembre de 2026.
