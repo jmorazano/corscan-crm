@@ -76,6 +76,54 @@ Con `META_ES_CONFIG_ID=<id nuevo>` (staging o local con la app real):
    producción con una conexión real: es el rollback instantáneo (volver a
    poner el ID viejo). Muere sola el 15-oct.
 
+## Bloqueo encontrado en el Paso 4 y su salida (investigado el 4-sep-2026)
+
+Al abrir el popup coexistence, el portfolio "Corscan Ingeniería" aparece
+deshabilitado: *"This Meta Business Account owns the app"*. Es una
+restricción real de plataforma (reproducida por otros Tech Providers en el
+foro oficial, sin excepción conocida ni vía Direct Support): **Embedded
+Signup no permite onboardear al portfolio dueño de la app** — está diseñado
+para clientes, y el patrón esperado por Meta es que el flujo genere
+portfolios adicionales.
+
+**Decisión: usar "Create a Business portfolio" en el popup** (a nombre real
+del negocio — razón social/CUIT de Corscan, dirección y web reales, jamás
+como agencia genérica). Costo real, bajo para un CRM inbound:
+
+- El portfolio nuevo arranca sin verificar → solo limita las conversaciones
+  INICIADAS por el negocio (~250/día); las respuestas dentro de la ventana
+  de 24 h son ilimitadas. Reversible: verificar el portfolio nuevo con los
+  mismos documentos del CUIT (sube a 2.000 y destraba tiers).
+- El display name NO se pierde: coexistence hereda nombre y perfil de la app
+  del celular.
+- Irreversible: la WABA quedará para siempre en el portfolio nuevo (no hay
+  migración de WABAs entre portfolios). Mitigable compartiéndola como
+  partner con el portfolio verificado para gestión centralizada.
+
+**Prerrequisitos antes de reintentar el popup**:
+
+1. App de WhatsApp Business del celular en versión ≥2.24.17, con foto de
+   perfil y nombre definitivos YA cargados (la foto no se puede cambiar
+   después del onboarding en coexistence).
+2. El número debe tener actividad orgánica real (el error #3441045 "more
+   activity needed" es el blocker más frecuente; ideal 30+ días de uso).
+3. **Sanear la WABA vieja `1777760663660067`**: en WhatsApp Manager de
+   Corscan Ingeniería, eliminar el número +54 9 351 688-2234 de esa WABA (o
+   la WABA entera si no tiene nada más). Es solo config de Business Manager
+   — NO tocar la app del celular. Esperar 24–72 h de propagación.
+4. Opcional en paralelo: ticket informativo en Direct Support
+   (business.facebook.com/direct-support) preguntando el flujo oficial de
+   self-onboarding — sin expectativa, no bloquea.
+
+**Durante el popup**: elegir "Create a Business portfolio" → debe aparecer
+la pantalla de conectar la cuenta de WhatsApp Business existente (QR). Si
+pide registrar un número desde cero: **ABORTAR** (ese flujo mata el
+celular). Completar pairing + sync dentro de las 24 h.
+
+**Después**: verificar que el celular siga funcionando y que el CRM reciba y
+responda; iniciar Business Verification del portfolio nuevo; considerar
+compartir la WABA como partner con Corscan Ingeniería.
+
 ## Después de esto
 
 El gran momento: en Ajustes → WhatsApp, conectar **+54 9 351 688-2234** con
