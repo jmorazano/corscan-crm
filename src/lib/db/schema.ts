@@ -20,6 +20,9 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
+  /** Contraseña temporal vigente (FR-017): toda alta por tercero y todo
+   * reset lo setean; el cambio de contraseña propio lo limpia. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

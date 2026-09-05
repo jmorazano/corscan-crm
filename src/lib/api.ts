@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { requireSession, UnauthorizedError, type SessionContext } from "@/lib/auth/session";
+import {
+  ForbiddenError,
+  requireSession,
+  requireSuperAdmin,
+  UnauthorizedError,
+  type SessionContext,
+  type SuperAdminContext,
+} from "@/lib/auth/session";
 
 /** Respuesta de error estándar de la API interna (contrato api.md). */
 export function apiError(
@@ -29,6 +36,37 @@ export function withAuth<Args extends unknown[]>(
     }
     try {
       return await handler(session, ...args);
+    } catch (err) {
+      console.error("[api] error no controlado:", err);
+      return apiError(500, "internal", "Error interno");
+    }
+  };
+}
+
+/**
+ * Envuelve un route handler de Administración (contrato admin-api.md):
+ * sesión válida SIN exigir membresía + email en SUPER_ADMIN_EMAILS.
+ * Sin sesión → 401; sesión sin rol de plataforma → 403 `forbidden`
+ * (no 404: la sección existe, el acceso no).
+ */
+export function withSuperAdmin<Args extends unknown[]>(
+  handler: (ctx: SuperAdminContext, ...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    let ctx: SuperAdminContext;
+    try {
+      ctx = await requireSuperAdmin();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        return apiError(401, "unauthorized", "No autenticado");
+      }
+      if (err instanceof ForbiddenError) {
+        return apiError(403, "forbidden", "Solo el super admin puede acceder");
+      }
+      throw err;
+    }
+    try {
+      return await handler(ctx, ...args);
     } catch (err) {
       console.error("[api] error no controlado:", err);
       return apiError(500, "internal", "Error interno");

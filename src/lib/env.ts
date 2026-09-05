@@ -30,6 +30,7 @@ const envSchema = z.object({
   OPENROUTER_MODEL: z.string().optional(),
   OPENROUTER_JUDGE_MODEL: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
+  SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
   DEMO_TOOLS_ENABLED: z.string().optional(),

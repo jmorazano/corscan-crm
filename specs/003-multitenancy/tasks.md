@@ -17,21 +17,21 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 1: Setup
 
-- [ ] T001 Levantar el entorno E2E local según specs/003-multitenancy/quickstart.md (Docker daemon + postgres compose + bloque dev en .env + `pnpm db:migrate` + smoke de `pnpm dev`) — deja evidencia de que la instancia local arranca vacía.
+- [x] T001 Levantar el entorno E2E local según specs/003-multitenancy/quickstart.md — HECHO 5-sep-2026: Docker daemon OK, `vocero-dev-postgres-1` Up (5432), bloque dev en .env con secretos generados, `pnpm db:migrate` verde sobre base fresca. Pendiente solo el smoke de `pnpm dev` (se hace en la primera conducción E2E, cuando la Fase 2 deje el working tree estable).
 
 ---
 
 ## Phase 2: Foundational (bloquea todas las historias)
 
-- [ ] T002 Agregar `SUPER_ADMIN_EMAILS` (opcional) al schema de src/lib/env.ts, con guía inline en .env.example y placeholder en .env local.
-- [ ] T003 [P] Helper de plataforma en src/server/auth/super-admin.ts: `isSuperAdminEmail(email)` (parse de SUPER_ADMIN_EMAILS, case-insensitive, trim) + unit test en tests/unit/super-admin.test.ts.
-- [ ] T004 [P] `withSuperAdmin` en src/lib/api.ts: resuelve sesión vía auth.api.getSession SIN exigir membresía, 403 `forbidden` si el email no es super admin (contrato admin-api.md) — unit test del gate.
-- [ ] T005 [P] Determinismo de membresía en src/server/auth/on-signup.ts:68 (path verificado — NO crear duplicados en session.ts): `resolveMembership` con ORDER BY created_at ASC, id ASC (research D6) + unit test con dos membresías.
-- [ ] T006 [P] FIX cross-tenant en src/server/seed/demo.ts:162-183 (path verificado): el borrado por inArray(contact.phone, demoPhones) filtra además por organization_id (FR-005) + unit test que verifica el WHERE scoped.
-- [ ] T007 Extraer `provisionOrganization({ name })` de src/server/auth/on-signup.ts a src/server/admin/organizations.ts (org + slug único slugify+sufijo D11 + reuso de org homónima VACÍA en reintento post-crash + 5 etapas + agentProfile); on-signup queda usándola para el caso instancia-vacía; unit tests de slug único, idempotencia y reuso de huérfana.
-- [ ] T008 Gate ALLOWLIST del plugin organization en src/lib/auth/index.ts (hook before que niega TODO /organization/* mutante fuera del bypass interno; paths enumerados en research D5, invitaciones incluidas) + unit test POR PATH denegado (FR-013).
-- [ ] T008b Regla anti-escalación FR-016 en src/server/auth/super-admin.ts + aplicarla en src/app/api/settings/team/route.ts POST (403 reserved_email si el email está en SUPER_ADMIN_EMAILS y el operador no es super admin) + unit tests (team y, cuando existan, endpoints admin).
-- [ ] T008c Contraseñas temporales reales (FR-017): columna `must_change_password` en user (schema + entra en la migración de T017), set en el POST de team existente, endpoint POST /api/settings/password (changePassword de better-auth, Zod min 8, limpia el flag), pantalla de cambio obligatorio con redirect desde el shell, y validación Zod min 8 en team POST + unit tests.
+- [x] T002 Agregar `SUPER_ADMIN_EMAILS` (opcional) al schema de src/lib/env.ts, con guía inline en .env.example y placeholder en .env local.
+- [x] T003 [P] Helper de plataforma en src/server/auth/super-admin.ts: `isSuperAdminEmail(email)` (parse de SUPER_ADMIN_EMAILS, case-insensitive, trim) + unit test en tests/unit/super-admin.test.ts.
+- [x] T004 [P] `withSuperAdmin` en src/lib/api.ts: resuelve sesión vía auth.api.getSession SIN exigir membresía, 403 `forbidden` si el email no es super admin (contrato admin-api.md) — unit test del gate.
+- [x] T005 [P] Determinismo de membresía en src/server/auth/on-signup.ts:68 (path verificado — NO crear duplicados en session.ts): `resolveMembership` con ORDER BY created_at ASC, id ASC (research D6) + unit test con dos membresías.
+- [x] T006 [P] FIX cross-tenant en src/server/seed/demo.ts:162-183 (path verificado): el borrado por inArray(contact.phone, demoPhones) filtra además por organization_id (FR-005) + unit test que verifica el WHERE scoped.
+- [x] T007 Extraer `provisionOrganization({ name })` de src/server/auth/on-signup.ts a src/server/admin/organizations.ts (org + slug único slugify+sufijo D11 + reuso de org homónima VACÍA en reintento post-crash + 5 etapas + agentProfile); on-signup queda usándola para el caso instancia-vacía; unit tests de slug único, idempotencia y reuso de huérfana.
+- [x] T008 Gate ALLOWLIST del plugin organization en src/lib/auth/index.ts (hook before que niega TODO /organization/* mutante fuera del bypass interno; paths enumerados en research D5, invitaciones incluidas) + unit test POR PATH denegado (FR-013).
+- [x] T008b Regla anti-escalación FR-016 en src/server/auth/super-admin.ts + aplicarla en src/app/api/settings/team/route.ts POST (403 reserved_email si el email está en SUPER_ADMIN_EMAILS y el operador no es super admin) + unit tests (team y, cuando existan, endpoints admin).
+- [x] T008c Contraseñas temporales reales (FR-017): columna `must_change_password` en user (schema + migración propia de esta fase vía pnpm db:generate), set en el POST de team existente, endpoint POST /api/settings/password (changePassword de better-auth, Zod min 8, limpia el flag), pantalla de cambio obligatorio con redirect desde el shell, y validación Zod min 8 en team POST + unit tests.
 
 **Checkpoint**: gate técnico verde; nada visible cambió para la empresa actual.
 

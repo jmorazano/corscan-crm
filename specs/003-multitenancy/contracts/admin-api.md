@@ -1,9 +1,10 @@
 # Contrato: API de Administración (solo super admin)
 
 Todos los endpoints bajo `withSuperAdmin` (sesión válida + email en
-`SUPER_ADMIN_EMAILS`; sin exigir membresía de organización). Cualquier otro
-caso → 403 `forbidden` (no 404: la sección existe, el acceso no). Sin
-`SUPER_ADMIN_EMAILS` configurada → 403 siempre (la instancia opera como hoy).
+`SUPER_ADMIN_EMAILS`; sin exigir membresía de organización). Sin sesión →
+401 `unauthorized`; sesión sin rol de plataforma → 403 `forbidden` (no 404:
+la sección existe, el acceso no). Sin `SUPER_ADMIN_EMAILS` configurada →
+403 para toda sesión (la instancia opera como hoy).
 
 Errores con el envelope existente `{ error: { code, message } }`; validación
 Zod → 422.

@@ -32,7 +32,8 @@ cascadea por FK como el resto del dominio).
 ## Entidades existentes afectadas (sin migración)
 
 - **user**: UNA columna nueva: `must_change_password boolean NOT NULL
-  DEFAULT false` (FR-017; misma migración que ai_credentials). Se setea en
+  DEFAULT false` (FR-017; migración propia de Fase 2 —
+  drizzle/0001_pretty_steel_serpent.sql — separada de la de ai_credentials). Se setea en
   toda alta por tercero y en todo reset; se limpia en el cambio de
   contraseña propio. El rol de plataforma NO se persiste: deriva de
   `SUPER_ADMIN_EMAILS` (env) — ver research D1, con la regla anti-escalación
@@ -60,7 +61,8 @@ estado "desactivada" en v1 (fuera de alcance).
 ## Migración (drizzle/)
 
 1 migración nueva: `CREATE TABLE ai_credentials` + índice único por
-organization_id. Re-ejecutable (patrón IF NOT EXISTS del generador +
-aplicación versionada al boot). Sin backfill: la instancia productiva
+organization_id. La re-ejecutabilidad la garantiza el journal del migrator
+de drizzle (aplicación versionada al boot vía scripts/migrate.mjs), no el
+SQL en sí. Sin backfill: la instancia productiva
 arranca con la tabla vacía y el agente apagado hasta que cada empresa pegue
 su token (SC-005, comunicado al dueño).

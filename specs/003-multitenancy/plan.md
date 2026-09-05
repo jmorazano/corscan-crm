@@ -36,7 +36,7 @@ comportamiento en local** (Docker Postgres + mocks + guiones multi-empresa).
 
 **Constraints**: constitución completa; sin servicios externos nuevos; sin emails (credenciales manuales); 1 número WhatsApp por empresa; migración idempotente sobre la instancia productiva
 
-**Scale/Scope**: 2-10 empresas por instancia (caso real: Corscan + Masterbrand); ~15 archivos tocados + 1 migración + 3 guiones E2E nuevos
+**Scale/Scope**: N empresas por instancia SIN límite impuesto por el diseño (dimensionado para el orden de decenas; primer caso real: Corscan + la empresa del socio, "Masterbrand" en los ejemplos); ~15 archivos tocados + migraciones + 3 guiones E2E nuevos
 
 ## Constitution Check
 

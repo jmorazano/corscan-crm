@@ -11,6 +11,7 @@ import {
   resolveActiveOrganizationId,
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed } from "@/server/auth/registration";
+import { isOrganizationPathDenied } from "@/lib/auth/organization-gate";
 
 /**
  * Contexto interno del proceso: permite que el alta de cuentas de equipo
@@ -86,6 +87,14 @@ function createAuth() {
                 "El registro está cerrado: esta instancia ya tiene su organización",
             });
           }
+        }
+        // Gate ALLOWLIST del plugin organization (FR-013): las organizaciones
+        // se gestionan solo server-side; todo /organization/* se niega fuera
+        // del bypass interno del proceso.
+        if (isOrganizationPathDenied(ctx.path) && !isInternalSignup()) {
+          throw new APIError("FORBIDDEN", {
+            message: "Operación no disponible en esta instancia",
+          });
         }
       }),
     },
