@@ -67,6 +67,14 @@ sesión que lo condujo.
 
 ## Última conducción
 
+**5-sep-2026 (2ª conducción) — VERDE pasos 9-11 (US5)**: usuario adicional
+"Compa Demo" creado con credenciales una-vez y badge Miembro; reset del
+socio → la contraseña vieja rechazada, la temporal nueva entró y cayó en
+/change-password (cambio obligatorio); infelices 409 duplicate_email /
+403 reserved_email / 404 not_found. (El 403 de reset entre dos super
+admins no es conducible con un solo super admin local: cubierto por unit
+tests.)
+
 **5-sep-2026 — VERDE los 8 pasos** (entorno quickstart 003, primera
 conducción E2E de comportamiento del repo):
 
