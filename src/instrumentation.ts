@@ -7,5 +7,9 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { cleanupOrphanRuns } = await import("./instrumentation-node");
     await cleanupOrphanRuns();
+    const { backfillContactPhones } = await import(
+      "./server/contacts-backfill"
+    );
+    await backfillContactPhones();
   }
 }

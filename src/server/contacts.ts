@@ -8,6 +8,10 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     name: c.name,
     phone: c.phone,
     notes: c.notes,
+    tags: c.tags,
+    consentSource: c.consentSource,
+    optedOutAt: c.optedOutAt?.toISOString() ?? null,
+    isTest: c.isTest,
     archivedAt: c.archivedAt?.toISOString() ?? null,
   };
 }
