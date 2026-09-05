@@ -1,0 +1,62 @@
+# US-MT-1 — El super admin crea una empresa con su admin inicial
+
+Guion E2E de comportamiento (feature 003, US1). Entorno: quickstart de
+`specs/003-multitenancy/quickstart.md` (Postgres docker + mocks + node
+22.22.1). `SUPER_ADMIN_EMAILS` debe contener el email del primer usuario
+registrado. Identidades de fixture: `superadmin@vocero.test` (super admin) y
+`socio@vocero.test` (admin de la empresa nueva).
+
+## Preparación
+
+1. Instancia vacía → `/register` abierto: registrar `superadmin@vocero.test`
+   (nace la empresa "principal").
+   ✅ Entra directo a la app; en la nav aparece **Administración** (Shield).
+
+## Camino feliz
+
+2. Ir a **Administración** (`/admin`).
+   ✅ Lista de empresas: solo la principal, con sus badges de estado y su
+   miembro owner.
+3. Crear empresa: nombre `Inmobiliaria Demo`, admin `Socio Demo` +
+   `socio@vocero.test`, contraseña generada por el botón.
+   ✅ Tras crear: credenciales (email + contraseña temporal) visibles UNA
+   sola vez con aviso de guardarlas; la empresa nueva aparece en la lista
+   con su owner y sin WhatsApp/IA.
+4. Cerrar sesión. Iniciar sesión con `socio@vocero.test` + la temporal.
+   ✅ Redirect inmediato a **/change-password** (cambio obligatorio): no se
+   puede navegar a la bandeja sin cambiarla.
+5. Cambiar la contraseña (nueva propia, ≥8).
+   ✅ Entra a SU CRM: bandeja vacía, pipeline sembrado (5 etapas), Ajustes
+   operativos. En la nav NO existe "Administración". No hay rastro de datos
+   de la empresa principal (contactos/conversaciones vacíos).
+
+## Caminos infelices
+
+6. Como super admin: crear otra empresa con el MISMO email `socio@vocero.test`.
+   ✅ Error claro de email duplicado (409); no se crea empresa ni usuario.
+7. Como owner de una empresa (p. ej. el socio en Ajustes → Equipo): intentar
+   crear un miembro con email `superadmin@vocero.test`.
+   ✅ 403 `reserved_email` con mensaje claro (FR-016).
+8. Como el socio (no super admin): navegar a `/admin` y llamar
+   `GET /api/admin/organizations`.
+   ✅ La página redirige fuera; la API responde 403 `forbidden`.
+
+## Evidencia esperada
+
+Cada ✅ verificado conduciendo el navegador; anotar fecha y resultado en la
+sesión que lo condujo.
+
+## Última conducción
+
+**5-sep-2026 — VERDE los 8 pasos** (entorno quickstart 003, primera
+conducción E2E de comportamiento del repo):
+
+- Alta de "Inmobiliaria Demo" con credenciales mostradas una vez; empresa en
+  la lista con slug `inmobiliaria-demo`, owner y badges de estado.
+- Login del socio con la temporal → redirect directo a /change-password; el
+  cambio dejó la sesión viva (fix del Set-Cookie validado en vivo) y cayó en
+  SU bandeja vacía con pipeline sembrado (5 etapas) y nav SIN Administración.
+- Infelices: duplicado → 409 `duplicate_email` sin efectos (la lista siguió
+  con 2 empresas); email reservado desde Equipo del socio → 403
+  `reserved_email`; /admin como socio → redirect a /inbox y API 403
+  `forbidden`.

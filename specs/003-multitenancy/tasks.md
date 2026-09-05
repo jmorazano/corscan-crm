@@ -17,7 +17,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 1: Setup
 
-- [x] T001 Levantar el entorno E2E local según specs/003-multitenancy/quickstart.md — HECHO 5-sep-2026: Docker daemon OK, `vocero-dev-postgres-1` Up (5432), bloque dev en .env con secretos generados, `pnpm db:migrate` verde sobre base fresca. Pendiente solo el smoke de `pnpm dev` (se hace en la primera conducción E2E, cuando la Fase 2 deje el working tree estable).
+- [x] T001 Levantar el entorno E2E local según specs/003-multitenancy/quickstart.md — HECHO 5-sep-2026: Docker daemon OK, `vocero-dev-postgres-1` Up (5432), bloque dev en .env con secretos generados, `pnpm db:migrate` verde sobre base fresca. Smoke de `pnpm dev` también verde (conducción del 5-sep-2026): T001 COMPLETO.
 
 ---
 
@@ -45,7 +45,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 - [x] T010 [US1] API: src/app/api/admin/organizations/route.ts (GET/POST bajo withSuperAdmin, Zod, envelope de errores) + unit tests (401 sin sesión, 403 para no-super-admin, 422 Zod, 409 duplicado, 403 reserved_email, creación feliz) en tests/unit/admin-organizations-route.test.ts.
 - [x] T011 [US1] UI: src/app/(app)/admin/page.tsx (protección server-side: redirect si no es super admin) + src/components/admin/admin-client.tsx — lista de empresas y formulario crear empresa+admin con contraseña generada en cliente (mismo generador de team-client) mostrada UNA vez; estados de carga y error.
 - [x] T012 [US1] Nav: ítem "Administración" en src/components/app-nav.tsx visible solo para super admin (prop isSuperAdmin calculada server-side en el layout (app) con isSuperAdminEmail — la nav ya recibe sus datos por props, sin endpoint nuevo).
-- [ ] T013 [US1] Guion tests/e2e/us-mt-1-crear-empresa.md (feliz CON cambio obligatorio de contraseña en el primer login del admin nuevo + email duplicado + email reservado 403 + acceso denegado a no-super-admin) y conducirlo en local con Playwright hasta verde.
+- [x] T013 [US1] Guion tests/e2e/us-mt-1-crear-empresa.md (feliz CON cambio obligatorio de contraseña en el primer login del admin nuevo + email duplicado + email reservado 403 + acceso denegado a no-super-admin) y conducirlo en local con Playwright hasta verde.
 
 **Checkpoint**: US1 entregable sola (MVP).
 
