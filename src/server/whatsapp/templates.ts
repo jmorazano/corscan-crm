@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -23,7 +23,8 @@ export class TemplateError extends Error {
     | "invalid"
     | "not_found"
     | "meta_error"
-    | "meta_unavailable";
+    | "meta_unavailable"
+    | "in_use";
 
   constructor(code: TemplateError["code"], message: string) {
     super(message);
@@ -39,34 +40,19 @@ const TEMPLATE_ERROR_STATUS: Record<TemplateError["code"], number> = {
   not_found: 404,
   meta_error: 422,
   meta_unavailable: 503,
+  in_use: 409,
 };
 
 export function templateErrorStatus(err: TemplateError): number {
   return TEMPLATE_ERROR_STATUS[err.code];
 }
 
-const VARIABLE_REGEX = /\{\{\s*(\d+)\s*\}\}/g;
-
-/** Cuenta variables {{n}} y valida el acotamiento v1: máximo UNA y debe ser {{1}}. */
-export function countVariables(body: string): number {
-  const matches = [...body.matchAll(VARIABLE_REGEX)];
-  return matches.length;
-}
-
-export function validateBodyVariables(body: string): string | null {
-  const matches = [...body.matchAll(VARIABLE_REGEX)];
-  if (matches.length > 1) {
-    return "v1 admite una sola variable {{1}} en el cuerpo";
-  }
-  if (matches.length === 1 && matches[0]![1] !== "1") {
-    return "La variable debe ser {{1}}";
-  }
-  return null;
-}
-
-export function renderBody(body: string, variable?: string): string {
-  return body.replace(VARIABLE_REGEX, variable ?? "");
-}
+export {
+  countVariables,
+  renderBody,
+  validateBodyVariables,
+} from "@/lib/template-body";
+import { countVariables, renderBody, validateBodyVariables } from "@/lib/template-body";
 
 type TemplateRow = typeof schema.template.$inferSelect;
 
@@ -173,6 +159,98 @@ export async function createTemplate(
     })
     .returning();
   return inserted[0]!;
+}
+
+/**
+ * Borra la plantilla en Meta y localmente. En Meta, `name` sin `hsm_id`
+ * borraría TODOS los idiomas de ese nombre: con el id remoto conocido se
+ * acota al idioma de esta fila. Una plantilla que Meta ya no tiene se da
+ * por borrada allá y se limpia acá igual (no queda huérfana en el CRM).
+ * Con campañas ACTIVAS (borrador, en curso o pausada) el borrado se
+ * rechaza con 409 antes de tocar Meta; las terminadas conservan el nombre
+ * de la plantilla como historial (FK `set null` + snapshot `template_name`).
+ */
+export async function deleteTemplate(
+  organizationId: string,
+  templateId: string
+): Promise<TemplateRow> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.template)
+    .where(
+      scoped(
+        schema.template.organizationId,
+        organizationId,
+        eq(schema.template.id, templateId)
+      )
+    )
+    .limit(1);
+  const template = rows[0];
+  if (!template) throw new TemplateError("not_found", "Plantilla no encontrada");
+
+  const campaigns = await db
+    .select({ n: count() })
+    .from(schema.campaign)
+    .where(
+      scoped(
+        schema.campaign.organizationId,
+        organizationId,
+        and(
+          eq(schema.campaign.templateId, templateId),
+          inArray(schema.campaign.status, ["draft", "running", "paused"])
+        )
+      )
+    );
+  const inUse = Number(campaigns[0]?.n ?? 0);
+  if (inUse > 0) {
+    throw new TemplateError(
+      "in_use",
+      `La plantilla la usan ${inUse} campaña(s) activa(s) (borrador, en curso o pausada); cancelalas o terminalas antes de borrarla`
+    );
+  }
+
+  const creds = await getCredentialsByOrg(organizationId);
+  if (creds) {
+    const params = new URLSearchParams({ name: template.name });
+    if (template.waTemplateId) params.set("hsm_id", template.waTemplateId);
+    try {
+      await graphRequest(`${creds.wabaId}/message_templates?${params}`, {
+        method: "DELETE",
+        token: creds.token,
+      });
+    } catch (err) {
+      if (!(err instanceof MetaApiError)) throw err;
+      if (err.isAuthError) {
+        await markReconnectRequired(organizationId);
+        throw new TemplateError("reconnect_required", "El token expiró: reconecta el número");
+      }
+      if (err.status === 0 || err.status >= 500) {
+        throw new TemplateError("meta_unavailable", "Meta no está disponible ahora");
+      }
+      if (!isTemplateMissingError(err)) {
+        throw new TemplateError("meta_error", err.message);
+      }
+      // 404 / "no existe": ya no está en Meta → se limpia localmente igual.
+    }
+  }
+
+  await db
+    .delete(schema.template)
+    .where(
+      scoped(
+        schema.template.organizationId,
+        organizationId,
+        eq(schema.template.id, templateId)
+      )
+    );
+  return template;
+}
+
+/** Meta responde 404, o 400 con "does not exist"/"not found", si ya no está. */
+function isTemplateMissingError(err: MetaApiError): boolean {
+  if (err.status === 404) return true;
+  return /does not exist|not exist|not found|no existe/i.test(err.message);
 }
 
 function mapMetaStatus(

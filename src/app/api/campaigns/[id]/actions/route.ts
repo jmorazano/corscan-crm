@@ -47,11 +47,13 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       if (campaign.status !== "draft") {
         return apiError(409, "invalid_transition", "Solo se lanza un borrador");
       }
-      const templates = await db
-        .select({ status: schema.template.status })
-        .from(schema.template)
-        .where(eq(schema.template.id, campaign.templateId))
-        .limit(1);
+      const templates = campaign.templateId
+        ? await db
+            .select({ status: schema.template.status })
+            .from(schema.template)
+            .where(eq(schema.template.id, campaign.templateId))
+            .limit(1)
+        : [];
       if (templates[0]?.status !== "approved") {
         return apiError(
           422,

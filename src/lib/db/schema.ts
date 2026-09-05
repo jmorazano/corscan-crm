@@ -445,9 +445,12 @@ export const campaign = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    templateId: text("template_id")
-      .notNull()
-      .references(() => template.id),
+    /** NULL cuando la plantilla se borró (solo posible con la campaña ya
+     * terminada); `templateName` conserva el nombre para el historial. */
+    templateId: text("template_id").references(() => template.id, {
+      onDelete: "set null",
+    }),
+    templateName: text("template_name"),
     /** Vacío = todos los elegibles; si no, contactos con AL MENOS una. */
     tagFilter: text("tag_filter").array().notNull().default(sql`'{}'::text[]`),
     variableMode: text("variable_mode", {

@@ -21,7 +21,7 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   const rows = await db
     .select({ campaign: schema.campaign, templateName: schema.template.name })
     .from(schema.campaign)
-    .innerJoin(
+    .leftJoin(
       schema.template,
       eq(schema.campaign.templateId, schema.template.id)
     )
@@ -115,7 +115,8 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
       name: campaign.name,
       status: campaign.status,
       pausedReason: campaign.pausedReason,
-      templateName: row.templateName,
+      templateName:
+        row.templateName ?? row.campaign.templateName ?? "(plantilla borrada)",
       tagFilter: campaign.tagFilter,
       variableMode: campaign.variableMode,
       variableText: campaign.variableText,

@@ -180,6 +180,28 @@ export async function DELETE(req: Request, ctx: Params) {
   if (guard) return guard;
   const token = bearerToken(req);
   if (token.endsWith("-invalid")) return invalidTokenResponse();
-  await ctx.params;
+  const { path } = await ctx.params;
+
+  // DELETE {wabaId}/message_templates?name=…[&hsm_id=…] → borrado. Como en
+  // Meta: sin hsm_id se van TODOS los idiomas de ese nombre; un nombre que no
+  // existe responde 404 (el servicio lo trata como "ya borrada").
+  if (path.length === 2 && path[1] === "message_templates") {
+    const url = new URL(req.url);
+    const name = url.searchParams.get("name") ?? "";
+    const hsmId = url.searchParams.get("hsm_id");
+    const state = getWaMockState();
+    const before = state.templates.length;
+    state.templates = state.templates.filter(
+      (t) => !(t.name === name && (!hsmId || t.id === hsmId))
+    );
+    if (state.templates.length === before) {
+      return Response.json(
+        { error: { message: "Template name does not exist in the translation", code: 100 } },
+        { status: 404 }
+      );
+    }
+    return Response.json({ success: true });
+  }
+
   return Response.json({ success: true });
 }

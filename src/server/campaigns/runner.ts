@@ -237,11 +237,13 @@ export async function executeCampaign(campaignId: string): Promise<void> {
   await resolveStaleSending(initial);
 
   // Plantilla y credenciales pre-resueltas UNA vez (no N descifrados).
-  const templates = await db
-    .select()
-    .from(schema.template)
-    .where(eq(schema.template.id, initial.templateId))
-    .limit(1);
+  const templates = initial.templateId
+    ? await db
+        .select()
+        .from(schema.template)
+        .where(eq(schema.template.id, initial.templateId))
+        .limit(1)
+    : [];
   const template = templates[0];
   const creds = await getCredentialsByOrg(initial.organizationId);
   if (!template || template.status !== "approved" || !creds) {

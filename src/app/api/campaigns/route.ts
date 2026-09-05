@@ -23,7 +23,7 @@ export const GET = withAuth(async (session) => {
       templateName: schema.template.name,
     })
     .from(schema.campaign)
-    .innerJoin(
+    .leftJoin(
       schema.template,
       eq(schema.campaign.templateId, schema.template.id)
     )
@@ -98,7 +98,7 @@ export const GET = withAuth(async (session) => {
         name: c.name,
         status: c.status,
         pausedReason: c.pausedReason,
-        templateName,
+        templateName: templateName ?? c.templateName ?? "(plantilla borrada)",
         tagFilter: c.tagFilter,
         variableMode: c.variableMode,
         launchedAt: c.launchedAt?.toISOString() ?? null,
@@ -171,6 +171,7 @@ export const POST = withAuth(async (session, req: Request) => {
       organizationId: session.organizationId,
       name: body.data.name,
       templateId: template.id,
+      templateName: template.name,
       tagFilter: sanitizeTags(body.data.tagFilter),
       variableMode: body.data.variableMode,
       variableText: body.data.variableText?.trim() || null,
