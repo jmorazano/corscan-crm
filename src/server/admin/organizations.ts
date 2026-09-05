@@ -14,7 +14,7 @@ import { isSuperAdminEmail } from "@/server/auth/super-admin";
 type DbConn = Pick<ReturnType<typeof getDb>, "select" | "insert">;
 
 /** Conexión completa que necesita la Administración (rollback incluido). */
-type AdminDbConn = Pick<
+export type AdminDbConn = Pick<
   ReturnType<typeof getDb>,
   "select" | "insert" | "update" | "delete"
 >;

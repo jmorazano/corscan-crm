@@ -41,6 +41,25 @@ registrado. Identidades de fixture: `superadmin@vocero.test` (super admin) y
    `GET /api/admin/organizations`.
    ✅ La página redirige fuera; la API responde 403 `forbidden`.
 
+## US5 — Usuario adicional y reset de contraseña (T026/T027)
+
+9. Como super admin en `/admin`: en la tarjeta de `Inmobiliaria Demo`,
+   **Agregar usuario** → nombre `Compa Demo`, correo `compa@vocero.test`,
+   rol Miembro, contraseña generada por el botón → Crear usuario.
+   ✅ Credenciales (email + temporal) visibles UNA sola vez; el usuario
+   aparece en la lista de la empresa con badge Miembro.
+10. **Restablecer contraseña** sobre `socio@vocero.test` → confirmar.
+    ✅ Temporal NUEVA mostrada una sola vez. Login del socio con la
+    contraseña vieja → falla; con la temporal nueva → entra y cae en
+    **/change-password** (cambio obligatorio). Si el socio tenía una sesión
+    abierta en otro navegador, esa sesión quedó invalidada (rebota a
+    /login en la siguiente navegación).
+11. Infelices: repetir el alta con el MISMO correo `compa@vocero.test` → 409
+    `duplicate_email`; alta con `superadmin@vocero.test` → 403
+    `reserved_email`; `POST /api/admin/users/u_inexistente/password` → 404;
+    reset sobre la cuenta de OTRO super admin (si hay segunda en
+    `SUPER_ADMIN_EMAILS`) → 403 `forbidden`.
+
 ## Evidencia esperada
 
 Cada ✅ verificado conduciendo el navegador; anotar fecha y resultado en la

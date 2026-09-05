@@ -86,8 +86,8 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 7: US5 — Gestión de usuarios por el super admin (P3)
 
-- [ ] T026 [US5] Server+API: POST /api/admin/organizations/[id]/users y POST /api/admin/users/[id]/password según contrato (Zod min 8, set must_change_password, invalidación de sesiones, 403 sobre super admins ajenos, 403 reserved_email) + unit tests (404/409/403/felices).
-- [ ] T027 [US5] UI: en admin-client.tsx, usuarios por empresa con "crear usuario" y "restablecer contraseña" (temporal mostrada una vez); extender us-mt-1 con el reset y conducirlo.
+- [x] T026 [US5] Server+API: POST /api/admin/organizations/[id]/users y POST /api/admin/users/[id]/password según contrato (Zod min 8, set must_change_password, invalidación de sesiones, 403 sobre super admins ajenos, 403 reserved_email) + unit tests (404/409/403/felices). — HECHO 5-sep-2026: src/server/admin/users.ts (createOrganizationUser con el patrón de alta de organizations.ts; resetUserPassword vía `$context.password.hash` + `internalAdapter.updatePassword` de better-auth 1.6.23 — el mismo par que usa su plugin admin server-side, sin habilitar el plugin; sesiones invalidadas borrando las filas de `session` del usuario) + rutas bajo withSuperAdmin; tests/unit/admin-users.test.ts (13) y admin-users-routes.test.ts (14).
+- [x] T027 [US5] UI: en admin-client.tsx, usuarios por empresa con "crear usuario" y "restablecer contraseña" (temporal mostrada una vez); extender us-mt-1 con el reset y conducirlo. — HECHO 5-sep-2026: "Agregar usuario" por empresa (form nombre/email/rol + generador compartido, credenciales una vez) y "Restablecer contraseña" por usuario (confirm + temporal nueva generada en cliente mostrada una vez); us-mt-1 extendido con pasos 9-11 (US5) — conducción E2E pendiente por la sesión principal (dueña del dev server).
 
 ---
 
