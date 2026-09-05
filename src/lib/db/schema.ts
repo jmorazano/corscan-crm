@@ -129,6 +129,10 @@ export const contact = pgTable(
     optedOutAt: timestamp("opted_out_at"),
     optOutRevertedAt: timestamp("opt_out_reverted_at"),
     optOutRevertedBy: text("opt_out_reverted_by"),
+    /** Contacto del Laboratorio (004): jamás elegible para envíos reales ni
+     * desarchivable; la migración marca los preexistentes por sus
+     * conversaciones is_test. */
+    isTest: boolean("is_test").notNull().default(false),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -456,8 +460,11 @@ export const campaign = pgTable(
       .notNull()
       .default("draft"),
     pausedReason: text("paused_reason", {
-      enum: ["manual", "daily_limit", "channel"],
+      enum: ["manual", "daily_limit", "channel", "error"],
     }),
+    /** Anti doble-runner (004): pause/resume la incrementa; un runner cuya
+     * generación ya no coincide se auto-termina (deploys con solape incl.). */
+    runnerGeneration: integer("runner_generation").notNull().default(0),
     launchedAt: timestamp("launched_at"),
     completedAt: timestamp("completed_at"),
     cancelledAt: timestamp("cancelled_at"),
@@ -491,7 +498,7 @@ export const campaignRecipient = pgTable(
       .notNull()
       .default("pending"),
     skipReason: text("skip_reason", {
-      enum: ["opted_out", "ineligible", "cancelled", "duplicate_wa_id"],
+      enum: ["opted_out", "ineligible", "cancelled"],
     }),
     error: text("error"),
     conversationId: text("conversation_id").references(() => conversation.id),

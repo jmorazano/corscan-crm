@@ -52,8 +52,13 @@ export function normalizeToWaId(
   // mismo caso.
   const digitsOnly = trimmed.replace(/[^\d]/g, "");
   const looksLikeWaId = /^\d+$/.test(trimmed.replace(/[\s ]/g, ""));
+  // El wa_id legacy MX (521…) ya no es E.164 válido (MX eliminó el 1 en
+  // 2019): se parsea sin el 1 y el post-proceso lo repone.
+  const parseDigits = /^521\d{10}$/.test(digitsOnly)
+    ? `52${digitsOnly.slice(3)}`
+    : digitsOnly;
   const candidate = looksLikeWaId && !trimmed.startsWith("0")
-    ? `+${digitsOnly}`
+    ? `+${parseDigits}`
     : trimmed;
 
   const parsed = parsePhoneNumberFromString(candidate, defaultCountry);
@@ -70,6 +75,12 @@ export function normalizeToWaId(
   // Post-proceso AR: destino de WhatsApp = móvil ⇒ el 9 va siempre.
   if (waId.startsWith("54") && !waId.startsWith("549")) {
     waId = `549${waId.slice(2)}`;
+  }
+
+  // Post-proceso MX espejo: el wa_id legacy que llega en los webhooks es
+  // 521 + 10 dígitos; normalizeRecipient ya quita ese 1 AL ENVIAR.
+  if (/^52\d{10}$/.test(waId)) {
+    waId = `521${waId.slice(2)}`;
   }
 
   if (waId.length < MIN_DIGITS || waId.length > MAX_DIGITS) {

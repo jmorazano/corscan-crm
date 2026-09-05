@@ -29,10 +29,16 @@ describe("normalizeToWaId — Argentina (la trampa del 9)", () => {
 });
 
 describe("normalizeToWaId — otros países", () => {
-  it("México moderno queda 52… (el legacy 521 lo corrige la reconciliación wa_id)", () => {
+  it("México: inserta el 1 legacy (521…) — el formato de los webhooks", () => {
     const r = normalizeToWaId("+52 55 1234 5678", "MX");
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.waId).toBe("525512345678");
+    if (r.ok) expect(r.waId).toBe("5215512345678");
+  });
+
+  it("México con el 1 ya puesto queda igual", () => {
+    const r = normalizeToWaId("5215512345678", "MX");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.waId).toBe("5215512345678");
   });
 
   it("un E.164 genérico pasa sin tocarse", () => {

@@ -19,8 +19,9 @@ elige el archivo, el sistema detecta las columnas por su encabezado
 (teléfono, nombre, etiquetas, notas), le muestra una vista previa con las
 filas válidas e inválidas, le exige declarar que esos contactos dieron su
 consentimiento para recibir mensajes, y al confirmar incorpora la lista. Al
-final ve un reporte: cuántos se crearon, cuántos ya existían (y qué se les
-actualizó) y cuáles filas se rechazaron con el motivo.
+final ve un reporte: cuántos se crearon, cuántos ya existían (a los que se
+les fusionaron etiquetas y datos faltantes) y cuáles filas se rechazaron
+con el motivo.
 
 **Why this priority**: sin los contactos adentro no existe nada que
 segmentar ni a quién enviarle; es el insumo de todo lo demás y tiene valor
@@ -276,13 +277,18 @@ verificar que no duplica.
   reanudarse automáticamente a medida que la ventana libera cupo.
 - **FR-016**: El operador MUST poder pausar, reanudar y cancelar una
   campaña. Cancelar es definitivo para los pendientes. Los estados de
-  campaña son: borrador, en curso, pausada (manual o por límite),
-  completada, cancelada.
+  campaña son: borrador, en curso, pausada (manual, por límite, por canal
+  desconectado o por error del sistema), completada, cancelada. Solo la
+  pausa por límite se reanuda sola (al liberarse cupo); las demás exigen
+  reanudación manual. Pausar manualmente MUST ganar siempre: también sobre
+  una campaña ya pausada por límite (para que el cupo liberado no la
+  reanude contra la voluntad del operador).
 - **FR-017**: El progreso MUST ser observable en vivo por destinatario y en
   agregado: pendiente, enviado, entregado, leído, respondió, fallido (con
-  motivo), omitido (con motivo: baja, inelegible). Un destinatario cuenta
-  como "respondió" si envía cualquier mensaje después de recibir la
-  campaña.
+  motivo — incluye tanto el fallo al enviar como el fallo de entrega
+  reportado después por el canal, p. ej. número inexistente), omitido (con
+  motivo: baja, inelegible, campaña cancelada). Un destinatario cuenta como
+  "respondió" si envía cualquier mensaje después del envío de la campaña.
 - **FR-018**: El envío de campañas MUST sobrevivir reinicios del servicio:
   el estado vive en la base de datos, al arrancar el servicio las campañas
   en curso retoman solas, y ningún destinatario MUST recibir el mensaje
@@ -342,6 +348,15 @@ verificar que no duplica.
   fallidos (reporte + continuar); cupo por ventana móvil de 24h sobre
   contactos únicos (la semántica documentada del canal); límite de 5.000
   filas por import.
+- **Política de entrega elegida: como máximo una vez.** Si un reinicio
+  agarra un envío en el instante ambiguo (el canal pudo haberlo aceptado
+  sin que quedara registrado), ese destinatario se marca FALLIDO con motivo
+  visible ("interrumpido por reinicio") y NO se re-envía automáticamente —
+  preferimos un fallo visible a un cliente recibiendo el mensaje dos veces
+  (FR-018). El operador decide si reintentarlo.
+- El consentimiento histórico se completa al instalar la feature: todo
+  contacto preexistente que alguna vez escribió queda con consentimiento
+  "inbound" fechado en su primer mensaje (FR-007), sin acción del operador.
 - El parseo de Excel/CSV ocurre en el navegador del operador; la librería
   de parseo es una dependencia del producto, no un servicio externo
   (constitución II intacta: sin S3, sin email, sin servicios de terceros).

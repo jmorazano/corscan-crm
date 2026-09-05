@@ -55,6 +55,25 @@ def main() -> None:
     print(f"OK {csv_path}")
     print(f"OK {xlsx_path}")
 
+    # Fixture grande para el paso cronometrado de SC-001 (import de 5.000
+    # filas en < 2 min): 4.995 validas unicas + 5 invalidas intercaladas.
+    wb_big = Workbook()
+    ws_big = wb_big.active
+    ws_big.title = "Contactos"
+    ws_big.append(HEADERS)
+    for i in range(4995):
+        ws_big.append([
+            f"+54 9 351 {7000000 + i}",
+            f"Cliente Masivo {i + 1}",
+            "masivo" if i % 2 == 0 else "masivo,newsletter",
+            "",
+        ])
+        if i % 1000 == 500:
+            ws_big.append([f"INVALIDO-{i}", "Fila Rota", "", ""])
+    big_path = os.path.join(HERE, "contactos-5000.xlsx")
+    wb_big.save(big_path)
+    print(f"OK {big_path}")
+
 
 if __name__ == "__main__":
     main()

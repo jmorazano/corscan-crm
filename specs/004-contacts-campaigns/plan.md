@@ -108,18 +108,23 @@ src/
 ├── server/
 │   ├── inbox/ingest.ts            # hook onInboundSideEffects (opt-out + replied)
 │   ├── campaigns/                 # NUEVO dominio
-│   │   ├── runner.ts              # executeCampaign (patrón lab + revive)
-│   │   ├── quota.ts               # cupo ventana móvil 24h (initiated_send)
+│   │   ├── runner.ts              # executeCampaign (patrón lab + revive at-most-once)
+│   │   ├── quota.ts               # mutex FIFO + reserva de cupo (initiated_send)
 │   │   └── recipients.ts          # congelado de segmento + elegibilidad
-│   ├── contacts/import.ts         # NUEVO: upsert masivo + merge tags + reporte
+│   ├── contacts-import.ts         # NUEVO: upsert masivo + merge tags + reporte
+│   │                              #   (ojo: ya existe el MÓDULO src/server/contacts.ts —
+│   │                              #    no crear un directorio homónimo)
 │   └── whatsapp/templates.ts      # refactor: núcleo con template/creds pre-resueltos
+│                                  #   que devuelve {messageId, waMessageId, waId}
 ├── app/
 │   ├── api/
 │   │   ├── contacts/import/route.ts       # POST import
-│   │   ├── contacts/[id]/route.ts         # PATCH tags/opt-out revert (extiende)
+│   │   ├── contacts/[id]/route.ts         # PATCH extiende (tags; bloquea desarchivar is_test)
+│   │   ├── contacts/[id]/opt-out-revert/route.ts # POST revertir baja (auditada)
 │   │   ├── conversations/route.ts         # + POST (iniciar con plantilla, US2)
 │   │   ├── campaigns/route.ts             # GET/POST
-│   │   ├── campaigns/[id]/route.ts        # GET detalle/prognext
+│   │   ├── campaigns/segment-preview/route.ts # GET tamaño del segmento elegible
+│   │   ├── campaigns/[id]/route.ts        # GET detalle + progreso + destinatarios
 │   │   ├── campaigns/[id]/actions/route.ts# launch/pause/resume/cancel
 │   │   └── settings/sending/route.ts      # GET/PUT límite
 │   └── (app)/campaigns/page.tsx           # NUEVA sección

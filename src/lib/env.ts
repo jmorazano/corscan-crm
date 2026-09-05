@@ -34,6 +34,8 @@ const envSchema = z.object({
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
+  /** Espaciado entre envíos del runner de campañas (004). No es secreto. */
+  CAMPAIGN_PACE_MS: z.coerce.number().int().min(0).default(4000),
   WA_MOCK_ENABLED: z.string().optional(),
   DEMO_TOOLS_ENABLED: z.string().optional(),
   COEXISTENCE_UI_ENABLED: z.string().optional(),

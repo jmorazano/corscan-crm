@@ -29,6 +29,13 @@
       "when": 1788613850947,
       "tag": "0003_fresh_valkyrie",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788635400336,
+      "tag": "0004_gifted_justice",
+      "breakpoints": true
     }
   ]
 }

@@ -31,7 +31,10 @@ Body:
   motivo, NO aborta el resto.
 - Upsert por (org, phone): nuevo → crea con `consent_source='import'`;
   existente → merge (tags = unión saneada; name/notes solo si estaban
-  vacíos; consent solo si era NULL; jamás pisa `opted_out_at`).
+  vacíos; consent solo si era NULL; jamás pisa `opted_out_at`). Si el
+  teléfono corresponde a un contacto de prueba del Laboratorio
+  (`is_test`), la fila se rechaza con motivo `contacto_de_prueba` (el
+  import no puede blanquear el sandbox).
 - Duplicados DENTRO del archivo: la primera fila gana, las siguientes
   cuentan como `updated` (idempotente).
 
@@ -43,7 +46,9 @@ Respuesta 200:
 
 ## PATCH /api/contacts/[id] (EXTENDIDO)
 
-Acepta además `tags?: string[]` (reemplazo completo, saneado).
+Acepta además `tags?: string[]` (reemplazo completo, saneado). Desarchivar
+(`archived: false`) un contacto `is_test` → 403 `sandbox_violation` (la
+única marca visible del Lab no puede levantarse a mano).
 
 ## POST /api/contacts/[id]/opt-out-revert (NUEVO)
 
@@ -54,4 +59,6 @@ exige confirmación explícita antes de llamar.
 ## GET /api/contacts (EXTENDIDO)
 
 Cada item incluye `tags`, `consentSource`, `optedOutAt`. Filtro opcional
-`?tag=`.
+`?tag=`. El filtro de archivados y la búsqueda se aplican en el WHERE (hoy
+el filtro corre en JS DESPUÉS del limit(200) — corregirlo), y la respuesta
+incluye `total` para que la UI muestre "N de M" tras un import grande.
