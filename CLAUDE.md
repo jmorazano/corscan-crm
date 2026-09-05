@@ -120,3 +120,11 @@ repo ya registra. Los subagentes con `memory: project` usan
 2. **Subagentes** (`.claude/agents/`): `deploy-ops` (deploy/logs/healthchecks,
    no escribe código de app) · `public-site-builder` (páginas públicas/legales
    y config de paneles externos).
+
+<!-- SPECKIT START -->
+## Feature activa (Spec Kit)
+
+Feature en curso: **003-multitenancy** — plan de implementación en
+[specs/003-multitenancy/plan.md](specs/003-multitenancy/plan.md)
+(spec, research, data-model, contratos y quickstart en el mismo directorio).
+<!-- SPECKIT END -->
