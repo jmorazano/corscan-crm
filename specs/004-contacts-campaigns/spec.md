@@ -188,8 +188,11 @@ verificar que no duplica.
   excluye de las dos.
 - Inbound "BAJA" de un número que no es contacto (nunca importado): la
   ingesta lo crea como siempre y la baja aplica igual.
-- Zona horaria del "día" del cupo: el cupo se renueva por día calendario en
-  un huso fijo y documentado para la instancia.
+- Números argentinos importados en formato local ("0351 15 ..."), E.164
+  ("+54 351...") o del canal ("549351..."): todos MUST converger al mismo
+  contacto — la normalización usa el formato del canal (el que llega en las
+  respuestas), para que la respuesta de un importado jamás cree un
+  duplicado.
 
 ## Requirements *(mandatory)*
 
@@ -263,11 +266,14 @@ verificar que no duplica.
   prueba) y enviarles la plantilla de a uno, con espaciado entre envíos,
   respetando el límite diario de la empresa. Contactos que se dan de baja
   después del lanzamiento MUST quedar omitidos aunque estén en la lista.
-- **FR-015**: El límite diario de conversaciones iniciadas por la empresa
-  MUST ser configurable por empresa (default 250) y MUST ser compartido
-  entre campañas y envíos individuales. Alcanzado el límite, las campañas
-  en curso MUST pausarse solas indicando el motivo y MUST reanudarse
-  automáticamente al renovarse el cupo.
+- **FR-015**: El cupo de contactos iniciados por la empresa MUST seguir la
+  semántica real del canal: máximo N contactos ÚNICOS iniciados en
+  cualquier ventana móvil de 24 horas (enviarle dos plantillas al mismo
+  contacto en la ventana consume un solo cupo). N es configurable por
+  empresa (default 250, el tier sin verificar del canal) y el cupo es
+  compartido entre campañas y envíos individuales. Alcanzado el cupo, las
+  campañas en curso MUST pausarse solas indicando el motivo y MUST
+  reanudarse automáticamente a medida que la ventana libera cupo.
 - **FR-016**: El operador MUST poder pausar, reanudar y cancelar una
   campaña. Cancelar es definitivo para los pendientes. Los estados de
   campaña son: borrador, en curso, pausada (manual o por límite),
@@ -300,8 +306,10 @@ verificar que no duplica.
 - **Destinatario de campaña**: la relación campaña↔contacto congelada al
   lanzar; lleva el estado del envío (pendiente/enviado/entregado/leído/
   respondió/fallido/omitido) y su motivo; único por campaña+contacto.
-- **Cupo diario**: contador por empresa y día calendario de conversaciones
-  iniciadas por la empresa; límite configurable por empresa (default 250).
+- **Cupo de iniciación**: registro por empresa de qué contactos fueron
+  iniciados y cuándo; el cupo disponible se calcula sobre los contactos
+  únicos iniciados en las últimas 24 horas móviles; límite configurable
+  por empresa (default 250).
 
 ## Success Criteria *(mandatory)*
 
@@ -331,9 +339,9 @@ verificar que no duplica.
   verificar de Meta); segmento por unión de etiquetas (al menos una);
   variable {{1}} mapeada por default al nombre del contacto; sin
   auto-respuesta de confirmación de baja; sin reintento automático de
-  fallidos (reporte + continuar); el "día" del cupo se renueva a
-  medianoche en un huso fijo de la instancia; límite de 5.000 filas por
-  import.
+  fallidos (reporte + continuar); cupo por ventana móvil de 24h sobre
+  contactos únicos (la semántica documentada del canal); límite de 5.000
+  filas por import.
 - El parseo de Excel/CSV ocurre en el navegador del operador; la librería
   de parseo es una dependencia del producto, no un servicio externo
   (constitución II intacta: sin S3, sin email, sin servicios de terceros).

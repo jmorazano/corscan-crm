@@ -39,3 +39,4 @@ Thumbs.db
 .claude/settings.local.json
 .playwright-mcp/
 .tmp-seed-demo.mjs
+.tmp-seed-agent.mjs

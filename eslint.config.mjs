@@ -12,6 +12,7 @@ const config = [
       "scripts/**",
       "next-env.d.ts",
       ".tmp-seed-demo.mjs",
+      ".tmp-seed-agent.mjs",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
