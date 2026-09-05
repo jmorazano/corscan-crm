@@ -12,9 +12,9 @@ sola con su guion.
 
 ## Phase 1: Setup
 
-- [ ] T001 Instalar dependencias nuevas: `pnpm add read-excel-file papaparse libphonenumber-js && pnpm add -D @types/papaparse`; verificar lockfile y que `pnpm build` sigue verde
-- [ ] T002 [P] Variables de entorno: `CAMPAIGN_PACE_MS` en `.env` (dev: 200) y `.env.example` (guía inline, default 4000); documentar que NO es secreto
-- [ ] T003 [P] Script generador de fixtures `tests/e2e/fixtures/generate.mjs` (crea `contactos.csv` y `contactos.xlsx` con ~12 filas: AR en 3 formatos, duplicado interno, teléfono inválido, fila sin nombre) y commitear los fixtures generados
+- [x] T001 Instalar dependencias nuevas: `pnpm add read-excel-file papaparse libphonenumber-js && pnpm add -D @types/papaparse`; verificar lockfile y que `pnpm build` sigue verde (build se verifica en T038)
+- [x] T002 [P] Variables de entorno: `CAMPAIGN_PACE_MS` en `.env` (dev: 200) y `.env.example` (guía inline, default 4000); documentar que NO es secreto
+- [x] T003 [P] Script generador de fixtures `tests/e2e/fixtures/generate.py` (openpyxl local; crea `contactos.csv` y `contactos.xlsx` con 12 filas: AR en 3 formatos del MISMO número, duplicado interno, 2 inválidos, fila sin nombre) — fixtures commiteados
 
 ## Phase 2: Foundational (bloquea todas las historias)
 
