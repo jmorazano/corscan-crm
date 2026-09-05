@@ -23,18 +23,17 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
 export async function getBranding(
   organizationId?: string | null
 ): Promise<Branding> {
+  // Sin organización (login, layout raíz, visitantes anónimos): marca neutra.
+  // Con N empresas en la instancia, elegir "una cualquiera" (el viejo
+  // `limit 1` sin ORDER BY) filtraría el nombre/color de un tenant hacia
+  // los demás y hacia no autenticados (US2: cero fuga cross-tenant).
+  if (!organizationId) return DEFAULT_BRANDING;
   const db = getDb();
-  const rows = organizationId
-    ? await db
-        .select({ metadata: schema.organization.metadata })
-        .from(schema.organization)
-        .where(eq(schema.organization.id, organizationId))
-        .limit(1)
-    : // Sin sesión (login, layout raíz): la única organización de la instancia.
-      await db
-        .select({ metadata: schema.organization.metadata })
-        .from(schema.organization)
-        .limit(1);
+  const rows = await db
+    .select({ metadata: schema.organization.metadata })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
   if (!rows[0]) return DEFAULT_BRANDING;
   const meta = parseMetadata(rows[0].metadata);
   return normalizeBranding(

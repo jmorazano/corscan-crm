@@ -68,16 +68,31 @@ export async function POST(req: Request, { params }: Params) {
   return Response.json({ received: true });
 }
 
+/**
+ * Aislamiento de fallos por change (US2): con una sola app de Meta, un POST
+ * puede batchear entries de VARIAS WABAs (varias organizaciones). Ya se
+ * respondió 200 — Meta no reintenta — así que si el change de la org A
+ * revienta, los demás DEBEN procesarse igual: sin este try/catch por change,
+ * el fallo de una org perdería en silencio mensajes de otra inocente.
+ */
 async function processPayload(payload: WebhookPayload): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (!change.value) continue;
-      if (change.field === "messages") {
-        await processMessagesValue(change.value);
-      } else if (change.field === "message_template_status_update") {
-        await processTemplateStatusValue(entry.id ?? null, change.value);
+      try {
+        if (change.field === "messages") {
+          await processMessagesValue(change.value);
+        } else if (change.field === "message_template_status_update") {
+          await processTemplateStatusValue(entry.id ?? null, change.value);
+        }
+        // otros fields: ignorar sin error
+      } catch (err) {
+        console.error(
+          `[webhook] error procesando change (entry=${entry.id ?? "?"}, ` +
+            `field=${change.field ?? "?"}); se continúa con el resto:`,
+          err
+        );
       }
-      // otros fields: ignorar sin error
     }
   }
 }

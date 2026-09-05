@@ -15,6 +15,13 @@
       "when": 1788609304292,
       "tag": "0001_pretty_steel_serpent",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788612385459,
+      "tag": "0002_medical_sway",
+      "breakpoints": true
     }
   ]
 }

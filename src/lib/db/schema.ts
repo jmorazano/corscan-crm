@@ -211,8 +211,14 @@ export const message = pgTable(
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
-    /** ID de WhatsApp — UNIQUE (idempotencia). Nullable en salientes de prueba. */
-    waMessageId: text("wa_message_id").unique(),
+    /**
+     * ID de WhatsApp — UNIQUE por (organization_id, wa_message_id): la
+     * idempotencia de la ingesta es POR TENANT (US2). Con el unique global,
+     * un wamid ya persistido en la org A tragaba en silencio el mensaje
+     * homónimo de la org B (wa-mock, importaciones, ecos de coexistence).
+     * Nullable en salientes de prueba.
+     */
+    waMessageId: text("wa_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     type: text("type").notNull().default("text"),
     text: text("text"),
@@ -232,6 +238,8 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
+    // Dedup de ingesta por tenant (los NULL de salientes de prueba no chocan).
+    uniqueIndex("message_org_wamid_uq").on(t.organizationId, t.waMessageId),
   ]
 );
 

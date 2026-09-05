@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -6,7 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import {
   getCredentialsByOrg,
-  getCredentialsByWabaId,
+  getCredentialsListByWabaId,
   markReconnectRequired,
 } from "@/server/whatsapp/credentials";
 import { callGraphSend, SendError } from "@/server/inbox/send";
@@ -244,35 +244,58 @@ export async function syncTemplates(organizationId: string): Promise<number> {
   return updated;
 }
 
-/** Evento webhook `message_template_status_update` (modo directo, FR-050). */
+/**
+ * Evento webhook `message_template_status_update` (modo directo, FR-050).
+ *
+ * Multi-tenant (US2): una WABA puede estar conectada por VARIAS organizaciones
+ * (waba_id no es único en meta_credentials), así que el evento se aplica en
+ * cada una de ellas — jamás en "una cualquiera". En Meta, (waba, name,
+ * language) identifica UNA plantilla, así que las filas homónimas de esas
+ * orgs refieren al mismo template remoto. El id del evento desambigua además
+ * el caso de plantilla recreada: una fila local que apunta a OTRO
+ * wa_template_id no se pisa (el evento no es suyo).
+ */
 export async function applyTemplateStatusEvent(
   wabaId: string | null,
   value: WebhookValue
 ): Promise<void> {
   if (!wabaId) return;
-  const creds = await getCredentialsByWabaId(wabaId);
-  if (!creds) return;
+  const credsList = await getCredentialsListByWabaId(wabaId);
+  if (credsList.length === 0) return;
 
   const status = mapMetaStatus(value.event);
   const name = value.message_template_name;
   const language = value.message_template_language;
   if (!status || !name || !language) return;
+  const waTemplateId =
+    value.message_template_id != null ? String(value.message_template_id) : null;
 
   const db = getDb();
-  await db
-    .update(schema.template)
-    .set({
-      status,
-      rejectionReason: status === "rejected" ? (value.reason ?? null) : null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(schema.template.organizationId, creds.organizationId),
-        eq(schema.template.name, name),
-        eq(schema.template.language, language)
-      )
-    );
+  for (const creds of credsList) {
+    await db
+      .update(schema.template)
+      .set({
+        status,
+        rejectionReason: status === "rejected" ? (value.reason ?? null) : null,
+        // Backfill del id remoto cuando el evento lo trae (solo alcanza filas
+        // con id nulo o igual — ver el WHERE).
+        ...(waTemplateId ? { waTemplateId } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.template.organizationId, creds.organizationId),
+          eq(schema.template.name, name),
+          eq(schema.template.language, language),
+          waTemplateId
+            ? or(
+                isNull(schema.template.waTemplateId),
+                eq(schema.template.waTemplateId, waTemplateId)
+              )
+            : undefined
+        )
+      );
+  }
 }
 
 /** Envía una plantilla APROBADA a una conversación (ventana cerrada, FR-051). */

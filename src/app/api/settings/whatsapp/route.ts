@@ -8,6 +8,7 @@ import {
 } from "@/lib/env";
 import {
   getCredentialsByOrg,
+  PhoneNumberInUseError,
   saveCredentials,
   tokenLast4,
 } from "@/server/whatsapp/credentials";
@@ -68,14 +69,22 @@ export const PUT = withAuth(async (session, req: Request) => {
     return apiError(status, check.code, check.message);
   }
 
-  await saveCredentials({
-    organizationId: session.organizationId,
-    wabaId: body.data.wabaId,
-    phoneNumberId: body.data.phoneNumberId,
-    token: body.data.token,
-    displayPhoneNumber: check.displayPhoneNumber,
-    verifiedName: check.verifiedName,
-  });
+  try {
+    await saveCredentials({
+      organizationId: session.organizationId,
+      wabaId: body.data.wabaId,
+      phoneNumberId: body.data.phoneNumberId,
+      token: body.data.token,
+      displayPhoneNumber: check.displayPhoneNumber,
+      verifiedName: check.verifiedName,
+    });
+  } catch (err) {
+    // Número ya conectado por otra organización: 409 deliberado, no 500.
+    if (err instanceof PhoneNumberInUseError) {
+      return apiError(409, "phone_in_use", err.message);
+    }
+    throw err;
+  }
 
   // Best-effort: necesaria en modo directo; el modo agencia usa su override.
   await subscribeAppToWaba(body.data.wabaId, body.data.token);

@@ -47,17 +47,22 @@ export async function getCredentialsByPhoneNumberId(
   return rows[0] ? toCredentials(rows[0]) : null;
 }
 
-/** Resuelve la conexión por WABA ID (eventos a nivel WABA, ej. plantillas). */
-export async function getCredentialsByWabaId(
+/**
+ * TODAS las conexiones de una WABA (eventos a nivel WABA, ej. plantillas).
+ * waba_id NO es único en la instancia: dos organizaciones pueden conectar dos
+ * números de la misma WABA (p. ej. WABA paraguas con un número por cliente).
+ * Un `limit 1` sin ORDER BY enrutaría el evento a una org arbitraria — el
+ * consumidor debe aplicar el evento por organización (US2).
+ */
+export async function getCredentialsListByWabaId(
   wabaId: string
-): Promise<Credentials | null> {
+): Promise<Credentials[]> {
   const db = getDb();
   const rows = await db
     .select()
     .from(schema.metaCredentials)
-    .where(eq(schema.metaCredentials.wabaId, wabaId))
-    .limit(1);
-  return rows[0] ? toCredentials(rows[0]) : null;
+    .where(eq(schema.metaCredentials.wabaId, wabaId));
+  return rows.map(toCredentials);
 }
 
 export async function getCredentialsByOrg(
@@ -72,6 +77,37 @@ export async function getCredentialsByOrg(
   return rows[0] ? toCredentials(rows[0]) : null;
 }
 
+/**
+ * El phone_number_id ya está conectado a OTRA organización (índice único
+ * meta_credentials_phone_uq). Caso real de agencia: doble alta o traspaso de
+ * cliente entre orgs. Se degrada a un 409 accionable — sin revelar a qué
+ * organización pertenece el número (US2).
+ */
+export class PhoneNumberInUseError extends Error {
+  constructor() {
+    super(
+      "Ese número ya está conectado a otra empresa de esta instancia. " +
+        "Desconéctalo allí primero o contacta al administrador de la plataforma."
+    );
+    this.name = "PhoneNumberInUseError";
+  }
+}
+
+/** Violación del unique de phone_number_id (PG 23505 + constraint). */
+function isPhoneUniqueViolation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const candidates = [err, (err as { cause?: unknown }).cause].filter(
+    (e): e is Record<string, unknown> => typeof e === "object" && e !== null
+  );
+  return candidates.some(
+    (e) =>
+      e.code === "23505" &&
+      String(e.constraint_name ?? e.constraint ?? "").includes(
+        "meta_credentials_phone_uq"
+      )
+  );
+}
+
 export async function saveCredentials(input: {
   organizationId: string;
   wabaId: string;
@@ -82,23 +118,12 @@ export async function saveCredentials(input: {
 }): Promise<void> {
   const db = getDb();
   const enc = encryptSecret(input.token);
-  await db
-    .insert(schema.metaCredentials)
-    .values({
-      id: newId("credentials"),
-      organizationId: input.organizationId,
-      wabaId: input.wabaId,
-      phoneNumberId: input.phoneNumberId,
-      displayPhoneNumber: input.displayPhoneNumber ?? null,
-      verifiedName: input.verifiedName ?? null,
-      tokenCipher: enc.cipher,
-      tokenIv: enc.iv,
-      tokenTag: enc.tag,
-      status: "connected",
-    })
-    .onConflictDoUpdate({
-      target: [schema.metaCredentials.organizationId],
-      set: {
+  try {
+    await db
+      .insert(schema.metaCredentials)
+      .values({
+        id: newId("credentials"),
+        organizationId: input.organizationId,
         wabaId: input.wabaId,
         phoneNumberId: input.phoneNumberId,
         displayPhoneNumber: input.displayPhoneNumber ?? null,
@@ -107,9 +132,27 @@ export async function saveCredentials(input: {
         tokenIv: enc.iv,
         tokenTag: enc.tag,
         status: "connected",
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [schema.metaCredentials.organizationId],
+        set: {
+          wabaId: input.wabaId,
+          phoneNumberId: input.phoneNumberId,
+          displayPhoneNumber: input.displayPhoneNumber ?? null,
+          verifiedName: input.verifiedName ?? null,
+          tokenCipher: enc.cipher,
+          tokenIv: enc.iv,
+          tokenTag: enc.tag,
+          status: "connected",
+          updatedAt: new Date(),
+        },
+      });
+  } catch (err) {
+    // El índice único ya impidió el secuestro del número (fails-closed);
+    // acá solo se convierte el error crudo de Postgres en uno entendible.
+    if (isPhoneUniqueViolation(err)) throw new PhoneNumberInUseError();
+    throw err;
+  }
 }
 
 /** Marca la conexión como vencida (token inválido detectado en runtime). */
