@@ -20,6 +20,9 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
+  /** Contraseña temporal vigente (FR-017): toda alta por tercero y todo
+   * reset lo setean; el cambio de contraseña propio lo limpia. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -208,8 +211,14 @@ export const message = pgTable(
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
-    /** ID de WhatsApp — UNIQUE (idempotencia). Nullable en salientes de prueba. */
-    waMessageId: text("wa_message_id").unique(),
+    /**
+     * ID de WhatsApp — UNIQUE por (organization_id, wa_message_id): la
+     * idempotencia de la ingesta es POR TENANT (US2). Con el unique global,
+     * un wamid ya persistido en la org A tragaba en silencio el mensaje
+     * homónimo de la org B (wa-mock, importaciones, ecos de coexistence).
+     * Nullable en salientes de prueba.
+     */
+    waMessageId: text("wa_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     type: text("type").notNull().default("text"),
     text: text("text"),
@@ -229,6 +238,8 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
+    // Dedup de ingesta por tenant (los NULL de salientes de prueba no chocan).
+    uniqueIndex("message_org_wamid_uq").on(t.organizationId, t.waMessageId),
   ]
 );
 
@@ -257,6 +268,31 @@ export const metaCredentials = pgTable(
     // El webhook enruta por phone_number_id: debe ser único en la instancia.
     uniqueIndex("meta_credentials_phone_uq").on(t.phoneNumberId),
   ]
+);
+
+/**
+ * Config de IA por empresa (US3, data-model 003): token del proveedor LLM
+ * cifrado en reposo (AES-256-GCM) + modelos opcionales (NULL = default de
+ * producto). A lo sumo UNA config por organización.
+ */
+export const aiCredentials = pgTable(
+  "ai_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /** Modelo del agente; NULL = default de producto. */
+    model: text("model"),
+    /** Modelo del juez del Laboratorio; NULL = default (o el del agente). */
+    judgeModel: text("judge_model"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ai_credentials_org_uq").on(t.organizationId)]
 );
 
 export const agentProfile = pgTable(

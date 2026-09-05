@@ -25,7 +25,9 @@ En `.env` de desarrollo:
 WA_MOCK_ENABLED=true
 META_GRAPH_BASE_URL=http://localhost:3000/api/dev/wa-mock/graph
 OPENROUTER_BASE_URL=http://localhost:3000/api/dev/ai-mock
-OPENROUTER_API_TOKEN=test-token
+# La IA es por empresa (feature 003): tras registrar, pegá cualquier token
+# en Ajustes → Inteligencia artificial (el ai-mock acepta cualquiera) y
+# habilitá el agente en la pantalla Agente.
 ```
 
 Conectar el número en Settings → WhatsApp con IDs de prueba (cualquier token SIN el

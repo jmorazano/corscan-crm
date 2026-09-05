@@ -5,6 +5,7 @@ import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { isEmailReservedForOperator } from "@/server/auth/super-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,16 @@ export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
+  // Anti-escalación (FR-016): los correos de SUPER_ADMIN_EMAILS están
+  // reservados — un owner no puede darles de alta una cuenta de empresa.
+  if (isEmailReservedForOperator(body.data.email, session.email)) {
+    return apiError(
+      403,
+      "reserved_email",
+      "Ese correo está reservado para la administración de la plataforma"
+    );
+  }
+
   const auth = getAuth();
   let newUserId: string;
   try {
@@ -78,6 +89,13 @@ export const POST = withAuth(async (session, req: Request) => {
       role: "member",
     })
     .onConflictDoNothing();
+
+  // Contraseña temporal (FR-017): el titular debe cambiarla al estrenar la
+  // cuenta — corta el acceso de quien la generó.
+  await db
+    .update(schema.user)
+    .set({ mustChangePassword: true, updatedAt: new Date() })
+    .where(eq(schema.user.id, newUserId));
 
   return Response.json({ ok: true }, { status: 201 });
 });

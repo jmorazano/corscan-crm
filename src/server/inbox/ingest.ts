@@ -158,7 +158,9 @@ export async function ingestInboundMessage(input: {
 
   const waTimestamp = toDate(input.timestamp);
 
-  // Idempotencia dura: mismo wa_message_id → sin efectos adicionales.
+  // Idempotencia dura POR TENANT: mismo (organization_id, wa_message_id) →
+  // sin efectos adicionales. El scope evita que un wamid de la org A condicione
+  // la ingesta de la org B (US2, mismo contrato que applyStatusUpdate).
   const inserted = await db
     .insert(schema.message)
     .values({
@@ -172,7 +174,9 @@ export async function ingestInboundMessage(input: {
       status: "delivered",
       waTimestamp,
     })
-    .onConflictDoNothing({ target: [schema.message.waMessageId] })
+    .onConflictDoNothing({
+      target: [schema.message.organizationId, schema.message.waMessageId],
+    })
     .returning();
   const message = inserted[0];
   if (!message) return; // duplicado
@@ -198,7 +202,7 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
-  await maybeRunAgentTurn(conversation.id);
+  await maybeRunAgentTurn(organizationId, conversation.id);
 }
 
 function toDate(timestamp: string): Date {

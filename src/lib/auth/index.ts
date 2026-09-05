@@ -10,7 +10,12 @@ import {
   onUserCreated,
   resolveActiveOrganizationId,
 } from "@/server/auth/on-signup";
-import { isPublicSignupAllowed } from "@/server/auth/registration";
+import {
+  hasAnyOrganization,
+  isPublicSignupAllowed,
+} from "@/server/auth/registration";
+import { isSuperAdminEmail } from "@/server/auth/super-admin";
+import { isOrganizationPathDenied } from "@/lib/auth/organization-gate";
 
 /**
  * Contexto interno del proceso: permite que el alta de cuentas de equipo
@@ -79,13 +84,36 @@ function createAuth() {
           }
         }
         // Registro público cerrado tras la primera organización (FR-060).
-        if (ctx.path === "/sign-up/email") {
-          if (!isInternalSignup() && !(await isPublicSignupAllowed())) {
+        if (ctx.path === "/sign-up/email" && !isInternalSignup()) {
+          if (!(await isPublicSignupAllowed())) {
             throw new APIError("FORBIDDEN", {
               message:
                 "El registro está cerrado: esta instancia ya tiene su organización",
             });
           }
+          // FR-016: un email reservado de super admin solo puede
+          // auto-registrarse en el bootstrap (instancia sin organizaciones).
+          // Después — p. ej. con ALLOW_SIGNUP=true — registrarlo sería tomar
+          // la plataforma: el rol deriva del email y no hay verificación.
+          const email =
+            typeof (ctx.body as { email?: unknown } | undefined)?.email ===
+            "string"
+              ? (ctx.body as { email: string }).email
+              : "";
+          if (isSuperAdminEmail(email) && (await hasAnyOrganization())) {
+            throw new APIError("FORBIDDEN", {
+              message:
+                "Ese correo está reservado para la administración de la plataforma",
+            });
+          }
+        }
+        // Gate ALLOWLIST del plugin organization (FR-013): las organizaciones
+        // se gestionan solo server-side; todo /organization/* se niega fuera
+        // del bypass interno del proceso.
+        if (isOrganizationPathDenied(ctx.path) && !isInternalSignup()) {
+          throw new APIError("FORBIDDEN", {
+            message: "Operación no disponible en esta instancia",
+          });
         }
       }),
     },

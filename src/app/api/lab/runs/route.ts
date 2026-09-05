@@ -2,7 +2,7 @@ import { desc } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isAiConfigured } from "@/lib/env";
+import { isAiConfigured } from "@/server/ai/credentials";
 import { RunConflictError, startRun } from "@/server/lab/runner";
 
 export const dynamic = "force-dynamic";
@@ -34,15 +34,20 @@ export const GET = withAuth(async (session) => {
           : null,
     };
   });
-  return Response.json({ runs: withDelta, aiConfigured: isAiConfigured() });
+  return Response.json({
+    runs: withDelta,
+    aiConfigured: await isAiConfigured(session.organizationId),
+  });
 });
 
 export const POST = withAuth(async (session) => {
-  if (!isAiConfigured()) {
+  // Gate por empresa (US3/FR-010): la corrida no arranca sin config de IA —
+  // el corte es ANTES del proveedor, con error claro y accionable.
+  if (!(await isAiConfigured(session.organizationId))) {
     return apiError(
       409,
       "ai_not_configured",
-      "Configura tu proveedor de IA para correr el Laboratorio"
+      "Configura la IA de tu empresa en Ajustes → Inteligencia artificial para correr el Laboratorio"
     );
   }
   try {

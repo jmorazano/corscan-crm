@@ -1,4 +1,8 @@
-import { requireSession, UnauthorizedError } from "@/lib/auth/session";
+import {
+  PasswordChangeRequiredError,
+  requireSession,
+  UnauthorizedError,
+} from "@/lib/auth/session";
 import { subscribe } from "@/server/events/bus";
 
 /**
@@ -9,6 +13,15 @@ import { subscribe } from "@/server/events/bus";
 export const dynamic = "force-dynamic";
 
 const HEARTBEAT_MS = 25_000;
+
+/**
+ * Tope de vida del stream (US2): la organización se resuelve UNA vez al
+ * conectar, así que un stream eterno seguiría emitiendo eventos de la org
+ * vieja a un usuario removido o reasignado. Cerrar cada N minutos fuerza la
+ * reconexión del EventSource (automática, con catch-up vía onReconnect), que
+ * re-ejecuta requireSession y revalida la membresía.
+ */
+const MAX_STREAM_LIFETIME_MS = 15 * 60_000;
 const encoder = new TextEncoder();
 
 export async function GET(req: Request) {
@@ -18,6 +31,9 @@ export async function GET(req: Request) {
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return new Response("No autenticado", { status: 401 });
+    }
+    if (err instanceof PasswordChangeRequiredError) {
+      return new Response("Cambio de contraseña pendiente", { status: 403 });
     }
     throw err;
   }
@@ -46,9 +62,14 @@ export async function GET(req: Request) {
       });
 
       const heartbeat = setInterval(() => send(`: ping\n\n`), HEARTBEAT_MS);
+      const maxLifetime = setTimeout(
+        () => cleanup?.(),
+        MAX_STREAM_LIFETIME_MS
+      );
 
       cleanup = () => {
         clearInterval(heartbeat);
+        clearTimeout(maxLifetime);
         unsubscribe();
         try {
           controller.close();

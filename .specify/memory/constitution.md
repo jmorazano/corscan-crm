@@ -1,7 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.1.0 (plantilla starter) → 1.2.0
+Versión: 1.2.0 → 1.3.0
+
+Cambios (feature 003-multitenancy, 5-sep-2026):
+  - Descripción del producto y Principio VIII: "una instancia = un negocio" →
+    "una instancia = un operador con una o más empresas". El Principio III ya
+    anticipaba esta evolución ("no cerrar la puerta a evoluciones"); no se
+    agrega nada de plataforma centralizada (sin billing, sin planes, sin
+    multi-instancia).
+  - Bump: MINOR (expansión material del alcance de VIII).
+
+Versión anterior: 1.1.0 (plantilla starter) → 1.2.0
 
 Cambios:
   - Título y descripción del producto: Vocero CRM (CRM de WhatsApp con agente de
@@ -34,7 +44,8 @@ TODOs diferidos: ninguno.
 
 Vocero CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
 gratuito, diseñado para que las agencias de IA lo desplieguen en el VPS de sus
-clientes: una instancia = un negocio. Esta constitución define las reglas no
+clientes: una instancia = un operador con una o más empresas (multi-tenant real,
+gestionadas por el super admin de la instancia). Esta constitución define las reglas no
 negociables del producto. Aplica a todas las fases del flujo de trabajo (specify,
 plan, tasks, implement). Cualquier conflicto entre una decisión de implementación y
 esta constitución SE RESUELVE A FAVOR de esta constitución.
@@ -85,9 +96,10 @@ fuga de soberanía que rompe la promesa "gratis y tuyo".
 ### III. Multi-Tenancy Real
 
 El sistema sirve a organizaciones independientes desde una sola instancia lógica.
-En Vocero cada instancia sirve a UN negocio, pero el modelo de datos es
-multi-tenant real (organización del plugin de auth) para mantener el aislamiento
-exigible y no cerrar la puerta a evoluciones.
+En Vocero cada instancia sirve a UN operador (dueño + socios) con una o más
+empresas; el modelo de datos es multi-tenant real (organización del plugin de
+auth) y desde la feature 003 el perímetro (creación de empresas por el super
+admin) también lo es.
 
 - Cada organización (tenant) gestiona sus propios usuarios, roles y permisos.
 - El identificador de tenant (`organization_id`) es un parámetro de primer nivel en
@@ -156,7 +168,7 @@ de deuda oculta; hacerlas visibles permite corregirlas a tiempo.
 Es un CRM de conversaciones y leads de WhatsApp que las agencias despliegan para
 negocios. No es plataforma de marketing masivo, ni constructor visual de flujos, ni
 herramienta de scraping. Lo que no ayude a *atender, organizar y convertir
-conversaciones de WhatsApp de UN negocio* se rechaza.
+conversaciones de WhatsApp de las empresas del operador* se rechaza.
 
 - El modelo de datos y los flujos MUST reflejar ese dominio: contactos que escriben
   por WhatsApp, conversaciones con ventana de 24h, leads en un pipeline, un agente
@@ -260,4 +272,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-07-09
+**Version**: 1.3.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05

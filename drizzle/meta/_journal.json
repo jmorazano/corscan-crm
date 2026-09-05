@@ -8,6 +8,27 @@
       "when": 1783657511753,
       "tag": "0000_absurd_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788609304292,
+      "tag": "0001_pretty_steel_serpent",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788612385459,
+      "tag": "0002_medical_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788613850947,
+      "tag": "0003_fresh_valkyrie",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@
  */
 
 export type OutboxEntry = {
-  n: number;
+  n: string;
   phoneNumberId: string;
   to: string;
   type: string;
@@ -41,6 +41,11 @@ export function resetWaMockState(): void {
   globalForMock.__waMockState = { outbox: [], templates: [], counter: 0 };
 }
 
-export function nextN(): number {
-  return ++getWaMockState().counter;
+// Prefijo único por arranque del proceso: el contador vive en memoria y al
+// reiniciar el dev server volvería a emitir wamid ya persistidos — la dedup
+// (por diseño) los descartaría en silencio y los guiones E2E fallan raro.
+const bootTag = Date.now().toString(36);
+
+export function nextN(): string {
+  return `${bootTag}.${++getWaMockState().counter}`;
 }

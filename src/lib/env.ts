@@ -25,11 +25,14 @@ const envSchema = z.object({
   META_ES_COEX_CONFIG_ID: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
-  OPENROUTER_API_TOKEN: z.string().optional(),
+  // OPENROUTER_API_TOKEN / OPENROUTER_MODEL / OPENROUTER_JUDGE_MODEL: fuera
+  // del schema desde 003-multitenancy (US3): el token y los modelos son POR
+  // EMPRESA y viven cifrados en la tabla ai_credentials (Ajustes →
+  // Inteligencia artificial). Solo la base del proveedor sigue siendo de
+  // instancia (transporte del adaptador; interceptada por el ai-mock).
   OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api"),
-  OPENROUTER_MODEL: z.string().optional(),
-  OPENROUTER_JUDGE_MODEL: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
+  SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
   DEMO_TOOLS_ENABLED: z.string().optional(),
@@ -117,10 +120,4 @@ export function isEmbeddedSignupConfigured(): boolean {
  */
 export function isCoexistenceUiEnabled(): boolean {
   return process.env.COEXISTENCE_UI_ENABLED === "true" || isMockEnabled();
-}
-
-/** true si hay proveedor de IA configurado (token presente y no vacío). */
-export function isAiConfigured(): boolean {
-  const token = process.env.OPENROUTER_API_TOKEN;
-  return typeof token === "string" && token.trim().length > 0;
 }

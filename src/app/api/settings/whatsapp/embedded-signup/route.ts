@@ -37,7 +37,12 @@ export const POST = withAuth(async (session, req: Request) => {
   });
 
   if (!result.ok) {
-    const status = result.code === "meta_unavailable" ? 503 : 422;
+    const status =
+      result.code === "meta_unavailable"
+        ? 503
+        : result.code === "phone_in_use"
+          ? 409
+          : 422;
     return apiError(status, result.code, result.message);
   }
 

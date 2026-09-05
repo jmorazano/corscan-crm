@@ -1,8 +1,10 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
-import { getEnv, isAiConfigured } from "@/lib/env";
+import { getEnv } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
+import { getAiConfig } from "@/server/ai/credentials";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -83,8 +85,6 @@ async function executeTurn(conversationId: string): Promise<void> {
  * debounce 0 y sin pasar por el coalesce).
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
-  if (!isAiConfigured()) return;
-
   const db = getDb();
   const convRows = await db
     .select()
@@ -94,6 +94,11 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const conversation = convRows[0];
   if (!conversation) return;
   const organizationId = conversation.organizationId;
+
+  // Config de IA DE LA EMPRESA dueña de la conversación (US3): sin config,
+  // el turno corta acá — antes de cualquier llamada al proveedor.
+  const aiConfig = await getAiConfig(organizationId);
+  if (!aiConfig) return;
 
   // Condiciones de silencio: handoff activo o IA apagada en la conversación.
   if (conversation.handoffAt || !conversation.aiEnabled) return;
@@ -155,7 +160,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       })),
   ];
 
-  const result = await chatJson(AgentAction, messages);
+  const result = await chatJson(aiConfig, AgentAction, messages);
   if (!result.ok) {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).
@@ -262,7 +267,13 @@ export async function applyHandoff(
   const updated = await db
     .update(schema.conversation)
     .set({ handoffAt: new Date(), handoffReason: reason, updatedAt: new Date() })
-    .where(eq(schema.conversation.id, conversationId))
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.id, conversationId)
+      )
+    )
     .returning();
   if (!updated[0]) return;
   publish(organizationId, {
@@ -273,7 +284,14 @@ export async function applyHandoff(
   });
 }
 
-async function moveLeadToStage(
+/**
+ * Escrituras del turno del agente SIEMPRE con scope de tenant (Constitución
+ * III): el contactId viene de la fila de conversation (misma org), pero si
+ * cualquier confusión aguas arriba entregara un id ajeno, el WHERE org+id
+ * garantiza que la escritura jamás aterrice en datos de otra organización.
+ * Exportadas para el unit test de scoping.
+ */
+export async function moveLeadToStage(
   organizationId: string,
   contactId: string,
   stageId: string
@@ -282,10 +300,16 @@ async function moveLeadToStage(
   await db
     .update(schema.lead)
     .set({ stageId, updatedAt: new Date(), lastActivityAt: new Date() })
-    .where(eq(schema.lead.contactId, contactId));
+    .where(
+      scoped(
+        schema.lead.organizationId,
+        organizationId,
+        eq(schema.lead.contactId, contactId)
+      )
+    );
 }
 
-async function appendLeadNote(
+export async function appendLeadNote(
   organizationId: string,
   contactId: string,
   note: string
@@ -294,7 +318,13 @@ async function appendLeadNote(
   const rows = await db
     .select({ id: schema.contact.id, notes: schema.contact.notes })
     .from(schema.contact)
-    .where(eq(schema.contact.id, contactId))
+    .where(
+      scoped(
+        schema.contact.organizationId,
+        organizationId,
+        eq(schema.contact.id, contactId)
+      )
+    )
     .limit(1);
   const contact = rows[0];
   if (!contact) return;
@@ -305,5 +335,11 @@ async function appendLeadNote(
       notes: contact.notes ? `${contact.notes}\n${stamped}` : stamped,
       updatedAt: new Date(),
     })
-    .where(eq(schema.contact.id, contact.id));
+    .where(
+      scoped(
+        schema.contact.organizationId,
+        organizationId,
+        eq(schema.contact.id, contact.id)
+      )
+    );
 }

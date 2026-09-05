@@ -6,9 +6,13 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
+  { href: "/settings/ai", label: "Inteligencia artificial" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
   { href: "/settings/team", label: "Equipo" },
+  // Cambio de contraseña propio (FR-017): disponible siempre, no solo en el
+  // primer login forzado. Vive en el grupo (auth), fuera del shell.
+  { href: "/change-password", label: "Mi contraseña" },
 ] as const;
 
 /** La pestaña Datos solo existe con DEMO_TOOLS_ENABLED (lo resuelve el layout). */

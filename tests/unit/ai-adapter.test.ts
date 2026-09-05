@@ -24,6 +24,13 @@ describe("extractJson (extracción robusta)", () => {
 
 describe("chatJson (reintentos y errores tipados)", () => {
   const schema = z.object({ action: z.literal("reply"), text: z.string() });
+  // US3: el token/modelo llegan POR EMPRESA en la config resuelta — el env ya
+  // no participa (solo OPENROUTER_BASE_URL, que sigue siendo de instancia).
+  const config = {
+    token: "token-test",
+    model: "modelo-test",
+    judgeModel: "modelo-juez-test",
+  };
 
   beforeEach(() => {
     vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
@@ -31,8 +38,6 @@ describe("chatJson (reintentos y errores tipados)", () => {
     vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
     vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
     vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
-    vi.stubEnv("OPENROUTER_API_TOKEN", "token-test");
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-test");
   });
 
   afterEach(() => {
@@ -54,13 +59,35 @@ describe("chatJson (reintentos y errores tipados)", () => {
       .mockResolvedValueOnce(providerResponse('{"action":"reply","text":"ok"}'));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    const result = await chatJson(config, schema, [
+      { role: "user", content: "hola" },
+    ]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.text).toBe("ok");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // el reintento agrega la instrucción STRICT
     const secondBody = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
     expect(JSON.stringify(secondBody.messages)).toContain("STRICT");
+    // el token de la EMPRESA viaja en el Authorization (no uno de env)
+    const headers = (fetchMock.mock.calls[0]![1] as { headers: Record<string, string> })
+      .headers;
+    expect(headers.Authorization).toBe("Bearer token-test");
+    // y el modelo pedido es el de la config
+    const firstBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(firstBody.model).toBe("modelo-test");
+  });
+
+  it("opts.judge → usa el modelo del juez de la config", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await chatJson(config, schema, [{ role: "user", content: "hola" }], {
+      judge: true,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.model).toBe("modelo-juez-test");
   });
 
   it("proveedor caído (500 persistente) → error tipado, jamás excepción", async () => {
@@ -71,7 +98,9 @@ describe("chatJson (reintentos y errores tipados)", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    const result = await chatJson(config, schema, [
+      { role: "user", content: "hola" },
+    ]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("provider_error");
     expect(fetchMock).toHaveBeenCalledTimes(3); // agotó los 3 intentos
@@ -85,17 +114,22 @@ describe("chatJson (reintentos y errores tipados)", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    const result = await chatJson(config, schema, [
+      { role: "user", content: "hola" },
+    ]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("invalid_output");
   });
 
-  it("sin token → not_configured sin tocar la red", async () => {
-    vi.stubEnv("OPENROUTER_API_TOKEN", "");
+  it("config con token vacío → not_configured sin tocar la red", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    const result = await chatJson(
+      { token: "  ", model: "modelo-test", judgeModel: "modelo-test" },
+      schema,
+      [{ role: "user", content: "hola" }]
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("not_configured");
     expect(fetchMock).not.toHaveBeenCalled();

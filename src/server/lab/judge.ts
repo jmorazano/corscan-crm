@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { chatJson } from "@/lib/ai";
+import { getAiConfig } from "@/server/ai/credentials";
 import { buildJudgePrompt } from "@/server/ai/prompts";
 
 /** Veredicto estructurado del juez (FR-032, contrato ai.md). */
@@ -23,16 +24,28 @@ export type JudgeOutcome =
   | { status: "judge_failed"; detail: string };
 
 /**
- * UNA llamada del juez por conversación. Los reintentos viven dentro de
- * chatJson; si aun así la salida es inválida, el caso queda judge_failed —
- * visible en el reporte y excluido del score. La corrida continúa.
+ * UNA llamada del juez por conversación, con el token/modelo DE LA EMPRESA
+ * (US3: organizationId plumbeado desde el runner). Los reintentos viven
+ * dentro de chatJson; si aun así la salida es inválida, el caso queda
+ * judge_failed — visible en el reporte y excluido del score. La corrida
+ * continúa.
  */
 export async function judgeCase(input: {
+  organizationId: string;
   personaKey: string;
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
 }): Promise<JudgeOutcome> {
+  // La corrida arranca solo con config (gate del POST /api/lab/runs); si la
+  // borraron a mitad de corrida, el caso degrada a judge_failed sin colgarse.
+  const aiConfig = await getAiConfig(input.organizationId);
+  if (!aiConfig) {
+    return {
+      status: "judge_failed",
+      detail: "La empresa quedó sin config de IA durante la corrida",
+    };
+  }
   const { system, user } = buildJudgePrompt({
     persona: input.personaKey,
     transcript: input.transcript,
@@ -40,6 +53,7 @@ export async function judgeCase(input: {
     behaviorText: input.behaviorText,
   });
   const result = await chatJson(
+    aiConfig,
     Verdict,
     [
       { role: "system", content: system },

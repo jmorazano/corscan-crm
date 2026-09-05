@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { scoped } from "@/lib/db/tenant";
 
 /**
  * Actividad de lead al recibir un mensaje (US2): si el contacto no tiene lead,
@@ -14,17 +15,31 @@ export async function onLeadActivity(
 ): Promise<void> {
   const db = getDb();
 
+  // Defensa en profundidad (Constitución III): aunque el contactId venga de
+  // un upsert org-scoped aguas arriba, el WHERE lleva SIEMPRE el tenant.
   const existing = await db
     .select({ id: schema.lead.id })
     .from(schema.lead)
-    .where(eq(schema.lead.contactId, contactId))
+    .where(
+      scoped(
+        schema.lead.organizationId,
+        organizationId,
+        eq(schema.lead.contactId, contactId)
+      )
+    )
     .limit(1);
 
   if (existing[0]) {
     await db
       .update(schema.lead)
       .set({ lastActivityAt: at, updatedAt: new Date() })
-      .where(eq(schema.lead.id, existing[0].id));
+      .where(
+        scoped(
+          schema.lead.organizationId,
+          organizationId,
+          eq(schema.lead.id, existing[0].id)
+        )
+      );
     return;
   }
 

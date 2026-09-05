@@ -58,26 +58,42 @@ export async function startRun(organizationId: string): Promise<string> {
   return runId;
 }
 
+/**
+ * Bandera de cancelación cooperativa: Promise.race NO cancela runAllCases —
+ * al vencer el timeout el loop seguiría corriendo (turnos LLM, eventos SSE
+ * 'running' después del 'failed', y una posible SEGUNDA corrida concurrente
+ * porque failRun libera el lock). La bandera corta el loop entre casos y los
+ * updates finales llevan guard WHERE status='running' (Constitución IV:
+ * estados monotónicos — failed jamás vuelve a done).
+ */
+type RunControl = { cancelled: boolean };
+
 async function executeRun(
   runId: string,
   organizationId: string
 ): Promise<void> {
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error("timeout de 10 minutos superado")),
-      RUN_TIMEOUT_MS
-    )
-  );
+  const control: RunControl = { cancelled: false };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      control.cancelled = true;
+      reject(new Error("timeout de 10 minutos superado"));
+    }, RUN_TIMEOUT_MS);
+  });
   try {
-    await Promise.race([runAllCases(runId, organizationId), timeout]);
+    await Promise.race([runAllCases(runId, organizationId, control), timeout]);
   } catch (err) {
+    control.cancelled = true;
     await failRun(runId, organizationId, String(err));
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function runAllCases(
   runId: string,
-  organizationId: string
+  organizationId: string,
+  control: RunControl
 ): Promise<void> {
   const db = getDb();
   const cases = await db
@@ -114,6 +130,8 @@ async function runAllCases(
   publishProgress(organizationId, runId, "running", done, total);
 
   for (const testCase of cases) {
+    // Corrida vencida por timeout: no arrancar un caso más ni publicar nada.
+    if (control.cancelled) return;
     const persona = PERSONAS.find((p) => p.key === testCase.persona);
     if (!persona) continue;
 
@@ -128,6 +146,7 @@ async function runAllCases(
     );
 
     const outcome = await judgeCase({
+      organizationId,
       personaKey: persona.key,
       transcript,
       kbText,
@@ -146,8 +165,13 @@ async function runAllCases(
       .where(eq(schema.agentTestCase.id, testCase.id));
 
     done += 1;
+    // Si el timeout venció mientras corría este caso, la corrida ya está
+    // 'failed': no resucitar la barra de progreso en la UI.
+    if (control.cancelled) return;
     publishProgress(organizationId, runId, "running", done, total);
   }
+
+  if (control.cancelled) return;
 
   const finalCases = await db
     .select({
@@ -158,10 +182,19 @@ async function runAllCases(
     .where(eq(schema.agentTestCase.runId, runId));
   const score = computeScore(finalCases);
 
-  await getDb()
+  // Guard de estado (Constitución IV): solo running→done. Si failRun ya la
+  // marcó failed (timeout), este update no toca nada y no se publica 'done'.
+  const updated = await getDb()
     .update(schema.agentTestRun)
     .set({ status: "done", score, finishedAt: new Date() })
-    .where(eq(schema.agentTestRun.id, runId));
+    .where(
+      and(
+        eq(schema.agentTestRun.id, runId),
+        eq(schema.agentTestRun.status, "running")
+      )
+    )
+    .returning({ id: schema.agentTestRun.id });
+  if (!updated[0]) return;
   publishProgress(organizationId, runId, "done", done, total, score);
 }
 
@@ -270,10 +303,18 @@ async function failRun(
   error: string
 ): Promise<void> {
   const db = getDb();
-  await db
+  // Guard de estado: solo running→failed (jamás pisar una corrida done).
+  const updated = await db
     .update(schema.agentTestRun)
     .set({ status: "failed", error, finishedAt: new Date() })
-    .where(eq(schema.agentTestRun.id, runId));
+    .where(
+      and(
+        eq(schema.agentTestRun.id, runId),
+        eq(schema.agentTestRun.status, "running")
+      )
+    )
+    .returning({ id: schema.agentTestRun.id });
+  if (!updated[0]) return;
   publishProgress(organizationId, runId, "failed", 0, PERSONAS.length);
 }
 

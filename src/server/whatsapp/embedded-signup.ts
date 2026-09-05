@@ -4,7 +4,10 @@ import {
   subscribeAppToWaba,
   testConnection,
 } from "@/server/whatsapp/connect";
-import { saveCredentials } from "@/server/whatsapp/credentials";
+import {
+  PhoneNumberInUseError,
+  saveCredentials,
+} from "@/server/whatsapp/credentials";
 
 export type EmbeddedSignupResult =
   | {
@@ -16,7 +19,11 @@ export type EmbeddedSignupResult =
     }
   | {
       ok: false;
-      code: "exchange_failed" | "invalid_assets" | "meta_unavailable";
+      code:
+        | "exchange_failed"
+        | "invalid_assets"
+        | "meta_unavailable"
+        | "phone_in_use";
       message: string;
     };
 
@@ -69,14 +76,23 @@ export async function completeEmbeddedSignup(input: {
     : await discoverSingleNumber(input.wabaId, token);
   if (!resolved.ok) return resolved;
 
-  await saveCredentials({
-    organizationId: input.organizationId,
-    wabaId: input.wabaId,
-    phoneNumberId: resolved.phoneNumberId,
-    token,
-    displayPhoneNumber: resolved.displayPhoneNumber,
-    verifiedName: resolved.verifiedName,
-  });
+  try {
+    await saveCredentials({
+      organizationId: input.organizationId,
+      wabaId: input.wabaId,
+      phoneNumberId: resolved.phoneNumberId,
+      token,
+      displayPhoneNumber: resolved.displayPhoneNumber,
+      verifiedName: resolved.verifiedName,
+    });
+  } catch (err) {
+    // El code ya se gastó contra Meta, pero el número pertenece a otra org:
+    // degradar con un 409 entendible en vez del 500 genérico (US2).
+    if (err instanceof PhoneNumberInUseError) {
+      return { ok: false, code: "phone_in_use", message: err.message };
+    }
+    throw err;
+  }
 
   // Best-effort: sin esto no llegan webhooks, pero la conexión ya es válida y
   // la suscripción se puede reintentar desde el panel de Meta.

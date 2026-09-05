@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isAiConfigured } from "@/lib/env";
+import { isAiConfigured } from "@/server/ai/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export const GET = withAuth(async (session) => {
       escalationRules: p.escalationRules,
       greeting: p.greeting,
     },
-    aiConfigured: isAiConfigured(),
+    aiConfigured: await isAiConfigured(session.organizationId),
   });
 });
 
