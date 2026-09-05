@@ -1,5 +1,13 @@
 # Migración a Embedded Signup v4 — pasos del panel
 
+> **ESTADO FINAL (5-sep-2026): COEXISTENCE EN PRODUCCIÓN.** El número real
+> +54 9 351 688-2234 quedó conectado al CRM vía Embedded Signup v4 +
+> "Create a Business portfolio" (segundo portfolio, como indica la sección
+> del bloqueo) y el celular sigue funcionando. Pendientes menores: anotar
+> los IDs del portfolio/WABA nuevos, Business Verification del portfolio
+> nuevo, y borrar la config vieja `1051070220642813` tras unos días de
+> estabilidad (muere sola el 15-oct).
+>
 > **Estado (4-sep-2026)**: Pasos 1–3 y 5 HECHOS. Configuration v4 creada:
 > **`2178471596350641`** (solo Cloud API, asset permission MANAGE por defecto,
 > token sin expiración). Webhook fields `history` + `smb_app_state_sync` +
