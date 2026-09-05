@@ -244,15 +244,13 @@ export function ContactPanel({
                 <p className="text-[11px] leading-relaxed text-[#8a6d3b]">
                   {aiConfigured
                     ? "La IA todavía no responde por su cuenta. Configura lo básico del agente y enciéndelo."
-                    : "Falta la clave de IA de la instancia (OPENROUTER_API_TOKEN) para que el agente pueda responder."}
-                  {aiConfigured && (
-                    <Link
-                      href="/agent"
-                      className="ml-1 whitespace-nowrap font-medium text-brand-text underline underline-offset-2 hover:text-brand"
-                    >
-                      Configurar agente →
-                    </Link>
-                  )}
+                    : "Tu empresa no tiene IA configurada: pega el token de tu proveedor para que el agente pueda responder."}
+                  <Link
+                    href={aiConfigured ? "/agent" : "/settings/ai"}
+                    className="ml-1 whitespace-nowrap font-medium text-brand-text underline underline-offset-2 hover:text-brand"
+                  >
+                    {aiConfigured ? "Configurar agente →" : "Configurar IA →"}
+                  </Link>
                 </p>
               </div>
             )}

@@ -20,6 +20,15 @@ vi.mock("@/lib/ai", () => ({
   }),
 }));
 
+// US3: la config de IA es por empresa — el mock reemplaza al viejo stub de env.
+vi.mock("@/server/ai/credentials", () => ({
+  getAiConfig: vi.fn().mockResolvedValue({
+    token: "token-test",
+    model: "modelo-test",
+    judgeModel: "modelo-test",
+  }),
+}));
+
 // BD simulada: cola de resultados de select + capturas de insert/update.
 const selectQueue: unknown[][] = [];
 const inserts: { table: unknown; values: unknown }[] = [];
@@ -80,7 +89,6 @@ describe("sandbox del Laboratorio en el pipeline del agente", () => {
     graphRequest.mockReset();
     selectQueue.length = 0;
     inserts.length = 0;
-    vi.stubEnv("OPENROUTER_API_TOKEN", "token-test");
   });
 
   it("turno sobre conversación is_test → persiste la respuesta y NO llama a Graph", async () => {

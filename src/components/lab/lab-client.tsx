@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -123,12 +124,18 @@ export function LabClient() {
         <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">
-            Configura tu proveedor de IA para usar el Laboratorio
+            Configura la IA de tu empresa para usar el Laboratorio
           </p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            El Laboratorio necesita el agente activo: agrega{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
-            instancia y vuelve aquí.
+            El Laboratorio necesita el agente activo: pega el token de tu
+            proveedor en{" "}
+            <Link
+              href="/settings/ai"
+              className="font-medium text-brand-text underline underline-offset-2 hover:text-brand"
+            >
+              Ajustes → Inteligencia artificial
+            </Link>{" "}
+            y vuelve aquí.
           </p>
         </div>
       </div>

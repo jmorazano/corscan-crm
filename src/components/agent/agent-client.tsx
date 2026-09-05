@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,12 +102,17 @@ export function AgentClient() {
       {!aiConfigured && (
         <div className="mx-6 mt-6 rounded-lg border border-brand-soft bg-brand-tint p-6 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">Configura tu proveedor de IA para activar el agente</p>
+          <p className="font-medium">Configura la IA de tu empresa para activar el agente</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> y{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_MODEL</code> a las variables
-            de entorno de la instancia y reiníciala. Mientras tanto puedes dejar listo el
-            comportamiento y el conocimiento aquí abajo.
+            Pega el token de tu proveedor en{" "}
+            <Link
+              href="/settings/ai"
+              className="font-medium text-brand-text underline underline-offset-2 hover:text-brand"
+            >
+              Ajustes → Inteligencia artificial
+            </Link>
+            . Mientras tanto puedes dejar listo el comportamiento y el
+            conocimiento aquí abajo.
           </p>
         </div>
       )}

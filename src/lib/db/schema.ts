@@ -270,6 +270,31 @@ export const metaCredentials = pgTable(
   ]
 );
 
+/**
+ * Config de IA por empresa (US3, data-model 003): token del proveedor LLM
+ * cifrado en reposo (AES-256-GCM) + modelos opcionales (NULL = default de
+ * producto). A lo sumo UNA config por organización.
+ */
+export const aiCredentials = pgTable(
+  "ai_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /** Modelo del agente; NULL = default de producto. */
+    model: text("model"),
+    /** Modelo del juez del Laboratorio; NULL = default (o el del agente). */
+    judgeModel: text("judge_model"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ai_credentials_org_uq").on(t.organizationId)]
+);
+
 export const agentProfile = pgTable(
   "agent_profile",
   {

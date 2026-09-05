@@ -24,6 +24,7 @@ type State = {
   pipelineStage: Row[];
   agentProfile: Row[];
   metaCredentials: Row[];
+  aiCredentials: Row[];
 };
 
 let state: State;
@@ -51,6 +52,7 @@ function tableKey(table: unknown): keyof State {
   if (table === schema.pipelineStage) return "pipelineStage";
   if (table === schema.agentProfile) return "agentProfile";
   if (table === schema.metaCredentials) return "metaCredentials";
+  if (table === schema.aiCredentials) return "aiCredentials";
   throw new Error("tabla inesperada en el stub");
 }
 
@@ -171,6 +173,7 @@ beforeEach(() => {
     pipelineStage: [],
     agentProfile: [],
     metaCredentials: [],
+    aiCredentials: [],
   };
   signUpEmailMock.mockReset();
   // El signup real escribe el usuario vía el adapter de Better Auth: el mock
@@ -279,7 +282,7 @@ describe("createOrganizationWithAdmin", () => {
 });
 
 describe("listOrganizations", () => {
-  it("empresas con miembros y estados; aiConfigured false hasta US3", async () => {
+  it("empresas con miembros y estados; aiConfigured real por ai_credentials (US3)", async () => {
     state.organization.push(
       {
         id: "org_a",
@@ -306,6 +309,8 @@ describe("listOrganizations", () => {
       // Reconexión pendiente NO cuenta como conectado.
       { organizationId: "org_b", status: "reconnect_required" }
     );
+    // US3: solo org_a configuró su IA.
+    state.aiCredentials.push({ id: "aic_1", organizationId: "org_a" });
 
     const orgs = await listOrganizations(stubDb());
     expect(orgs).toEqual([
@@ -315,7 +320,7 @@ describe("listOrganizations", () => {
         slug: "principal",
         createdAt: "2026-01-01T00:00:00.000Z",
         whatsappConnected: true,
-        aiConfigured: false,
+        aiConfigured: true,
         members: [
           {
             userId: "u_1",

@@ -295,15 +295,19 @@ export async function listOrganizations(
     creds.filter((c) => c.status === "connected").map((c) => c.organizationId)
   );
 
+  // Config de IA por empresa (US3): existe fila en ai_credentials = activa.
+  const aiRows = await db
+    .select({ organizationId: schema.aiCredentials.organizationId })
+    .from(schema.aiCredentials);
+  const aiConfiguredOrgs = new Set(aiRows.map((r) => r.organizationId));
+
   return orgs.map((org) => ({
     id: org.id,
     name: org.name,
     slug: org.slug ?? "",
     createdAt: org.createdAt.toISOString(),
     whatsappConnected: connected.has(org.id),
-    // La config de IA por empresa llega recién en US3 (tabla ai_credentials):
-    // hasta entonces NO existe — siempre false, a propósito.
-    aiConfigured: false,
+    aiConfigured: aiConfiguredOrgs.has(org.id),
     members: members
       .filter((m) => m.organizationId === org.id)
       .map((m) => ({

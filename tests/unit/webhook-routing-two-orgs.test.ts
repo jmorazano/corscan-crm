@@ -33,8 +33,9 @@ vi.mock("@/server/events/bus", () => ({
 }));
 
 vi.mock("@/server/ai/trigger", () => ({
-  maybeRunAgentTurn: (conversationId: string) => {
-    state.agentTurns.push(conversationId);
+  // US3: el trigger recibe la organización (gate de config por empresa).
+  maybeRunAgentTurn: (organizationId: string, conversationId: string) => {
+    state.agentTurns.push(`${organizationId}:${conversationId}`);
     return Promise.resolve();
   },
 }));
@@ -189,6 +190,8 @@ describe("T015: processMessagesValue enruta la ingesta completa a la org dueña"
     expect(state.published.length).toBeGreaterThanOrEqual(2);
     for (const p of state.published) expect(p.organizationId).toBe("org_b");
     expect(state.agentTurns).toHaveLength(1);
+    // el gate del agente se evalúa con la org resuelta (config de IA de B)
+    expect(state.agentTurns[0]).toMatch(/^org_b:/);
   });
 
   it("el MISMO wamid al número de A → aterriza en org_a (dedup por tenant, no global)", async () => {
