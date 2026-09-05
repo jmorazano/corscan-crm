@@ -90,6 +90,27 @@ describe("chatJson (reintentos y errores tipados)", () => {
     expect(body.model).toBe("modelo-juez-test");
   });
 
+  it("acota max_tokens: 1024 para el agente, 2048 para el juez, opts.maxTokens manda", async () => {
+    // Sin max_tokens, OpenRouter reserva el máximo del modelo y devuelve 402
+    // ("requires more credits, or fewer max_tokens") a cuentas con poco saldo.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(providerResponse('{"action":"reply","text":"ok"}'))
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const msgs = [{ role: "user" as const, content: "hola" }];
+
+    await chatJson(config, schema, msgs);
+    await chatJson(config, schema, msgs, { judge: true });
+    await chatJson(config, schema, msgs, { maxTokens: 300 });
+
+    const bodies = fetchMock.mock.calls.map(
+      (c) => JSON.parse(c[1]!.body as string) as { max_tokens: number }
+    );
+    expect(bodies.map((b) => b.max_tokens)).toEqual([1024, 2048, 300]);
+  });
+
   it("proveedor caído (500 persistente) → error tipado, jamás excepción", async () => {
     const fetchMock = vi
       .fn()

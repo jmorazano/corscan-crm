@@ -33,11 +33,26 @@ export type ChatJsonResult<T> =
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
 
+/**
+ * Tope de tokens de salida por llamada. Sin `max_tokens`, OpenRouter reserva
+ * el máximo del modelo (p. ej. 16k en gpt-4o) y rechaza con 402 a cualquier
+ * cuenta cuyo saldo no cubra esa reserva, aunque la respuesta real sea un
+ * JSON de pocas líneas. El agente devuelve UNA acción (texto de chat breve);
+ * el juez, un veredicto con hallazgos: ambos caben holgados en estos topes.
+ */
+export const DEFAULT_MAX_TOKENS_AGENT = 1024;
+export const DEFAULT_MAX_TOKENS_JUDGE = 2048;
+
 export async function chatJson<T>(
   config: AiConfig,
   schema: z.ZodType<T>,
   messages: ChatMessage[],
-  opts?: { model?: string; judge?: boolean; timeoutMs?: number }
+  opts?: {
+    model?: string;
+    judge?: boolean;
+    timeoutMs?: number;
+    maxTokens?: number;
+  }
 ): Promise<ChatJsonResult<T>> {
   // Cinturón: los callers cortan antes con getAiConfig — pero si llegara una
   // config vacía, el resultado es el error tipado, jamás una excepción.
@@ -57,6 +72,9 @@ export async function chatJson<T>(
       detail: "La empresa no tiene modelo de IA resuelto",
     };
   }
+  const maxTokens =
+    opts?.maxTokens ??
+    (opts?.judge ? DEFAULT_MAX_TOKENS_JUDGE : DEFAULT_MAX_TOKENS_AGENT);
 
   let lastDetail = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -76,6 +94,7 @@ export async function chatJson<T>(
         config.token,
         model,
         attemptMessages,
+        maxTokens,
         opts?.timeoutMs
       );
       const extracted = extractJson(raw);
@@ -112,6 +131,7 @@ async function callProvider(
   token: string,
   model: string,
   messages: ChatMessage[],
+  maxTokens: number,
   timeoutMs = 60_000
 ): Promise<string> {
   const env = getEnv();
@@ -125,7 +145,7 @@ async function callProvider(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
       signal: controller.signal,
     });
     if (!res.ok) {
