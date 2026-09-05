@@ -93,10 +93,10 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 8: Polish & verificación final
 
-- [ ] T028 Gate técnico completo (typecheck+lint+build+test) + revisión adversarial del diff (workflow de verificación con lentes: seguridad multi-tenant, contrato cliente-servidor, regresión del self-test) y fixes.
-- [ ] T029 Re-conducir TODOS los guiones existentes tests/e2e/us1..us7 como regresión (us7-team es crítico: ejercita el signup interno que esta feature refactoriza) sobre la empresa original en el entorno local.
-- [ ] T029b Verificación de UPGRADE (FR-018, research D12): con la BD local poblada por los guiones, re-ejecutar `pnpm db:migrate` + reboot y verificar integridad; dejar SC-005 (instancia productiva) marcado "pendiente de verificación en el deploy" con su checklist en tasks/memoria.
-- [ ] T030 Actualizar CLAUDE.md (mapa del código: sección admin y config IA por empresa), .env.example final, y memoria del proyecto (decisiones D1-D11 aplicadas, estado del deploy pendiente de token en Ajustes).
+- [x] T028 Gate técnico completo (typecheck+lint+build+test) + revisión adversarial del diff (workflow de verificación con lentes: seguridad multi-tenant, contrato cliente-servidor, regresión del self-test) y fixes.
+- [x] T029 Re-conducir TODOS los guiones existentes tests/e2e/us1..us7 como regresión (us7-team es crítico: ejercita el signup interno que esta feature refactoriza) sobre la empresa original en el entorno local.
+- [x] T029b Verificación de UPGRADE (FR-018, research D12): con la BD local poblada por los guiones, re-ejecutar `pnpm db:migrate` + reboot y verificar integridad; dejar SC-005 (instancia productiva) marcado "pendiente de verificación en el deploy" con su checklist en tasks/memoria.
+- [x] T030 Actualizar CLAUDE.md (mapa del código: sección admin y config IA por empresa), .env.example final, y memoria del proyecto (decisiones D1-D11 aplicadas, estado del deploy pendiente de token en Ajustes).
 
 ## Dependencies
 
@@ -112,3 +112,27 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 MVP = Phase 1-3 (US1). Luego US2 (seguridad), US3 (gastos), US4/US5, Polish.
 Cada checkpoint deja la rama en verde (gate técnico) y con guiones conducidos.
+
+
+## Evidencia del cierre (5-sep-2026)
+
+- T028: revisión adversarial integral del diff main...HEAD (3 lentes) — 2
+  mayores encontrados y CERRADOS con conducción en vivo: FR-016 en el
+  signup público (403 reservado con ALLOW_SIGNUP=true, control 200) y
+  FR-017 en la capa de API (curl con temporal → 403 password_change_required;
+  cambio propio exento → 200 → API abre). Gate final abajo.
+- T029: regresión us1..us7 conducida (agente con Playwright): us1/us2/us4/us7
+  VERDES; us3/us5/us6 PARCIALES por artefactos del wa-mock (contador de
+  wamid por proceso, corregido con prefijo por arranque) y adaptaciones
+  multitenancy esperadas — ninguna regresión atribuible a la rama.
+- T029b/FR-018: cadena completa 0001→0003 aplicada por el migrator real
+  sobre una BD pre-003 POBLADA (journal en 0000): datos intactos, columna y
+  tabla nuevas presentes, unique compuesto creado. Además migraciones
+  re-corridas idempotentes sobre la BD dev poblada + reboot íntegro.
+  SC-005 sobre la instancia PRODUCTIVA: **pendiente de verificación en el
+  deploy** — checklist: deploy → empresa original intacta (bandeja, número,
+  equipo) → definir SUPER_ADMIN_EMAILS → pegar token en Ajustes → IA →
+  habilitar agente → responde.
+- T030: CLAUDE.md (envs IA deprecadas, multitenancy, mapa), README,
+  INSTALL-IA, specs/001 quickstart y .env.example alineados; memoria del
+  proyecto actualizada.

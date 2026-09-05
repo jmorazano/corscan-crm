@@ -1,4 +1,8 @@
-import { requireSession, UnauthorizedError } from "@/lib/auth/session";
+import {
+  PasswordChangeRequiredError,
+  requireSession,
+  UnauthorizedError,
+} from "@/lib/auth/session";
 import { subscribe } from "@/server/events/bus";
 
 /**
@@ -27,6 +31,9 @@ export async function GET(req: Request) {
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return new Response("No autenticado", { status: 401 });
+    }
+    if (err instanceof PasswordChangeRequiredError) {
+      return new Response("Cambio de contraseña pendiente", { status: 403 });
     }
     throw err;
   }

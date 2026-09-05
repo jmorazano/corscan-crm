@@ -1,7 +1,8 @@
 # Vocero CRM — Guía para Claude
 
 Vocero es un CRM de WhatsApp open source (MIT), self-hosted, con agente de IA y
-Laboratorio de auto-evaluación. Una instancia = un negocio. Este archivo guía a
+Laboratorio de auto-evaluación. Una instancia = un operador con una o más
+empresas (multitenancy real desde la feature 003). Este archivo guía a
 Claude Code (u otro asistente) para operar y **modificar** este repositorio —
 el caso típico: una agencia adaptando Vocero para un cliente.
 
@@ -32,6 +33,9 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
 | UI | `src/components/` + `src/app/(app)/` |
+| Administración (super admin: empresas/usuarios) | `src/server/admin/` + `src/app/api/admin/` + `src/app/(app)/admin/` (gate: `SUPER_ADMIN_EMAILS` + `withSuperAdmin`) |
+| Config de IA por empresa (token cifrado + modelos) | `src/server/ai/credentials.ts` + `/api/settings/ai` + Ajustes → Inteligencia artificial |
+| Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
 ai-mock) tras un gate único (`src/lib/dev-guard.ts`): 404 incondicional en
@@ -59,13 +63,12 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 Ver `.env.example` (cada una con guía inline). Las claves: `APP_BASE_URL`,
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY` (32 bytes base64),
 `META_WEBHOOK_VERIFY_TOKEN` (segmento secreto del webhook), `META_APP_SECRET`
-(opcional, firma), y para IA:
-
-```bash
-OPENROUTER_API_TOKEN=sk-or-...
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
-OPENROUTER_JUDGE_MODEL=anthropic/claude-haiku-4.5   # opcional: juez más barato
-```
+(opcional, firma), `SUPER_ADMIN_EMAILS` (emails con acceso a Administración,
+separados por coma). **La IA ya NO se configura por env**: el token de
+OpenRouter y los modelos son POR EMPRESA, cifrados, desde Ajustes →
+Inteligencia artificial (las viejas `OPENROUTER_API_TOKEN/MODEL/JUDGE_MODEL`
+son no-ops; `OPENROUTER_BASE_URL` sigue siendo de instancia — la intercepta
+el ai-mock).
 
 Para el self-test local existe además el modo de pruebas interno (mocks) —
 ver `specs/001-vocero-core/quickstart.md`. Nunca actives mocks en producción.

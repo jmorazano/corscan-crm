@@ -7,21 +7,18 @@ import { isOrganizationPathDenied } from "@/lib/auth/organization-gate";
  * cubre endpoints que el plugin agregue a futuro.
  */
 
-const DENIED_PATHS = [
-  "/organization/create",
-  "/organization/update",
-  "/organization/delete",
-  "/organization/set-active",
-  "/organization/invite-member",
-  "/organization/accept-invitation",
-  "/organization/cancel-invitation",
-  "/organization/reject-invitation",
-  "/organization/remove-member",
-  "/organization/update-member-role",
-  "/organization/leave",
-];
+// La MISMA constante que consume el hook: si la lista real divergiera de lo
+// testeado, este import lo hace imposible (antes el test verificaba una copia).
+import { DENIED_ORGANIZATION_PATHS } from "@/lib/auth/organization-gate";
+
+const DENIED_PATHS = DENIED_ORGANIZATION_PATHS;
 
 describe("gate ALLOWLIST del plugin organization", () => {
+  it("la lista enumerada de research D5 sigue completa (11 paths)", () => {
+    expect(DENIED_ORGANIZATION_PATHS).toHaveLength(11);
+    expect(DENIED_ORGANIZATION_PATHS).toContain("/organization/invite-member");
+  });
+
   for (const path of DENIED_PATHS) {
     it(`niega ${path}`, () => {
       expect(isOrganizationPathDenied(path)).toBe(true);

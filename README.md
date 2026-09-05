@@ -5,7 +5,7 @@
 Vocero es un CRM self-hosted y gratuito para negocios que venden por WhatsApp:
 bandeja en tiempo real, pipeline de ventas, un agente de IA con el conocimiento
 de tu negocio y un **Laboratorio** donde clientes simulados lo evalúan antes de
-que hable con clientes reales. Una instancia = un negocio, en tu propio
+que hable con clientes reales. Una instancia = un operador con una o más empresas, en tu propio
 servidor, con tus datos.
 
 ![Bandeja de Vocero CRM](docs/screenshots/bandeja.png)
@@ -205,9 +205,9 @@ del cliente se conecta con el **override de callback por WABA**:
 En las variables de la instancia:
 
 ```bash
-OPENROUTER_API_TOKEN=sk-or-...        # tu key
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
-OPENROUTER_JUDGE_MODEL=               # opcional: modelo distinto para el juez del Laboratorio
+# La IA se configura POR EMPRESA desde Ajustes → Inteligencia artificial
+# (token cifrado + modelos). Las env vars OPENROUTER_API_TOKEN/MODEL/JUDGE_MODEL
+# quedaron deprecadas y no tienen efecto.
 OPENROUTER_BASE_URL=https://openrouter.ai/api   # o tu proveedor OpenAI-compatible
 ```
 

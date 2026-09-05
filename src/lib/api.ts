@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ForbiddenError,
+  PasswordChangeRequiredError,
   requireSession,
   requireSuperAdmin,
   UnauthorizedError,
@@ -32,6 +33,13 @@ export function withAuth<Args extends unknown[]>(
       if (err instanceof UnauthorizedError) {
         return apiError(401, "unauthorized", "No autenticado");
       }
+      if (err instanceof PasswordChangeRequiredError) {
+        return apiError(
+          403,
+          "password_change_required",
+          "Debés cambiar tu contraseña temporal antes de operar"
+        );
+      }
       throw err;
     }
     try {
@@ -62,6 +70,13 @@ export function withSuperAdmin<Args extends unknown[]>(
       }
       if (err instanceof ForbiddenError) {
         return apiError(403, "forbidden", "Solo el super admin puede acceder");
+      }
+      if (err instanceof PasswordChangeRequiredError) {
+        return apiError(
+          403,
+          "password_change_required",
+          "Debés cambiar tu contraseña temporal antes de operar"
+        );
       }
       throw err;
     }

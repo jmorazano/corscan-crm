@@ -8,6 +8,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
 
+// requireSuperAdmin ahora consulta must_change_password (FR-017): el mock
+// de db devuelve el flag limpio.
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve([{ pending: false }]),
+        }),
+      }),
+    }),
+  }),
+  schema: {
+    user: { id: "user.id", mustChangePassword: "user.must_change_password" },
+  },
+}));
+
 vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
 }));
