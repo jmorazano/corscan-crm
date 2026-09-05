@@ -22,6 +22,21 @@ export type SseEvent =
         progress: { done: number; total: number };
         score?: number | null;
       };
+    }
+  | {
+      type: "campaign.progress";
+      data: {
+        campaignId: string;
+        status: string;
+        pausedReason?: string | null;
+        counts: {
+          total: number;
+          pending: number;
+          sent: number;
+          failed: number;
+          skipped: number;
+        };
+      };
     };
 
 const globalForBus = globalThis as unknown as { __voceroBus?: EventEmitter };
