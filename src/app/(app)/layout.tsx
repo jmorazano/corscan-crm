@@ -5,6 +5,7 @@ import { getAuth } from "@/lib/auth";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { getDb, schema } from "@/lib/db";
 import { getBranding } from "@/server/branding";
+import { isSuperAdminEmail } from "@/server/auth/super-admin";
 import { AppNav } from "@/components/app-nav";
 
 export default async function AppLayout({
@@ -30,6 +31,9 @@ export default async function AppLayout({
         branding={branding}
         userName={authSession?.user.name ?? "Usuario"}
         role={session.role}
+        // El link solo se muestra al super admin; la protección real vive
+        // server-side en /admin (FR-004).
+        isSuperAdmin={isSuperAdminEmail(session.email)}
       />
       <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
     </div>

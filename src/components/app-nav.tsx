@@ -9,6 +9,7 @@ import {
   Kanban,
   LogOut,
   Settings,
+  Shield,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -29,10 +30,12 @@ export function AppNav({
   branding,
   userName,
   role,
+  isSuperAdmin = false,
 }: {
   branding: Branding;
   userName: string;
   role: string;
+  isSuperAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -112,6 +115,29 @@ export function AppNav({
       </nav>
 
       <div className="flex-1" />
+
+      {/* Sombrero de plataforma (FR-004): solo se muestra al super admin;
+          la protección real es server-side en /admin. */}
+      {isSuperAdmin && (
+        <Link
+          href="/admin"
+          className={cn(
+            "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+            pathname.startsWith("/admin")
+              ? "bg-brand-tint font-semibold text-brand-text"
+              : "text-text-2 hover:bg-accent"
+          )}
+        >
+          <Shield
+            className={cn(
+              "h-[18px] w-[18px]",
+              pathname.startsWith("/admin") ? "text-brand" : "text-text-3"
+            )}
+            strokeWidth={1.7}
+          />
+          Administración
+        </Link>
+      )}
 
       <Link
         href="/settings"

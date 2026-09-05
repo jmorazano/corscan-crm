@@ -41,10 +41,10 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 **Goal**: crear "Masterbrand" + admin inicial desde Administración; el admin entra y gestiona su empresa. — **Independent Test**: guion us-mt-1.
 
-- [ ] T009 [US1] Server: creación de empresa + admin inicial en src/server/admin/organizations.ts (provisionOrganization + runInternalSignup/signUpEmail con must_change_password + member owner; orden, rollback y reuso de huérfana del contrato; 409 duplicate_email; 403 reserved_email FR-016; Zod min 8) + listado de empresas con miembros y estados (whatsappConnected/aiConfigured).
-- [ ] T010 [US1] API: src/app/api/admin/organizations/route.ts (GET/POST bajo withSuperAdmin, Zod, envelope de errores) + unit tests (403 para no-super-admin, 409 duplicado, creación feliz).
-- [ ] T011 [US1] UI: src/app/(app)/admin/page.tsx + src/components/admin/admin-client.tsx — lista de empresas y formulario crear empresa+admin con contraseña generada en cliente (mismo generador de team-client) mostrada UNA vez; estados de carga y error.
-- [ ] T012 [US1] Nav: ítem "Administración" en src/components/app-nav.tsx visible solo para super admin (dato expuesto por el endpoint de sesión/config que ya consume la nav o uno mínimo nuevo).
+- [x] T009 [US1] Server: creación de empresa + admin inicial en src/server/admin/organizations.ts (provisionOrganization + runInternalSignup/signUpEmail con must_change_password + member owner; orden, rollback y reuso de huérfana del contrato; 409 duplicate_email; 403 reserved_email FR-016; Zod min 8) + listado de empresas con miembros y estados (whatsappConnected/aiConfigured — aiConfigured queda en false explícito hasta US3). Tests: tests/unit/admin-organizations.test.ts.
+- [x] T010 [US1] API: src/app/api/admin/organizations/route.ts (GET/POST bajo withSuperAdmin, Zod, envelope de errores) + unit tests (401 sin sesión, 403 para no-super-admin, 422 Zod, 409 duplicado, 403 reserved_email, creación feliz) en tests/unit/admin-organizations-route.test.ts.
+- [x] T011 [US1] UI: src/app/(app)/admin/page.tsx (protección server-side: redirect si no es super admin) + src/components/admin/admin-client.tsx — lista de empresas y formulario crear empresa+admin con contraseña generada en cliente (mismo generador de team-client) mostrada UNA vez; estados de carga y error.
+- [x] T012 [US1] Nav: ítem "Administración" en src/components/app-nav.tsx visible solo para super admin (prop isSuperAdmin calculada server-side en el layout (app) con isSuperAdminEmail — la nav ya recibe sus datos por props, sin endpoint nuevo).
 - [ ] T013 [US1] Guion tests/e2e/us-mt-1-crear-empresa.md (feliz CON cambio obligatorio de contraseña en el primer login del admin nuevo + email duplicado + email reservado 403 + acceso denegado a no-super-admin) y conducirlo en local con Playwright hasta verde.
 
 **Checkpoint**: US1 entregable sola (MVP).
