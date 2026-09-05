@@ -74,7 +74,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 - [x] T021 [US3] API: src/app/api/settings/ai/route.ts (GET/PUT/DELETE según contrato ai-settings.md, owner-only en mutaciones) + unit tests (last4, owner gate, delete idempotente). — HECHO: GET miembro (config null o last4+modelos crudos+defaults), PUT/DELETE owner-only 403, token vacío 422, DELETE idempotente; tests/unit/ai-settings-route.test.ts (7).
 - [x] T022 [US3] UI: card "Inteligencia artificial" en Ajustes (src/components/settings/ai-card.tsx + alta en la página de Ajustes): token con last4, modelos con defaults visibles, estado del agente (apagado/activo) con guía; actualizar los 3 textos de UI que nombran las env vars (FR-015). — HECHO: pestaña /settings/ai en settings-nav + página; badge activo/apagado, token password con placeholder ····last4, modelos con defaults de producto como placeholder, guardar/rotar y borrar con window.confirm; textos migrados en agent-client, lab-client y contact-panel (ahora apuntan a Ajustes → Inteligencia artificial).
 - [x] T023 [US3] Deprecar envs en .env.example (OPENROUTER_API_TOKEN/MODEL/JUDGE_MODEL con nota de migración a Ajustes) manteniendo OPENROUTER_BASE_URL; ajustar src/lib/env.ts. — HECHO: las tres SALEN del schema de env (lo más limpio: Zod ignora claves desconocidas, dejarlas puestas no rompe ni hace nada) e isAiConfigured() global eliminado; .env.example con nota de migración; OPENROUTER_BASE_URL intacta (la intercepta el ai-mock).
-- [ ] T024 [US3] Guion tests/e2e/us-mt-3-ia-por-empresa.md (A con token responde vía ai-mock; B sin token apagado limpio con aviso; token "-invalid" degrada sin colgarse; DELETE apaga) y conducirlo hasta verde.
+- [x] T024 [US3] Guion tests/e2e/us-mt-3-ia-por-empresa.md (A con token responde vía ai-mock; B sin token apagado limpio con aviso; token "-invalid" degrada sin colgarse; DELETE apaga) y conducirlo hasta verde.
 
 **Checkpoint**: separación de gastos operativa.
 
@@ -82,7 +82,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 6: US4 — Masterbrand conecta su WhatsApp (P3)
 
-- [ ] T025 [US4] Verificación dirigida (mock): desde la segunda empresa, conectar número por el camino manual/mock del wizard y ejercitar el circuito entrante/saliente; cubierto principalmente por us-mt-2 — este guion agrega la conexión hecha POR el admin nuevo desde sus Ajustes (extender us-mt-2 o mini-guion us-mt-4).
+- [x] T025 [US4] Verificación dirigida (mock): desde la segunda empresa, conectar número por el camino manual/mock del wizard y ejercitar el circuito entrante/saliente; cubierto principalmente por us-mt-2 — este guion agrega la conexión hecha POR el admin nuevo desde sus Ajustes (extender us-mt-2 o mini-guion us-mt-4). — HECHO: cubierto en us-mt-2 (la conexión de B la hizo el propio admin del socio desde SU sesión, PUT del modo manual, sin intervención del super admin; circuito entrante verificado).
 
 ## Phase 7: US5 — Gestión de usuarios por el super admin (P3)
 
