@@ -34,6 +34,9 @@ export function ContactsClient() {
   const [startingTemplate, setStartingTemplate] = useState<ContactDto | null>(
     null
   );
+  const [revertingOptOut, setRevertingOptOut] = useState<ContactDto | null>(
+    null
+  );
   // Id del contacto con confirmación de borrado pendiente (dos pasos).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -176,7 +179,14 @@ export function ContactsClient() {
                       <Badge variant="secondary">Archivado</Badge>
                     )}
                     {c.optedOutAt && (
-                      <Badge variant="destructive">Dado de baja</Badge>
+                      <Badge
+                        variant="destructive"
+                        className="cursor-pointer"
+                        title="Revertir la baja (pide confirmación)"
+                        onClick={() => setRevertingOptOut(c)}
+                      >
+                        Dado de baja
+                      </Badge>
                     )}
                     {c.tags.map((t) => (
                       <Badge
@@ -299,6 +309,87 @@ export function ContactsClient() {
           onClose={() => setStartingTemplate(null)}
         />
       )}
+
+      {revertingOptOut && (
+        <RevertOptOutDialog
+          contact={revertingOptOut}
+          onClose={() => setRevertingOptOut(null)}
+          onReverted={() => {
+            setRevertingOptOut(null);
+            void refetch();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Confirmación explícita de la reversión de una baja (FR-011). */
+function RevertOptOutDialog({
+  contact,
+  onClose,
+  onReverted,
+}: {
+  contact: ContactDto;
+  onClose: () => void;
+  onReverted: () => void;
+}) {
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function revert() {
+    setWorking(true);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contact.id}/opt-out-revert`, {
+      method: "POST",
+    }).catch(() => null);
+    setWorking(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo revertir la baja.");
+      return;
+    }
+    onReverted();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-2 font-semibold">Revertir la baja</h3>
+        <p className="mb-4 text-sm text-muted-foreground">
+          {contact.name} pidió no recibir más mensajes
+          {contact.optedOutAt
+            ? ` el ${new Date(contact.optedOutAt).toLocaleDateString()}`
+            : ""}
+          . Revertí la baja SOLO si te lo pidió explícitamente (p. ej. quiere
+          volver a recibir novedades). Volverá a ser elegible para campañas.
+        </p>
+        {error && (
+          <p className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={working}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={working}
+            onClick={() => void revert()}
+          >
+            {working ? "Revirtiendo…" : "Sí, revertir la baja"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
