@@ -1,55 +1,77 @@
-import { desc, ilike, or } from "drizzle-orm";
+import { arrayContains, desc, count, ilike, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { normalizeToWaId } from "@/lib/phone";
+import { sanitizeTags } from "@/lib/tags";
 import { serializeContact } from "@/server/contacts";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 200;
 
 export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim();
   const includeArchived = url.searchParams.get("archived") === "true";
+  const tag = url.searchParams.get("tag")?.trim().toLowerCase();
+
+  // Todos los filtros van al WHERE (004): filtrar en JS después del limit
+  // devolvía una vista truncada engañosa tras un import grande.
+  const where = scoped(
+    schema.contact.organizationId,
+    session.organizationId,
+    q
+      ? or(
+          ilike(schema.contact.name, `%${q}%`),
+          ilike(schema.contact.phone, `%${q}%`)
+        )
+      : undefined,
+    includeArchived ? undefined : isNull(schema.contact.archivedAt),
+    tag ? arrayContains(schema.contact.tags, [tag]) : undefined
+  );
 
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(schema.contact)
-    .where(
-      scoped(
-        schema.contact.organizationId,
-        session.organizationId,
-        q
-          ? or(
-              ilike(schema.contact.name, `%${q}%`),
-              ilike(schema.contact.phone, `%${q}%`)
-            )
-          : undefined
-      )
-    )
-    .orderBy(desc(schema.contact.updatedAt))
-    .limit(200);
+  const [rows, totalRows] = await Promise.all([
+    db
+      .select()
+      .from(schema.contact)
+      .where(where)
+      .orderBy(desc(schema.contact.updatedAt))
+      .limit(PAGE_SIZE),
+    db.select({ total: count() }).from(schema.contact).where(where),
+  ]);
 
-  const contacts = rows
-    .filter((c) => includeArchived || !c.archivedAt)
-    .map(serializeContact);
-  return Response.json({ contacts });
+  return Response.json({
+    contacts: rows.map(serializeContact),
+    total: totalRows[0]?.total ?? rows.length,
+  });
 });
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
+  phone: z.string().trim().min(1).max(40),
   notes: z.string().max(4000).optional(),
+  tags: z.array(z.string().max(80)).max(30).optional(),
+  consent: z.boolean().optional(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
+
+  // 004: el teléfono se guarda SIEMPRE como wa_id (research D3) para que la
+  // respuesta del cliente por webhook caiga en el MISMO contacto.
+  const normalized = normalizeToWaId(body.data.phone);
+  if (!normalized.ok) {
+    return apiError(
+      422,
+      "invalid_phone",
+      "Teléfono inválido: usá dígitos con código de país (ej. +54 9 351 688 2234)"
+    );
+  }
 
   const db = getDb();
   const inserted = await db
@@ -58,8 +80,12 @@ export const POST = withAuth(async (session, req: Request) => {
       id: newId("contact"),
       organizationId: session.organizationId,
       name: body.data.name,
-      phone: body.data.phone,
+      phone: normalized.waId,
       notes: body.data.notes ?? null,
+      tags: sanitizeTags(body.data.tags),
+      ...(body.data.consent
+        ? { consentSource: "manual" as const, consentAt: new Date() }
+        : {}),
     })
     .onConflictDoNothing({
       target: [schema.contact.organizationId, schema.contact.phone],

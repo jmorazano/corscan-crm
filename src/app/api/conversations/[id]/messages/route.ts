@@ -31,6 +31,7 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   not_connected: 409,
   reconnect_required: 409,
   window_closed: 409,
+  opted_out: 409,
   meta_error: 422,
   meta_unavailable: 503,
 };

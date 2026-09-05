@@ -117,6 +117,22 @@ export const contact = pgTable(
     phone: text("phone").notNull(),
     name: text("name").notNull(),
     notes: text("notes"),
+    /** Etiquetas de segmentación (004): saneadas (trim, lower, únicas). */
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    /** Consentimiento (004): NULL = sin registro → inelegible para campañas. */
+    consentSource: text("consent_source", {
+      enum: ["import", "inbound", "manual"],
+    }),
+    consentAt: timestamp("consent_at"),
+    /** Baja (004): set-si-null desde la ingesta (BAJA/STOP); excluye de todo
+     * envío iniciado por la empresa. Reversión solo explícita, auditada. */
+    optedOutAt: timestamp("opted_out_at"),
+    optOutRevertedAt: timestamp("opt_out_reverted_at"),
+    optOutRevertedBy: text("opt_out_reverted_by"),
+    /** Contacto del Laboratorio (004): jamás elegible para envíos reales ni
+     * desarchivable; la migración marca los preexistentes por sus
+     * conversaciones is_test. */
+    isTest: boolean("is_test").notNull().default(false),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -124,6 +140,7 @@ export const contact = pgTable(
   (t) => [
     uniqueIndex("contact_org_phone_uq").on(t.organizationId, t.phone),
     index("contact_org_name_idx").on(t.organizationId, t.name),
+    index("contact_tags_gin_idx").using("gin", t.tags),
   ]
 );
 
@@ -221,6 +238,9 @@ export const message = pgTable(
     waMessageId: text("wa_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     type: text("type").notNull().default("text"),
+    /** Plantilla enviada (004): habilita el dedup de reintentos (FR-009) y
+     * el tracking por campaña. Sin FK: la plantilla puede borrarse. */
+    templateId: text("template_id"),
     text: text("text"),
     status: text("status", {
       enum: ["pending", "sent", "delivered", "read", "failed"],
@@ -410,4 +430,132 @@ export const agentTestCase = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("test_case_run_idx").on(t.runId)]
+);
+
+/* ============================================================
+ * Campañas (feature 004): envío de plantillas con consentimiento,
+ * cupo por ventana móvil de 24h y estado por destinatario.
+ * ============================================================ */
+
+export const campaign = pgTable(
+  "campaign",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    templateId: text("template_id")
+      .notNull()
+      .references(() => template.id),
+    /** Vacío = todos los elegibles; si no, contactos con AL MENOS una. */
+    tagFilter: text("tag_filter").array().notNull().default(sql`'{}'::text[]`),
+    variableMode: text("variable_mode", {
+      enum: ["contact_name", "fixed"],
+    })
+      .notNull()
+      .default("contact_name"),
+    variableText: text("variable_text"),
+    /** Transiciones finales con guard WHERE (monotónicas, patrón lab). */
+    status: text("status", {
+      enum: ["draft", "running", "paused", "completed", "cancelled"],
+    })
+      .notNull()
+      .default("draft"),
+    pausedReason: text("paused_reason", {
+      enum: ["manual", "daily_limit", "channel", "error"],
+    }),
+    /** Anti doble-runner (004): pause/resume la incrementa; un runner cuya
+     * generación ya no coincide se auto-termina (deploys con solape incl.). */
+    runnerGeneration: integer("runner_generation").notNull().default(0),
+    launchedAt: timestamp("launched_at"),
+    completedAt: timestamp("completed_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("campaign_org_created_idx").on(t.organizationId, t.createdAt)]
+);
+
+export const campaignRecipient = pgTable(
+  "campaign_recipient",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => campaign.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    /**
+     * Fuente de verdad anti-duplicados: `sending` CON wa_message_id = ya
+     * enviado (el revive lo promueve a sent); SIN wamid = re-intentable.
+     * Entregado/leído NO viven acá: derivan de message.status por JOIN.
+     */
+    status: text("status", {
+      enum: ["pending", "sending", "sent", "failed", "skipped"],
+    })
+      .notNull()
+      .default("pending"),
+    skipReason: text("skip_reason", {
+      enum: ["opted_out", "ineligible", "cancelled"],
+    }),
+    error: text("error"),
+    conversationId: text("conversation_id").references(() => conversation.id),
+    messageId: text("message_id").references(() => message.id),
+    waMessageId: text("wa_message_id"),
+    sentAt: timestamp("sent_at"),
+    repliedAt: timestamp("replied_at"),
+  },
+  (t) => [
+    uniqueIndex("campaign_recipient_uq").on(t.campaignId, t.contactId),
+    index("campaign_recipient_org_campaign_status_idx").on(
+      t.organizationId,
+      t.campaignId,
+      t.status
+    ),
+    // Side-effects de la ingesta (respondió / opt-out) buscan por contacto.
+    index("campaign_recipient_org_contact_idx").on(
+      t.organizationId,
+      t.contactId
+    ),
+  ]
+);
+
+/**
+ * Registro de iniciaciones (cupo FR-015): una fila por plantilla enviada con
+ * ventana de servicio cerrada. Cupo usado = contactos ÚNICOS en las últimas
+ * 24h móviles (semántica oficial de Meta, research D4).
+ */
+export const initiatedSend = pgTable(
+  "initiated_send",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+  },
+  (t) => [index("initiated_send_org_sent_idx").on(t.organizationId, t.sentAt)]
+);
+
+export const sendSettings = pgTable(
+  "send_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Freno del CRM, no el límite real de Meta (tier). Default: 250. */
+    dailyInitiatedLimit: integer("daily_initiated_limit").notNull().default(250),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("send_settings_org_uq").on(t.organizationId)]
 );

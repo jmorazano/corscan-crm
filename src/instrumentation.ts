@@ -7,5 +7,13 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { cleanupOrphanRuns } = await import("./instrumentation-node");
     await cleanupOrphanRuns();
+    const { backfillContactPhones } = await import(
+      "./server/contacts-backfill"
+    );
+    await backfillContactPhones();
+    // 004: las campañas en curso retoman solas (at-most-once) y el ticker
+    // reanuda las pausadas por cupo cuando la ventana móvil libera.
+    const { reviveCampaigns } = await import("./server/campaigns/runner");
+    await reviveCampaigns();
   }
 }

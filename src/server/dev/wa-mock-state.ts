@@ -6,6 +6,9 @@
 
 export type OutboxEntry = {
   n: string;
+  /** wamid literal de la respuesta del mock (004): evita que los guiones lo
+   * reconstruyan a mano como `wamid.mock.out.<n>`. */
+  waMessageId: string;
   phoneNumberId: string;
   to: string;
   type: string;

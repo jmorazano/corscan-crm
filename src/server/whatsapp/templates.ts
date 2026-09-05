@@ -10,7 +10,9 @@ import {
   markReconnectRequired,
 } from "@/server/whatsapp/credentials";
 import { callGraphSend, SendError } from "@/server/inbox/send";
+import { isWindowOpen } from "@/server/inbox/window";
 import { serializeMessage } from "@/server/inbox/ingest";
+import { releaseQuota, reserveQuota } from "@/server/campaigns/quota";
 import type { WebhookValue } from "@/server/inbox/webhook";
 
 /** Errores tipados del servicio de plantillas → HTTP en la capa de API. */
@@ -298,28 +300,30 @@ export async function applyTemplateStatusEvent(
   }
 }
 
-/** Envía una plantilla APROBADA a una conversación (ventana cerrada, FR-051). */
-export async function sendTemplate(input: {
-  organizationId: string;
-  conversationId: string;
-  templateId: string;
-  variable?: string;
-}): Promise<{ messageId: string }> {
-  const db = getDb();
+export type SendTemplateResult = {
+  messageId: string;
+  waMessageId: string;
+  /** contacts[0].wa_id de la respuesta de Graph (reconciliación D3). */
+  waId: string | null;
+};
 
-  const templates = await db
-    .select()
-    .from(schema.template)
-    .where(
-      scoped(
-        schema.template.organizationId,
-        input.organizationId,
-        eq(schema.template.id, input.templateId)
-      )
-    )
-    .limit(1);
-  const template = templates[0];
-  if (!template) throw new TemplateError("not_found", "Plantilla no encontrada");
+/**
+ * Núcleo del envío de plantillas (004): recibe plantilla, credenciales y
+ * las filas de conversación/contacto YA resueltas — el runner de campañas
+ * las tiene precargadas y no paga N descifrados. Los guards viven ACÁ
+ * (defensa en profundidad): todo camino de envío pasa por este embudo.
+ */
+export async function sendTemplateCore(input: {
+  organizationId: string;
+  template: TemplateRow;
+  creds: NonNullable<Awaited<ReturnType<typeof getCredentialsByOrg>>>;
+  conversation: typeof schema.conversation.$inferSelect;
+  contact: typeof schema.contact.$inferSelect;
+  variable?: string;
+}): Promise<SendTemplateResult> {
+  const db = getDb();
+  const { template, creds, conversation, contact } = input;
+
   if (template.status !== "approved") {
     throw new TemplateError("invalid", "Solo se pueden enviar plantillas aprobadas");
   }
@@ -327,41 +331,30 @@ export async function sendTemplate(input: {
   if (needsVariable && !input.variable?.trim()) {
     throw new TemplateError("invalid", "La plantilla requiere el valor de {{1}}");
   }
-
-  const rows = await db
-    .select({ conversation: schema.conversation, contact: schema.contact })
-    .from(schema.conversation)
-    .innerJoin(
-      schema.contact,
-      eq(schema.conversation.contactId, schema.contact.id)
-    )
-    .where(
-      scoped(
-        schema.conversation.organizationId,
-        input.organizationId,
-        eq(schema.conversation.id, input.conversationId)
-      )
-    )
-    .limit(1);
-  const row = rows[0];
-  if (!row) throw new TemplateError("not_found", "Conversación no encontrada");
-  if (row.conversation.isTest) {
-    // Aserción dura del sandbox (FR-031)
+  if (conversation.isTest || contact.isTest) {
+    // Aserción dura del sandbox (FR-031 + 004): también a nivel CONTACTO —
+    // un contacto del Laboratorio jamás recibe un envío real, tenga la
+    // conversación que tenga.
     throw new SendError(
       "sandbox_violation",
-      "Conversación de prueba del Laboratorio: el envío real está prohibido"
+      "Contacto/conversación de prueba del Laboratorio: el envío real está prohibido"
     );
   }
-
-  const creds = await getCredentialsByOrg(input.organizationId);
-  if (!creds) throw new TemplateError("not_connected", "Sin número conectado");
+  if (contact.optedOutAt && !isWindowOpen(conversation.lastInboundAt)) {
+    // FR-010/FR-012: el dado de baja no recibe envíos INICIADOS por la
+    // empresa; responderle dentro de la ventana de servicio sigue permitido.
+    throw new SendError(
+      "opted_out",
+      "El contacto pidió no recibir más mensajes (dado de baja)"
+    );
+  }
   if (creds.status === "reconnect_required") {
     throw new TemplateError("reconnect_required", "Reconecta el número");
   }
 
-  const waMessageId = await callGraphSend(creds, {
+  const { waMessageId, waId } = await callGraphSend(creds, {
     messaging_product: "whatsapp",
-    to: normalizeRecipient(row.contact.phone),
+    to: normalizeRecipient(contact.phone),
     type: "template",
     template: {
       name: template.name,
@@ -384,10 +377,11 @@ export async function sendTemplate(input: {
     .values({
       id: newId("message"),
       organizationId: input.organizationId,
-      conversationId: input.conversationId,
+      conversationId: conversation.id,
       waMessageId,
       direction: "out",
       type: "template",
+      templateId: template.id,
       text: renderBody(template.body, input.variable?.trim()),
       status: "pending",
     })
@@ -397,15 +391,113 @@ export async function sendTemplate(input: {
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-    .where(eq(schema.conversation.id, input.conversationId));
+    .where(eq(schema.conversation.id, conversation.id));
 
   publish(input.organizationId, {
     type: "message.new",
     data: {
-      conversationId: input.conversationId,
+      conversationId: conversation.id,
       message: serializeMessage(message),
     },
   });
 
-  return { messageId: message.id };
+  return { messageId: message.id, waMessageId, waId };
+}
+
+/** Resuelve plantilla + conversación + credenciales para el núcleo. */
+export async function resolveTemplateSend(input: {
+  organizationId: string;
+  conversationId: string;
+  templateId: string;
+}): Promise<{
+  template: TemplateRow;
+  conversation: typeof schema.conversation.$inferSelect;
+  contact: typeof schema.contact.$inferSelect;
+  creds: NonNullable<Awaited<ReturnType<typeof getCredentialsByOrg>>>;
+}> {
+  const db = getDb();
+
+  const templates = await db
+    .select()
+    .from(schema.template)
+    .where(
+      scoped(
+        schema.template.organizationId,
+        input.organizationId,
+        eq(schema.template.id, input.templateId)
+      )
+    )
+    .limit(1);
+  const template = templates[0];
+  if (!template) throw new TemplateError("not_found", "Plantilla no encontrada");
+
+  const rows = await db
+    .select({ conversation: schema.conversation, contact: schema.contact })
+    .from(schema.conversation)
+    .innerJoin(
+      schema.contact,
+      eq(schema.conversation.contactId, schema.contact.id)
+    )
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.id, input.conversationId)
+      )
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new TemplateError("not_found", "Conversación no encontrada");
+
+  const creds = await getCredentialsByOrg(input.organizationId);
+  if (!creds) throw new TemplateError("not_connected", "Sin número conectado");
+
+  return { template, conversation: row.conversation, contact: row.contact, creds };
+}
+
+/**
+ * Envía una plantilla APROBADA a una conversación existente (ventana
+ * cerrada, FR-051). Con la ventana cerrada el envío es "iniciado por la
+ * empresa": consume cupo (FR-015, con reserva y compensación) — dentro de
+ * ventana no. Lanza QuotaError con el cupo agotado.
+ */
+export async function sendTemplate(input: {
+  organizationId: string;
+  conversationId: string;
+  templateId: string;
+  variable?: string;
+}): Promise<{ messageId: string }> {
+  const resolved = await resolveTemplateSend(input);
+
+  const windowOpen = isWindowOpen(resolved.conversation.lastInboundAt);
+  // El guard de baja va ANTES de la reserva de cupo: al operador hay que
+  // decirle el motivo real (409 opted_out), no un 429 accidental.
+  if (resolved.contact.optedOutAt && !windowOpen) {
+    throw new SendError(
+      "opted_out",
+      "El contacto pidió no recibir más mensajes (dado de baja)"
+    );
+  }
+  let reservationId: string | null = null;
+  if (!windowOpen) {
+    ({ reservationId } = await reserveQuota(
+      input.organizationId,
+      resolved.contact.id
+    ));
+  }
+
+  try {
+    const result = await sendTemplateCore({
+      organizationId: input.organizationId,
+      template: resolved.template,
+      creds: resolved.creds,
+      conversation: resolved.conversation,
+      contact: resolved.contact,
+      variable: input.variable,
+    });
+    return { messageId: result.messageId };
+  } catch (err) {
+    if (reservationId) await releaseQuota(reservationId);
+    throw err;
+  }
 }

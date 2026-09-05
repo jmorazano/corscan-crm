@@ -13,9 +13,13 @@ import { Label } from "@/components/ui/label";
 export function TemplateSender({
   conversationId,
   onSent,
+  submit,
 }: {
-  conversationId: string;
+  conversationId?: string;
   onSent: () => void;
+  /** Envío alternativo (004): devuelve mensaje de error o null si salió.
+   * Sin esta prop, postea a la conversación (comportamiento original). */
+  submit?: (templateId: string, variable?: string) => Promise<string | null>;
 }) {
   const [templates, setTemplates] = useState<TemplateDto[] | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -65,24 +69,32 @@ export function TemplateSender({
     if (!selected || sending) return;
     setSending(true);
     setError(null);
-    const res = await fetch(
-      `/api/conversations/${conversationId}/messages/template`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          templateId: selected.id,
-          variable: needsVariable ? variable : undefined,
-        }),
+    const value = needsVariable ? variable : undefined;
+
+    if (submit) {
+      const errorMessage = await submit(selected.id, value);
+      setSending(false);
+      if (errorMessage) {
+        setError(errorMessage);
+        return;
       }
-    );
-    setSending(false);
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      setError(data?.error?.message ?? "No se pudo enviar la plantilla");
-      return;
+    } else {
+      const res = await fetch(
+        `/api/conversations/${conversationId}/messages/template`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ templateId: selected.id, variable: value }),
+        }
+      );
+      setSending(false);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        setError(data?.error?.message ?? "No se pudo enviar la plantilla");
+        return;
+      }
     }
     setSelectedId("");
     setVariable("");

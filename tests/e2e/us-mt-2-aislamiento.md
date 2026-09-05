@@ -67,3 +67,16 @@ migraciones 0001+0002):
 
 Nota operativa: la recarga forzada exige `DEMO_TOOLS_ENABLED=true` (solo en
 el .env local del entorno E2E).
+
+## Extensión 004 — Campañas, cupo y contactos (FR-020)
+
+Conducido el 5-sep-2026 con sesión de socio@vocero.test (Inmobiliaria Demo)
+contra los datos de la otra empresa:
+
+- `GET /api/campaigns` → 0 campañas (las de la empresa A invisibles). ✔
+- `GET /api/campaigns/<id de A>` → 404 · acción `resume` sobre esa id →
+  404. ✔
+- `GET /api/settings/sending` → default propio (250/0/250), NO el límite
+  40 configurado por A. ✔
+- `GET /api/contacts?q=<teléfono de A>` → 0 resultados. ✔
+- `POST /api/contacts/<id de A>/opt-out-revert` → 404. ✔

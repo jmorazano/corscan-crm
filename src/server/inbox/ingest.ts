@@ -6,6 +6,7 @@ import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookValue } from "@/server/inbox/webhook";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
+import { onInboundSideEffects } from "@/server/inbox/side-effects";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
@@ -192,6 +193,16 @@ export async function ingestInboundMessage(input: {
     .where(eq(schema.conversation.id, conversation.id));
 
   await onLeadActivity(organizationId, contact.id, waTimestamp);
+
+  // 004: consentimiento inbound + baja automática + "respondió" de campañas
+  // (post-gate de dedup: exactamente una vez por wamid).
+  await onInboundSideEffects({
+    organizationId,
+    contactId: contact.id,
+    messageType: input.type,
+    text: input.text,
+    at: waTimestamp,
+  });
 
   publish(organizationId, {
     type: "message.new",

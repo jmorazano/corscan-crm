@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { normalizeRecipient } from "@/lib/meta/client";
 
 export function serializeContact(c: typeof schema.contact.$inferSelect) {
   return {
@@ -8,6 +9,10 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     name: c.name,
     phone: c.phone,
     notes: c.notes,
+    tags: c.tags,
+    consentSource: c.consentSource,
+    optedOutAt: c.optedOutAt?.toISOString() ?? null,
+    isTest: c.isTest,
     archivedAt: c.archivedAt?.toISOString() ?? null,
   };
 }
@@ -53,6 +58,54 @@ export async function getContactStage(
     )
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Reconciliación por wa_id (004, research D3): tras un envío, Graph devuelve
+ * en contacts[0].wa_id el identificador canónico que usará el webhook. Si
+ * difiere del phone almacenado, la respuesta del cliente crearía un contacto
+ * DUPLICADO — se corrige acá. Guard anti-eco: el wa_id igual al `to`
+ * normalizado de salida (p. ej. 521→52 de México) no es una corrección de
+ * Meta, es el eco del propio envío.
+ */
+export async function reconcileContactWaId(
+  organizationId: string,
+  contact: { id: string; phone: string },
+  waId: string | null
+): Promise<"unchanged" | "updated" | "conflict"> {
+  if (!waId || waId === contact.phone) return "unchanged";
+  if (waId === normalizeRecipient(contact.phone)) return "unchanged";
+
+  const db = getDb();
+  const clash = await db
+    .select({ id: schema.contact.id })
+    .from(schema.contact)
+    .where(
+      and(
+        eq(schema.contact.organizationId, organizationId),
+        eq(schema.contact.phone, waId),
+        ne(schema.contact.id, contact.id)
+      )
+    )
+    .limit(1);
+  if (clash[0]) {
+    console.warn(
+      `[wa_id] conflicto de reconciliación: el wa_id de ${contact.id} ya pertenece a ${clash[0].id}`
+    );
+    return "conflict";
+  }
+
+  await db
+    .update(schema.contact)
+    .set({ phone: waId, updatedAt: new Date() })
+    .where(
+      scoped(
+        schema.contact.organizationId,
+        organizationId,
+        eq(schema.contact.id, contact.id)
+      )
+    );
+  return "updated";
 }
 
 /**

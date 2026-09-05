@@ -48,5 +48,9 @@ export type ContactDto = {
   name: string;
   phone: string;
   notes: string | null;
+  tags: string[];
+  consentSource: "import" | "inbound" | "manual" | null;
+  optedOutAt: string | null;
+  isTest: boolean;
   archivedAt: string | null;
 };

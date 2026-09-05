@@ -29,6 +29,13 @@
       "when": 1788613850947,
       "tag": "0003_fresh_valkyrie",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788636411470,
+      "tag": "0004_thick_dagger",
+      "breakpoints": true
     }
   ]
 }

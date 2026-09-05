@@ -1,7 +1,22 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.2.0 → 1.3.0
+Versión: 1.3.0 → 1.4.0
+
+Cambios (feature 004-contacts-campaigns, 5-sep-2026):
+  - Principio VIII: se refina el alcance del canal. Las CAMPAÑAS DE PLANTILLAS
+    CON CONSENTIMIENTO a la cartera propia del negocio (listas propias con
+    declaración de consentimiento, o clientes que ya escribieron) SÍ sirven a
+    "convertir" y entran al alcance, con guardrails obligatorios: opt-out
+    automático respetado, límite de volumen por empresa y exclusión del
+    sandbox. Siguen FUERA: scraping de números, envío a listas frías o
+    compradas, y flujos visuales genéricos.
+  - Motivación escrita: pedido explícito del dueño (5-sep-2026) de importar su
+    lista de clientes y enviarle plantillas de marketing, con la calidad del
+    número real (coexistence) protegida por los guardrails.
+  - Bump: MINOR (expansión material del alcance de VIII).
+
+Versión anterior: 1.2.0 → 1.3.0
 
 Cambios (feature 003-multitenancy, 5-sep-2026):
   - Descripción del producto y Principio VIII: "una instancia = un negocio" →
@@ -166,16 +181,22 @@ de deuda oculta; hacerlas visibles permite corregirlas a tiempo.
 ### VIII. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp
 
 Es un CRM de conversaciones y leads de WhatsApp que las agencias despliegan para
-negocios. No es plataforma de marketing masivo, ni constructor visual de flujos, ni
-herramienta de scraping. Lo que no ayude a *atender, organizar y convertir
-conversaciones de WhatsApp de las empresas del operador* se rechaza.
+negocios. No es plataforma de marketing masivo indiscriminado, ni constructor
+visual de flujos, ni herramienta de scraping. Lo que no ayude a *atender,
+organizar y convertir conversaciones de WhatsApp de las empresas del operador*
+se rechaza.
 
 - El modelo de datos y los flujos MUST reflejar ese dominio: contactos que escriben
   por WhatsApp, conversaciones con ventana de 24h, leads en un pipeline, un agente
   de IA que atiende con el conocimiento del negocio y escala a humanos.
-- WhatsApp Cloud API es el canal; el producto es el CRM. Features de canal que no
-  sirvan a atender/organizar/convertir (broadcast masivo, scraping de números,
-  flujos visuales genéricos) quedan FUERA del alcance de v1.
+- WhatsApp Cloud API es el canal; el producto es el CRM. Las campañas de
+  plantillas CON consentimiento a la cartera propia del negocio (listas propias
+  importadas con declaración de consentimiento, o clientes que ya escribieron)
+  sirven a "convertir" y entran al alcance — SIEMPRE con sus guardrails:
+  opt-out automático respetado, límite de volumen por empresa y exclusión del
+  sandbox. Features de canal que no sirvan a atender/organizar/convertir
+  (scraping de números, envío a listas frías o compradas, flujos visuales
+  genéricos) quedan FUERA del alcance de v1.
 - Toda feature MUST servir a la agencia que despliega o al negocio que opera UNA
   instancia. Lo que solo sirva a una plataforma centralizada (billing, planes,
   multi-instancia) queda FUERA.
@@ -272,4 +293,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.3.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05
+**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { sanitizeTags } from "@/lib/tags";
 import {
   deleteContact,
   getContactById,
@@ -38,6 +39,7 @@ const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   notes: z.string().max(4000).nullable().optional(),
   archived: z.boolean().optional(),
+  tags: z.array(z.string().max(80)).max(30).optional(),
 });
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
@@ -45,9 +47,24 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
+  // Sandbox (004): la única marca visible de un contacto del Laboratorio es
+  // su archivo — desarchivarlo lo volvería elegible para envíos reales.
+  if (body.data.archived === false) {
+    const current = await getContactById(session.organizationId, id);
+    if (!current) return apiError(404, "not_found", "Contacto no encontrado");
+    if (current.isTest) {
+      return apiError(
+        403,
+        "sandbox_violation",
+        "Los contactos de prueba del Laboratorio no se pueden desarchivar"
+      );
+    }
+  }
+
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (body.data.name !== undefined) set.name = body.data.name;
   if (body.data.notes !== undefined) set.notes = body.data.notes;
+  if (body.data.tags !== undefined) set.tags = sanitizeTags(body.data.tags);
   if (body.data.archived !== undefined) {
     set.archivedAt = body.data.archived ? new Date() : null;
   }

@@ -13,9 +13,13 @@ import {
 export function apiError(
   status: number,
   code: string,
-  message: string
+  message: string,
+  extra?: Record<string, unknown>
 ): Response {
-  return Response.json({ error: { code, message } }, { status });
+  return Response.json(
+    { error: { code, message, ...(extra ?? {}) } },
+    { status }
+  );
 }
 
 /**
