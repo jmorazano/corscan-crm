@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportWizard } from "@/components/contacts/import-wizard";
+import { TemplateSender } from "@/components/inbox/template-sender";
 
 export function ContactsClient() {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
@@ -29,6 +31,9 @@ export function ContactsClient() {
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [startingTemplate, setStartingTemplate] = useState<ContactDto | null>(
+    null
+  );
   // Id del contacto con confirmación de borrado pendiente (dos pasos).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -202,6 +207,15 @@ export function ContactsClient() {
                       <MessageSquareText className="h-4 w-4" />
                     </Button>
                   </Link>
+                  {!c.optedOutAt && !c.isTest && !c.archivedAt && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setStartingTemplate(c)}
+                    >
+                      Plantilla
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -278,6 +292,72 @@ export function ContactsClient() {
           onImported={() => void refetch()}
         />
       )}
+
+      {startingTemplate && (
+        <StartTemplateDialog
+          contact={startingTemplate}
+          onClose={() => setStartingTemplate(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inicia una conversación con plantilla hacia un contacto sin conversación
+ * (004, US2): POST /api/conversations y navega al hilo recién creado.
+ */
+function StartTemplateDialog({
+  contact,
+  onClose,
+}: {
+  contact: ContactDto;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-1 font-semibold">Enviar plantilla</h3>
+        <p className="mb-4 text-xs text-muted-foreground">
+          A {contact.name} ({formatPhone(contact.phone)}). Abre la conversación
+          en la bandeja al enviarse.
+        </p>
+        <TemplateSender
+          onSent={() => router.push(`/inbox?contact=${contact.id}`)}
+          submit={async (templateId, variable) => {
+            const res = await fetch("/api/conversations", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                contactId: contact.id,
+                templateId,
+                variable,
+              }),
+            }).catch(() => null);
+            if (!res) return "Sin conexión con el servidor";
+            if (!res.ok) {
+              const data = (await res.json().catch(() => null)) as {
+                error?: { message?: string };
+              } | null;
+              return data?.error?.message ?? "No se pudo enviar la plantilla";
+            }
+            return null;
+          }}
+        />
+        <div className="mt-4 flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

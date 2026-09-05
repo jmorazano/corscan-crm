@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { SendError } from "@/server/inbox/send";
+import { QuotaError } from "@/server/campaigns/quota";
 import {
   sendTemplate,
   TemplateError,
@@ -30,11 +31,18 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {
+    if (err instanceof QuotaError) {
+      // FR-015: el sender en conversación comparte el cupo con las campañas.
+      return apiError(429, "quota_exceeded", err.message, {
+        retryInSeconds: err.retryInSeconds,
+      });
+    }
     if (err instanceof TemplateError) {
       return apiError(templateErrorStatus(err), err.code, err.message);
     }
     if (err instanceof SendError) {
-      return apiError(403, err.code, err.message);
+      // FR-010: dado de baja con ventana cerrada → conflicto, no permiso.
+      return apiError(err.code === "opted_out" ? 409 : 403, err.code, err.message);
     }
     throw err;
   }

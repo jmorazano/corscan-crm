@@ -238,6 +238,9 @@ export const message = pgTable(
     waMessageId: text("wa_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     type: text("type").notNull().default("text"),
+    /** Plantilla enviada (004): habilita el dedup de reintentos (FR-009) y
+     * el tracking por campaña. Sin FK: la plantilla puede borrarse. */
+    templateId: text("template_id"),
     text: text("text"),
     status: text("status", {
       enum: ["pending", "sent", "delivered", "read", "failed"],

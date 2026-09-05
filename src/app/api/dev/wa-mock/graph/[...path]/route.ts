@@ -126,18 +126,26 @@ export async function POST(req: Request, ctx: Params) {
   if (path.length === 2 && path[1] === "messages") {
     const state = getWaMockState();
     const n = nextN();
+    const to = String(body.to ?? "");
+    const waMessageId = `wamid.mock.out.${n}`;
     state.outbox.push({
       n,
+      waMessageId,
       phoneNumberId: path[0]!,
-      to: String(body.to ?? ""),
+      to,
       type: String(body.type ?? "text"),
       body,
       at: new Date().toISOString(),
     });
+    // Knob 004 (research D3/D11): emula la normalización de Meta — para un
+    // `to` mexicano moderno (52 + 10 dígitos) el wa_id vuelve con el 1
+    // legacy (521…), igual que la API real con usuarios legacy. Permite
+    // conducir la rama de reconciliación en E2E; el resto ecoa el input.
+    const waId = /^52\d{10}$/.test(to) ? `521${to.slice(2)}` : to;
     return Response.json({
       messaging_product: "whatsapp",
-      contacts: [{ input: body.to, wa_id: body.to }],
-      messages: [{ id: `wamid.mock.out.${n}` }],
+      contacts: [{ input: body.to, wa_id: waId }],
+      messages: [{ id: waMessageId }],
     });
   }
 

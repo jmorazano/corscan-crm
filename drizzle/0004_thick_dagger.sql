@@ -53,6 +53,7 @@ ALTER TABLE "contact" ADD COLUMN "opted_out_at" timestamp;--> statement-breakpoi
 ALTER TABLE "contact" ADD COLUMN "opt_out_reverted_at" timestamp;--> statement-breakpoint
 ALTER TABLE "contact" ADD COLUMN "opt_out_reverted_by" text;--> statement-breakpoint
 ALTER TABLE "contact" ADD COLUMN "is_test" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "message" ADD COLUMN "template_id" text;--> statement-breakpoint
 ALTER TABLE "campaign" ADD CONSTRAINT "campaign_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign" ADD CONSTRAINT "campaign_template_id_template_id_fk" FOREIGN KEY ("template_id") REFERENCES "public"."template"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_recipient" ADD CONSTRAINT "campaign_recipient_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

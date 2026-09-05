@@ -1,5 +1,5 @@
 {
-  "id": "b798f158-01ac-4cb8-9019-5a6300bfef3f",
+  "id": "4df82552-70dd-445a-98c3-14ee415362d6",
   "prevId": "779cf518-8782-4478-8d19-9078db5550c5",
   "version": "7",
   "dialect": "postgresql",
@@ -1799,6 +1799,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'text'"
+        },
+        "template_id": {
+          "name": "template_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "text": {
           "name": "text",

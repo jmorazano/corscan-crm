@@ -19,6 +19,7 @@ export class SendError extends Error {
     | "not_connected"
     | "reconnect_required"
     | "window_closed"
+    | "opted_out"
     | "meta_error"
     | "meta_unavailable";
 
@@ -93,7 +94,7 @@ export async function sendText(input: {
     );
   }
 
-  const waMessageId = await callGraphSend(credentials, {
+  const { waMessageId } = await callGraphSend(credentials, {
     messaging_product: "whatsapp",
     to: normalizeRecipient(row.contact.phone),
     type: "text",
@@ -149,19 +150,33 @@ export async function sendText(input: {
   return { messageId: message.id };
 }
 
+export type GraphSendResult = {
+  waMessageId: string;
+  /**
+   * `contacts[0].wa_id` de la respuesta: el identificador canónico que
+   * usará el webhook ("may not match input" según la doc oficial). Base de
+   * la reconciliación de research 004 D3.
+   */
+  waId: string | null;
+};
+
 /** Llama a Graph /messages y traduce errores de Meta a SendError. */
 export async function callGraphSend(
   credentials: Credentials,
   payload: unknown
-): Promise<string> {
+): Promise<GraphSendResult> {
   try {
-    const res = await graphRequest<{ messages?: { id: string }[] }>(
-      `${credentials.phoneNumberId}/messages`,
-      { method: "POST", token: credentials.token, body: payload }
-    );
+    const res = await graphRequest<{
+      messages?: { id: string }[];
+      contacts?: { wa_id?: string }[];
+    }>(`${credentials.phoneNumberId}/messages`, {
+      method: "POST",
+      token: credentials.token,
+      body: payload,
+    });
     const id = res.messages?.[0]?.id;
     if (!id) throw new SendError("meta_error", "Meta no devolvió ID de mensaje");
-    return id;
+    return { waMessageId: id, waId: res.contacts?.[0]?.wa_id ?? null };
   } catch (err) {
     if (err instanceof MetaApiError) {
       if (err.isAuthError) {
