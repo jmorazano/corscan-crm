@@ -1,0 +1,13 @@
+Teléfono,Nombre,Etiquetas,Notas
+0351 15 688 2200,Cliente Uno,clientes-2025,formato local
++54 351 688 2200,Cliente Uno bis,clientes-2025,formato E.164 sin 9
+5493516882200,Cliente Uno tris,vip,formato wa_id
++54 9 351 688 2201,Cliente Dos,"clientes-2025,vip",dos etiquetas
+549351688 2202,Cliente Tres,,sin etiquetas
++54 9 351 688 2203,,clientes-2025,sin nombre
++54 9 351 688 2201,Cliente Dos duplicado,otra-tag,duplicado interno
+ABC-NO-ES-TELEFONO,Fila Rota,,telefono invalido
+123,Fila Corta,,demasiado corto
++54 9 351 688 2204,Cliente Cuatro,clientes-2025,
++54 9 351 688 2205,Cliente Cinco,vip,nota cinco
++54 9 351 688 2206,Cliente Seis,clientes-2025,
