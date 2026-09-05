@@ -35,6 +35,9 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | UI | `src/components/` + `src/app/(app)/` |
 | Administración (super admin: empresas/usuarios) | `src/server/admin/` + `src/app/api/admin/` + `src/app/(app)/admin/` (gate: `SUPER_ADMIN_EMAILS` + `withSuperAdmin`) |
 | Config de IA por empresa (token cifrado + modelos) | `src/server/ai/credentials.ts` + `/api/settings/ai` + Ajustes → Inteligencia artificial |
+| Campañas (runner, cupo 24h, elegibilidad) | `src/server/campaigns/` (runner at-most-once + quota con reserva + recipients) + `/api/campaigns` + `src/components/campaigns/` |
+| Import de contactos / tags / opt-out | `src/server/contacts-import.ts` + `src/lib/phone.ts` (wa_id, regla AR del 9) + `src/lib/import-columns.ts` + wizard en `src/components/contacts/` |
+| Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +

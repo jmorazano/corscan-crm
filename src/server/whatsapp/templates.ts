@@ -470,6 +470,14 @@ export async function sendTemplate(input: {
   const resolved = await resolveTemplateSend(input);
 
   const windowOpen = isWindowOpen(resolved.conversation.lastInboundAt);
+  // El guard de baja va ANTES de la reserva de cupo: al operador hay que
+  // decirle el motivo real (409 opted_out), no un 429 accidental.
+  if (resolved.contact.optedOutAt && !windowOpen) {
+    throw new SendError(
+      "opted_out",
+      "El contacto pidió no recibir más mensajes (dado de baja)"
+    );
+  }
   let reservationId: string | null = null;
   if (!windowOpen) {
     ({ reservationId } = await reserveQuota(

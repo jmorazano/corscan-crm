@@ -225,8 +225,12 @@ clientes reales.
    saltarse la aprobación de Meta.
 3. **El Laboratorio es 100 % interno**: los clientes simulados jamás tocan la
    API de WhatsApp (bloqueado por diseño y verificado con tests).
-4. **Sin spam ni broadcast**: Vocero no incluye envíos masivos; úsalo para
-   conversaciones reales de venta y soporte.
+4. **Campañas solo con consentimiento**: el envío masivo de plantillas existe
+   desde la feature 004, pero SOLO a tu propia cartera con consentimiento
+   registrado (el import lo exige y el cliente que escribe lo otorga), con
+   opt-out automático ("BAJA"/"STOP") respetado a rajatabla y un freno de
+   volumen por empresa alineado al límite real de Meta. Listas frías o
+   compradas: jamás — te banean el número y va contra la política de Meta.
 5. **Datos del cliente en su servidor**: cada negocio aloja su instancia; el
    token va cifrado en reposo y los webhooks se validan por URL secreta y
    firma opcional.
