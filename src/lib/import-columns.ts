@@ -5,7 +5,7 @@
  * encabezados en la fila 2) y mapea por sinónimos ES/EN.
  */
 
-export type RawCell = string | number | null | undefined;
+export type RawCell = string | number | boolean | Date | null | undefined;
 
 export type ColumnMapping = {
   headerRow: number;

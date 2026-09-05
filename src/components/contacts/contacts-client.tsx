@@ -5,9 +5,11 @@ import Link from "next/link";
 import {
   Archive,
   ArchiveRestore,
+  FileSpreadsheet,
   MessageSquareText,
   Search,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
@@ -16,12 +18,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ImportWizard } from "@/components/contacts/import-wizard";
 
 export function ContactsClient() {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
+  const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   // Id del contacto con confirmación de borrado pendiente (dos pasos).
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -31,11 +38,16 @@ export function ContactsClient() {
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
     if (showArchived) params.set("archived", "true");
+    if (tagFilter) params.set("tag", tagFilter);
     const res = await fetch(`/api/contacts?${params}`).catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { contacts: ContactDto[] };
+    const data = (await res.json()) as {
+      contacts: ContactDto[];
+      total: number;
+    };
     setContacts(data.contacts);
-  }, [query, showArchived]);
+    setTotal(data.total);
+  }, [query, showArchived, tagFilter]);
 
   useEffect(() => {
     const t = setTimeout(() => void refetch(), 250);
@@ -81,7 +93,23 @@ export function ContactsClient() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
-        <h2 className="font-semibold">Contactos</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold">Contactos</h2>
+          {total > contacts.length && (
+            <span className="text-xs text-muted-foreground">
+              mostrando {contacts.length} de {total}
+            </span>
+          )}
+          {tagFilter && (
+            <Badge
+              variant="secondary"
+              className="cursor-pointer"
+              onClick={() => setTagFilter(null)}
+            >
+              #{tagFilter} ✕
+            </Badge>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
@@ -101,6 +129,14 @@ export function ContactsClient() {
               className="w-72 pl-8"
             />
           </div>
+          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+            <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+            Importar
+          </Button>
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <UserPlus className="mr-1.5 h-4 w-4" />
+            Nuevo contacto
+          </Button>
         </div>
       </header>
 
@@ -127,13 +163,26 @@ export function ContactsClient() {
               >
                 <ContactAvatar name={c.name} seed={c.id} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">
                       {c.name}
                     </span>
                     {c.archivedAt && (
                       <Badge variant="secondary">Archivado</Badge>
                     )}
+                    {c.optedOutAt && (
+                      <Badge variant="destructive">Dado de baja</Badge>
+                    )}
+                    {c.tags.map((t) => (
+                      <Badge
+                        key={t}
+                        variant="outline"
+                        className="cursor-pointer"
+                        onClick={() => setTagFilter(t)}
+                      >
+                        #{t}
+                      </Badge>
+                    ))}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {formatPhone(c.phone)}
@@ -212,6 +261,152 @@ export function ContactsClient() {
           }}
         />
       )}
+
+      {creating && (
+        <NewContactDialog
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            void refetch();
+          }}
+        />
+      )}
+
+      {importing && (
+        <ImportWizard
+          onClose={() => setImporting(false)}
+          onImported={() => void refetch()}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewContactDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [tags, setTags] = useState("");
+  const [notes, setNotes] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/contacts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: name.trim(),
+        phone: phone.trim(),
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        notes: notes.trim() || undefined,
+        consent,
+      }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo crear el contacto.");
+      return;
+    }
+    onCreated();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-4 font-semibold">Nuevo contacto</h3>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="new-name">
+              Nombre
+            </label>
+            <Input
+              id="new-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="new-phone">
+              Teléfono (con código de país)
+            </label>
+            <Input
+              id="new-phone"
+              placeholder="+54 9 351 688 2234"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="new-tags">
+              Etiquetas (separadas por coma)
+            </label>
+            <Input
+              id="new-tags"
+              placeholder="clientes-2025, vip"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="new-notes">
+              Notas
+            </label>
+            <Textarea
+              id="new-notes"
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-0.5 accent-primary"
+            />
+            Este contacto dio su consentimiento para recibir mensajes (lo
+            habilita para campañas).
+          </label>
+        </div>
+        {error && (
+          <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button
+            disabled={!name.trim() || !phone.trim() || saving}
+            onClick={() => void save()}
+          >
+            {saving ? "Creando…" : "Crear"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -223,10 +418,15 @@ function EditDialog({
 }: {
   contact: ContactDto;
   onClose: () => void;
-  onSave: (patch: { name: string; notes: string }) => Promise<void>;
+  onSave: (patch: {
+    name: string;
+    notes: string;
+    tags: string[];
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState(contact.name);
   const [notes, setNotes] = useState(contact.notes ?? "");
+  const [tags, setTags] = useState(contact.tags.join(", "));
 
   return (
     <div
@@ -250,6 +450,17 @@ function EditDialog({
             />
           </div>
           <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="edit-tags">
+              Etiquetas (separadas por coma)
+            </label>
+            <Input
+              id="edit-tags"
+              placeholder="clientes-2025, vip"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="edit-notes">
               Notas
             </label>
@@ -267,7 +478,16 @@ function EditDialog({
           </Button>
           <Button
             disabled={!name.trim()}
-            onClick={() => void onSave({ name: name.trim(), notes })}
+            onClick={() =>
+              void onSave({
+                name: name.trim(),
+                notes,
+                tags: tags
+                  .split(",")
+                  .map((t) => t.trim())
+                  .filter(Boolean),
+              })
+            }
           >
             Guardar
           </Button>
