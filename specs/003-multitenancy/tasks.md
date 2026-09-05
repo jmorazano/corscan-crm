@@ -26,10 +26,12 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 - [ ] T002 Agregar `SUPER_ADMIN_EMAILS` (opcional) al schema de src/lib/env.ts, con guía inline en .env.example y placeholder en .env local.
 - [ ] T003 [P] Helper de plataforma en src/server/auth/super-admin.ts: `isSuperAdminEmail(email)` (parse de SUPER_ADMIN_EMAILS, case-insensitive, trim) + unit test en tests/unit/super-admin.test.ts.
 - [ ] T004 [P] `withSuperAdmin` en src/lib/api.ts: resuelve sesión vía auth.api.getSession SIN exigir membresía, 403 `forbidden` si el email no es super admin (contrato admin-api.md) — unit test del gate.
-- [ ] T005 [P] Determinismo de membresía en src/lib/auth/session.ts: `resolveMembership` con ORDER BY created_at ASC, id ASC (research D6) + unit test con dos membresías.
-- [ ] T006 [P] FIX cross-tenant en src/server/demo/seed.ts: el borrado de contactos/conversaciones demo filtra por organization_id (FR-005) + unit test que verifica el WHERE scoped.
-- [ ] T007 Extraer `provisionOrganization({ name })` de src/server/auth/on-signup.ts a src/server/admin/organizations.ts (org + slug único slugify+sufijo D11 + 5 etapas + agentProfile); on-signup queda usándola para el caso instancia-vacía; unit tests de slug único e idempotencia.
-- [ ] T008 Gate de endpoints self-serve del plugin organization en src/lib/auth/index.ts (hook before que rechaza /organization/* mutantes fuera del bypass interno, research D5) + unit test (FR-013).
+- [ ] T005 [P] Determinismo de membresía en src/server/auth/on-signup.ts:68 (path verificado — NO crear duplicados en session.ts): `resolveMembership` con ORDER BY created_at ASC, id ASC (research D6) + unit test con dos membresías.
+- [ ] T006 [P] FIX cross-tenant en src/server/seed/demo.ts:162-183 (path verificado): el borrado por inArray(contact.phone, demoPhones) filtra además por organization_id (FR-005) + unit test que verifica el WHERE scoped.
+- [ ] T007 Extraer `provisionOrganization({ name })` de src/server/auth/on-signup.ts a src/server/admin/organizations.ts (org + slug único slugify+sufijo D11 + reuso de org homónima VACÍA en reintento post-crash + 5 etapas + agentProfile); on-signup queda usándola para el caso instancia-vacía; unit tests de slug único, idempotencia y reuso de huérfana.
+- [ ] T008 Gate ALLOWLIST del plugin organization en src/lib/auth/index.ts (hook before que niega TODO /organization/* mutante fuera del bypass interno; paths enumerados en research D5, invitaciones incluidas) + unit test POR PATH denegado (FR-013).
+- [ ] T008b Regla anti-escalación FR-016 en src/server/auth/super-admin.ts + aplicarla en src/app/api/settings/team/route.ts POST (403 reserved_email si el email está en SUPER_ADMIN_EMAILS y el operador no es super admin) + unit tests (team y, cuando existan, endpoints admin).
+- [ ] T008c Contraseñas temporales reales (FR-017): columna `must_change_password` en user (schema + entra en la migración de T017), set en el POST de team existente, endpoint POST /api/settings/password (changePassword de better-auth, Zod min 8, limpia el flag), pantalla de cambio obligatorio con redirect desde el shell, y validación Zod min 8 en team POST + unit tests.
 
 **Checkpoint**: gate técnico verde; nada visible cambió para la empresa actual.
 
@@ -39,11 +41,11 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 **Goal**: crear "Masterbrand" + admin inicial desde Administración; el admin entra y gestiona su empresa. — **Independent Test**: guion us-mt-1.
 
-- [ ] T009 [US1] Server: creación de empresa + admin inicial en src/server/admin/organizations.ts (provisionOrganization + runInternalSignup/signUpEmail + member owner; orden y rollback del contrato admin-api.md; 409 duplicate_email) + listado de empresas con miembros y estados (whatsappConnected/aiConfigured).
+- [ ] T009 [US1] Server: creación de empresa + admin inicial en src/server/admin/organizations.ts (provisionOrganization + runInternalSignup/signUpEmail con must_change_password + member owner; orden, rollback y reuso de huérfana del contrato; 409 duplicate_email; 403 reserved_email FR-016; Zod min 8) + listado de empresas con miembros y estados (whatsappConnected/aiConfigured).
 - [ ] T010 [US1] API: src/app/api/admin/organizations/route.ts (GET/POST bajo withSuperAdmin, Zod, envelope de errores) + unit tests (403 para no-super-admin, 409 duplicado, creación feliz).
 - [ ] T011 [US1] UI: src/app/(app)/admin/page.tsx + src/components/admin/admin-client.tsx — lista de empresas y formulario crear empresa+admin con contraseña generada en cliente (mismo generador de team-client) mostrada UNA vez; estados de carga y error.
 - [ ] T012 [US1] Nav: ítem "Administración" en src/components/app-nav.tsx visible solo para super admin (dato expuesto por el endpoint de sesión/config que ya consume la nav o uno mínimo nuevo).
-- [ ] T013 [US1] Guion tests/e2e/us-mt-1-crear-empresa.md (feliz + email duplicado + acceso denegado a no-super-admin) y conducirlo en local con Playwright hasta verde.
+- [ ] T013 [US1] Guion tests/e2e/us-mt-1-crear-empresa.md (feliz CON cambio obligatorio de contraseña en el primer login del admin nuevo + email duplicado + email reservado 403 + acceso denegado a no-super-admin) y conducirlo en local con Playwright hasta verde.
 
 **Checkpoint**: US1 entregable sola (MVP).
 
@@ -55,7 +57,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 - [ ] T014 [US2] Revisión dirigida de aislamiento: auditar que TODOS los endpoints de dominio y el SSE usan scoped()/canal org (lista de la exploración); corregir cualquier resto que se encuentre; unit tests de los corregidos.
 - [ ] T015 [US2] Verificar ruteo multi-número con mocks: wa-mock con dos phoneNumberIds → cada mensaje a su bandeja (apoyado en credenciales por org existentes); test unitario del lookup por phone_number_id con 2 orgs.
-- [ ] T016 [US2] Guion tests/e2e/us-mt-2-aislamiento.md (mensajes a dos números → bandejas correctas; API cross-org 404 sin efectos; demo reload de A no toca B; SSE de A no llega a B; webhook de número desconocido ignorado) y conducirlo hasta verde.
+- [ ] T016 [US2] Guion tests/e2e/us-mt-2-aislamiento.md (mensajes a dos números → bandejas correctas; API cross-org 404 sin efectos; demo reload de A no toca B; SSE de A no llega a B; webhook de número desconocido ignorado; intento de /api/auth/organization/create y de invite-member desde sesión común → denegado, escenario 4 de US2/FR-013) y conducirlo hasta verde.
 
 **Checkpoint**: US1+US2 = multitenancy segura operable.
 
@@ -84,7 +86,7 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 
 ## Phase 7: US5 — Gestión de usuarios por el super admin (P3)
 
-- [ ] T026 [US5] Server+API: POST /api/admin/organizations/[id]/users y POST /api/admin/users/[id]/password (reset con invalidación de sesiones) según contrato + unit tests (404/409/felices).
+- [ ] T026 [US5] Server+API: POST /api/admin/organizations/[id]/users y POST /api/admin/users/[id]/password según contrato (Zod min 8, set must_change_password, invalidación de sesiones, 403 sobre super admins ajenos, 403 reserved_email) + unit tests (404/409/403/felices).
 - [ ] T027 [US5] UI: en admin-client.tsx, usuarios por empresa con "crear usuario" y "restablecer contraseña" (temporal mostrada una vez); extender us-mt-1 con el reset y conducirlo.
 
 ---
@@ -92,12 +94,13 @@ Monolito Next.js: `src/`, `tests/`, `drizzle/` en la raíz (ver plan.md).
 ## Phase 8: Polish & verificación final
 
 - [ ] T028 Gate técnico completo (typecheck+lint+build+test) + revisión adversarial del diff (workflow de verificación con lentes: seguridad multi-tenant, contrato cliente-servidor, regresión del self-test) y fixes.
-- [ ] T029 Re-conducir los guiones existentes tests/e2e/us1-us5 como regresión sobre la empresa original en el entorno local.
+- [ ] T029 Re-conducir TODOS los guiones existentes tests/e2e/us1..us7 como regresión (us7-team es crítico: ejercita el signup interno que esta feature refactoriza) sobre la empresa original en el entorno local.
+- [ ] T029b Verificación de UPGRADE (FR-018, research D12): con la BD local poblada por los guiones, re-ejecutar `pnpm db:migrate` + reboot y verificar integridad; dejar SC-005 (instancia productiva) marcado "pendiente de verificación en el deploy" con su checklist en tasks/memoria.
 - [ ] T030 Actualizar CLAUDE.md (mapa del código: sección admin y config IA por empresa), .env.example final, y memoria del proyecto (decisiones D1-D11 aplicadas, estado del deploy pendiente de token en Ajustes).
 
 ## Dependencies
 
-- Phase 2 → todo lo demás. US1 → US5 (comparten Administración). US3 independiente de US1/US2 tras Phase 2. US2 depende solo de que existan 2 empresas (usa la API de US1 o seed directo — preferir US1 terminada). US4 tras US2.
+- Phase 2 → todo lo demás. US1 → US5 (comparten Administración). US2 y US3 necesitan DOS empresas para su verificación: dependen de US1 terminada (o de un seed directo explícito — preferir US1). US4 tras US2.
 
 ## Parallel Opportunities
 

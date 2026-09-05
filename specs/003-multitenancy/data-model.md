@@ -31,8 +31,12 @@ cascadea por FK como el resto del dominio).
 
 ## Entidades existentes afectadas (sin migración)
 
-- **user**: sin columnas nuevas. El rol de plataforma NO se persiste: deriva
-  de `SUPER_ADMIN_EMAILS` (env) — ver research D1.
+- **user**: UNA columna nueva: `must_change_password boolean NOT NULL
+  DEFAULT false` (FR-017; misma migración que ai_credentials). Se setea en
+  toda alta por tercero y en todo reset; se limpia en el cambio de
+  contraseña propio. El rol de plataforma NO se persiste: deriva de
+  `SUPER_ADMIN_EMAILS` (env) — ver research D1, con la regla anti-escalación
+  de FR-016 en todos los caminos de alta.
 - **member**: sin cambios de schema. Cambio de COMPORTAMIENTO:
   `resolveMembership` ordena por `created_at ASC, id ASC` (determinismo,
   FR-012). Sigue asumiéndose 1 membresía por usuario (spec assumption).

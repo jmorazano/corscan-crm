@@ -20,6 +20,12 @@ defaults comunicados al dueño (con veto abierto) antes de la spec.
 - **Alternatives considered**: plugin admin (rechazado: superficie extra +
   migración de auth); columna propia `is_super_admin` (rechazada: exige
   bootstrap con escritura y no aporta sobre el env para 1-2 personas).
+- **Regla anti-escalación (obligatoria, FR-016)**: como el rol deriva del
+  email y la instancia NO verifica emails, TODO camino de alta/edición de
+  usuarios (team POST y endpoints de Administración) rechaza emails que
+  figuren en `SUPER_ADMIN_EMAILS` salvo que el operador sea super admin.
+  Sin esta regla, un owner de empresa crearía un "miembro" con un email
+  reservado (typo o respaldo aún sin cuenta) y tomaría la plataforma.
 
 ## D2 — withSuperAdmin: sesión sin exigir membresía
 
@@ -45,6 +51,12 @@ defaults comunicados al dueño (con veto abierto) antes de la spec.
 - **Rationale**: un solo lugar siembra empresas (paridad garantizada con la
   primera); idempotencia por constraints + detección de duplicados (FR-002,
   FR-011, edge case de doble submit).
+- **Límite reconocido**: sin transacción global, un crash entre org y
+  usuario puede dejar una org huérfana (el rollback compensatorio cubre el
+  camino de error, no el crash). Recuperación: el POST detecta una org
+  homónima VACÍA (sin miembros) y la reutiliza en vez de crear otra — el
+  contrato ya no promete "ningún efecto parcial persistente" sino
+  "recuperable en el reintento".
 - **Alternatives**: `auth.api.createOrganization` del plugin organization
   (rechazado: no siembra dominio y duplicaría el camino); transacción global
   (imposible cruzando el adapter).
@@ -71,12 +83,18 @@ defaults comunicados al dueño (con veto abierto) antes de la spec.
   y `app/api/agent/profile/route.ts:27` (session.organizationId), y 3 textos
   de UI que nombran las env vars.
 
-## D5 — Gate de endpoints self-serve del plugin organization
+## D5 — Gate de endpoints self-serve del plugin organization (ALLOWLIST)
 
-- **Decision**: hook `before` en el config de better-auth que rechaza los
-  paths de creación/gestión de organizaciones del plugin
-  (`/organization/create`, etc.) salvo que corran dentro del bypass interno
-  (mismo mecanismo AsyncLocalStorage de `runInternalSignup`).
+- **Decision**: hook `before` en el config de better-auth con semántica de
+  ALLOWLIST: se niega TODO path `/organization/*` mutante fuera del bypass
+  interno. Paths a denegar enumerados y testeados UNO POR UNO: `create`,
+  `update`, `delete`, `set-active`, `invite-member`, `accept-invitation`,
+  `cancel-invitation`, `reject-invitation`, `remove-member`,
+  `update-member-role`, `leave` (la tabla `invitation` existe en el schema:
+  el circuito de invitaciones está operativo y crearía membresías cross-org,
+  rompiendo el supuesto 1 usuario = 1 empresa). La app no usa ninguno desde
+  el cliente (hace inserts Drizzle server-side), así que la allowlist
+  cliente queda vacía.
 - **Rationale**: FR-013; el patrón de gate por hook ya existe (signup
   cerrado) y evita depender de que "nadie llame" endpoints montados.
 - **Alternatives**: deshabilitar el plugin (imposible: da el modelo
@@ -85,22 +103,35 @@ defaults comunicados al dueño (con veto abierto) antes de la spec.
 
 ## D6 — Endurecimientos
 
-- `resolveMembership`: agregar `ORDER BY created_at ASC` (+ orden estable
-  secundario por id) — FR-012.
-- `seedDemo`: el borrado de contactos demo pasa a filtrar por
-  `organization_id` (bug destructivo cross-tenant detectado) — FR-005.
+- `resolveMembership` (definida en **src/server/auth/on-signup.ts:68** — el
+  analyze verificó el path; NO crear un duplicado en session.ts): agregar
+  `ORDER BY created_at ASC, id ASC` — FR-012.
+- Seed demo (**src/server/seed/demo.ts:162-183** — path verificado): el
+  borrado por `inArray(contact.phone, demoPhones)` pasa a filtrar además por
+  `organization_id` (bug destructivo cross-tenant) — FR-005.
 - Textos de UI que instruyen setear `OPENROUTER_API_TOKEN`: pasan a apuntar a
   Ajustes → Inteligencia artificial — FR-015.
 
-## D7 — Reset de contraseñas sin email
+## D7 — Contraseñas temporales DE VERDAD (sin email)
 
-- **Decision**: el super admin (Administración) y el owner de la empresa
-  (Equipo, ya existente para creación) generan contraseña temporal en el
-  cliente (mismo generador `crypto.getRandomValues` del team-client) y se
-  muestra UNA vez. El reset del super admin usa el update interno de
-  credenciales de better-auth vía API server-side.
-- **Rationale**: FR-003/FR-014; sin email (Constitución II); patrón de
-  entrega manual ya validado en Equipo.
+- **Decision**: (a) generación en cliente (generador del team-client) +
+  entrega manual mostrada UNA vez, con validación Zod server-side de
+  longitud mínima 8 en LOS TRES endpoints que reciben password (team POST,
+  admin users POST, admin password POST) — nunca se confía en que "el
+  cliente genera bien"; (b) columna `must_change_password` en `user`
+  (misma migración que ai_credentials): toda alta por tercero y todo reset
+  la setean; el shell de la app redirige a una pantalla de cambio
+  obligatorio antes de operar; (c) endpoint de auto-servicio para cambiar la
+  propia contraseña (vía changePassword de better-auth), disponible siempre.
+- **Rationale**: FR-003/FR-014/FR-017. Sin (b) y (c), quien genera la
+  credencial (super admin u owner) puede iniciar sesión como el otro usuario
+  indefinidamente y sin rastro — impersonación de facto que contradice D10.
+  El cambio en primer login corta ese acceso apenas el dueño estrena la
+  cuenta.
+- **Alternatives**: documentarlo como supuesto (rechazado: barato de cerrar
+  y la privacidad entre socios es objetivo declarado); expiración temporal
+  de la contraseña (rechazado: más estados y no cierra el agujero antes del
+  primer login).
 
 ## D8 — Deprecación de envs
 
@@ -136,6 +167,18 @@ defaults comunicados al dueño (con veto abierto) antes de la spec.
   impersonación en v1).
 - **Rationale**: mínima superficie de privacidad entre socios; alineado con
   Constitución I; explicitado en spec (assumption).
+
+## D12 — Verificación del camino de upgrade (FR-011/FR-018/SC-005)
+
+- **Decision**: el self-test local incluye un paso de UPGRADE: con la BD
+  poblada por los guiones, re-ejecutar `pnpm db:migrate` + reboot y
+  verificar que todo sigue íntegro (migración re-ejecutable sobre datos).
+  La verificación sobre la instancia PRODUCTIVA (SC-005) queda marcada
+  "pendiente de verificación en el deploy" (Principio V) con su checklist:
+  deploy → empresa original intacta → pegar token en Ajustes → agente
+  responde.
+- **Rationale**: el analyze detectó que la instancia local vacía no ejercita
+  el camino que la spec promete (upgrade sin interrupción).
 
 ## D11 — Slug y nombre de empresa
 

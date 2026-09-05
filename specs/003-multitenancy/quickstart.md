@@ -42,22 +42,29 @@ abierto ⇒ nace la empresa "principal"). Ese email debe estar en
 
 - `tests/e2e/us-mt-1-crear-empresa.md` — super admin crea "Masterbrand" +
   admin inicial (contraseña temporal mostrada UNA vez); logout; login del
-  admin nuevo; ve su CRM vacío sembrado; NO ve Administración ni datos de la
-  otra empresa. Infeliz: email duplicado → error claro sin efectos.
+  admin nuevo → CAMBIO OBLIGATORIO de contraseña antes de operar (FR-017);
+  ve su CRM vacío sembrado; NO ve Administración ni datos de la otra
+  empresa. Infelices: email duplicado → error claro sin efectos; email
+  reservado (SUPER_ADMIN_EMAILS) desde Equipo de una empresa → 403.
 - `tests/e2e/us-mt-2-aislamiento.md` — dos empresas con números mock
   distintos (wa-mock `POST /api/dev/wa-mock/inbound` con cada phoneNumberId);
   cada mensaje aparece SOLO en su bandeja; API cross-org (GET/DELETE de
   conversación ajena) → 404 sin efectos; recarga demo de A no toca contactos
-  de B; sesión SSE de A no recibe eventos de B. Infeliz: webhook de un
-  número desconocido → ignorado limpio.
+  de B; sesión SSE de A no recibe eventos de B; `/api/auth/organization/create`
+  e `invite-member` desde sesión común → denegados (FR-013). Infeliz:
+  webhook de un número desconocido → ignorado limpio.
 - `tests/e2e/us-mt-3-ia-por-empresa.md` — empresa A configura token en
   Ajustes (last4 visible), agente responde vía ai-mock; empresa B sin token:
   agente apagado con aviso y bandeja manual operativa; DELETE de la config
   apaga el agente de A. Infeliz: token "-invalid" → turno degrada sin
   colgarse.
 
-Los guiones existentes (us1-us5) se re-conducen al final como regresión
-sobre la empresa original.
+Los guiones existentes (us1..us7 — us7-team incluido: ejercita el signup
+interno refactorizado) se re-conducen al final como regresión sobre la
+empresa original. Cierre: verificación de UPGRADE (research D12) — con la BD
+poblada, re-correr `pnpm db:migrate` + reboot y verificar integridad; SC-005
+sobre la instancia productiva queda "pendiente de verificación en el
+deploy".
 
 ## Gate técnico (siempre antes del self-test)
 

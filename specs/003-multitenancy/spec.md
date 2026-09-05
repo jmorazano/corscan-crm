@@ -157,7 +157,12 @@ desde Administración; verificar acceso con las nuevas credenciales.
 ### Edge Cases
 
 - Email ya usado por un usuario de otra empresa → error claro; un usuario
-  pertenece a una sola empresa en esta versión.
+  pertenece a una sola empresa en esta versión. (Supuesto aceptado y
+  registrado: el error de duplicado revela que un email tiene cuenta en la
+  instancia — un oráculo de existencia entre empresas tolerable con dos
+  socios que se conocen; revisar si la instancia crece.)
+- Un usuario con contraseña temporal intenta operar sin cambiarla → el
+  sistema lo lleva al cambio obligatorio antes de cualquier otra pantalla.
 - Nombre de empresa repetido → se permite el nombre visible repetido pero la
   identidad interna es única (sin colisiones).
 - Usuario con más de una membresía (dato histórico o error) → el sistema
@@ -211,13 +216,31 @@ desde Administración; verificar acceso con las nuevas credenciales.
   equipo e historial quedan intactos).
 - **FR-012**: La resolución de la empresa activa de un usuario MUST ser
   determinista aunque existan múltiples membresías.
-- **FR-013**: Cualquier vía de autoservicio para crear organizaciones fuera
-  del flujo del super admin MUST quedar deshabilitada.
+- **FR-013**: TODA mutación de organizaciones y membresías por fuera de los
+  flujos propios del producto (Administración y Equipo) MUST quedar
+  deshabilitada — semántica de lista de permitidos: se niega todo lo no
+  usado explícitamente por la aplicación, incluidas creación, borrado,
+  invitaciones y cambios de rol de la plataforma de autenticación.
 - **FR-014**: El super admin MUST poder listar empresas con sus usuarios,
   crear usuarios adicionales en una empresa y restablecer contraseñas
   (entrega manual).
 - **FR-015**: Los textos de la interfaz MUST dejar de referir el token de IA
   como variable de entorno y guiar a la configuración por empresa.
+- **FR-016**: Ningún camino de alta o edición de usuarios (Equipo de una
+  empresa, Administración) MUST permitir crear o modificar una cuenta cuyo
+  email esté designado como super admin, salvo que quien opera sea super
+  admin — cierra la escalación de privilegios por registro de un email
+  reservado.
+- **FR-017**: Toda contraseña generada por un tercero (alta inicial o
+  restablecimiento) MUST ser realmente temporal: el usuario MUST cambiarla
+  en su primer inicio de sesión antes de operar, y todo usuario MUST poder
+  cambiar su propia contraseña en cualquier momento. Esto garantiza que
+  quien generó la credencial (super admin u owner) pierde el acceso a la
+  cuenta ajena apenas su dueño la estrena.
+- **FR-018**: La actualización de una instancia existente MUST verificarse
+  ejercitando la migración sobre una base con datos previos (no solo sobre
+  una instancia vacía); la verificación final sobre la instancia productiva
+  se marca como pendiente de verificación en el deploy (Principio V).
 
 ### Key Entities
 

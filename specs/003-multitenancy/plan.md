@@ -65,9 +65,10 @@ comportamiento en local** (Docker Postgres + mocks + guiones multi-empresa).
   no cerrar la puerta a evoluciones" — esta es esa evolución; (b) no se
   agrega nada de "plataforma centralizada" (sin billing, sin planes, sin
   multi-instancia); (c) sirve al operador que despliega (dueño + socio), que
-  es a quien VIII protege. Se recomienda enmienda PATCH de la constitución
-  al mergear ("una instancia = un operador; una o más empresas del
-  operador"). Ver Complexity Tracking.
+  es a quien VIII protege. Se recomienda enmienda **MINOR** de la
+  constitución al mergear ("una instancia = un operador; una o más empresas
+  del operador") — expansión material del alcance según la propia política
+  de versionado, no un refinamiento de redacción. Ver Complexity Tracking.
 
 ## Project Structure
 
@@ -95,9 +96,8 @@ src/
 │   └── ai/index.ts                  # chatJson recibe AiConfig (token/model por empresa)
 ├── server/
 │   ├── auth/
-│   │   ├── on-signup.ts             # extrae provisionOrganization(); queda solo el caso instancia vacía
-│   │   ├── session.ts               # resolveMembership determinista (ORDER BY created_at)
-│   │   └── super-admin.ts           # isSuperAdminEmail() sobre SUPER_ADMIN_EMAILS
+│   │   ├── on-signup.ts             # extrae provisionOrganization(); resolveMembership (AQUÍ vive, :68) determinista
+│   │   └── super-admin.ts           # isSuperAdminEmail() sobre SUPER_ADMIN_EMAILS + regla FR-016
 │   ├── admin/
 │   │   └── organizations.ts         # crear empresa + admin inicial; listar; crear usuario; reset password
 │   ├── ai/
@@ -105,7 +105,7 @@ src/
 │   │   ├── pipeline.ts / trigger.ts # gate y llamadas con AiConfig por organizationId
 │   │   └── ...
 │   ├── lab/judge.ts                 # judge model por empresa (organizationId plumbeado)
-│   └── demo/seed.ts                 # FIX: borrado demo scoped por organización
+│   └── seed/demo.ts                 # FIX (path real): borrado demo scoped por organización (:162-183)
 ├── app/
 │   ├── (app)/admin/page.tsx         # sección Administración (solo super admin)
 │   ├── api/admin/organizations/route.ts          # GET lista / POST crear empresa+admin
