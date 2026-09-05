@@ -127,7 +127,7 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **003-multitenancy** — plan de implementación en
-[specs/003-multitenancy/plan.md](specs/003-multitenancy/plan.md)
-(spec, research, data-model, contratos y quickstart en el mismo directorio).
+Feature en curso: **004-contacts-campaigns** — especificación en
+[specs/004-contacts-campaigns/spec.md](specs/004-contacts-campaigns/spec.md)
+(plan y demás artefactos de diseño en el mismo directorio).
 <!-- SPECKIT END -->
