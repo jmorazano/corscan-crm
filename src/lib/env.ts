@@ -47,6 +47,15 @@ const envSchema = z.object({
   /** Token del archivo `google<token>.html` de Search Console (verificación
    * del dominio para aprobar la app OAuth). Público por naturaleza. */
   GOOGLE_SITE_VERIFICATION: z.string().optional(),
+  /**
+   * Identidad PÚBLICA de la instancia (visitantes anónimos: landing, login,
+   * <title>). Google exige que el nombre de la app del consent screen
+   * coincida con el de la página de inicio. Default: "Vocero". La marca
+   * por empresa (Ajustes → Marca) sigue mandando dentro de la app.
+   */
+  APP_PUBLIC_NAME: z.string().trim().min(1).max(80).optional(),
+  APP_PRIVACY_URL: z.string().url().optional(),
+  APP_TERMS_URL: z.string().url().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),

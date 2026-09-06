@@ -1,10 +1,26 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import {
   DEFAULT_BRANDING,
   normalizeBranding,
   type Branding,
 } from "@/lib/branding";
+
+/**
+ * Marca PÚBLICA de la instancia (anónimos: landing, login, <title>):
+ * APP_PUBLIC_NAME con el acento neutro. Es la que Google compara con el
+ * nombre de la app del consent screen. Nunca es la de una empresa.
+ */
+export function getPublicBranding(): Branding {
+  let name = DEFAULT_BRANDING.name;
+  try {
+    name = getEnv().APP_PUBLIC_NAME ?? DEFAULT_BRANDING.name;
+  } catch {
+    // env inválido en build: marca neutra
+  }
+  return { ...DEFAULT_BRANDING, name };
+}
 
 /** Marca guardada en organization.metadata (JSON de Better Auth). */
 
@@ -27,14 +43,14 @@ export async function getBranding(
   // Con N empresas en la instancia, elegir "una cualquiera" (el viejo
   // `limit 1` sin ORDER BY) filtraría el nombre/color de un tenant hacia
   // los demás y hacia no autenticados (US2: cero fuga cross-tenant).
-  if (!organizationId) return DEFAULT_BRANDING;
+  if (!organizationId) return getPublicBranding();
   const db = getDb();
   const rows = await db
     .select({ metadata: schema.organization.metadata })
     .from(schema.organization)
     .where(eq(schema.organization.id, organizationId))
     .limit(1);
-  if (!rows[0]) return DEFAULT_BRANDING;
+  if (!rows[0]) return getPublicBranding();
   const meta = parseMetadata(rows[0].metadata);
   return normalizeBranding(
     (meta.branding as Partial<Branding> | undefined) ?? null

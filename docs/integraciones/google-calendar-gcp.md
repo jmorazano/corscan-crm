@@ -139,6 +139,23 @@ Vocero sirve el archivo de verificación por vos:
    en **Dominios autorizados** (`tudominio.com`) y completá los enlaces de
    página principal, política de privacidad y términos que la verificación
    pide.
+7. **El nombre de la app debe coincidir con la página de inicio.** Google
+   rechaza la verificación con "The app name configured for your OAuth
+   consent screen does not match the app name on your home page" si la URL
+   de "Application home page" no muestra ese mismo nombre. Vocero lo
+   resuelve con la identidad pública de la instancia (runtime, sin
+   rebuild):
+
+   ```bash
+   APP_PUBLIC_NAME=Corscan CRM              # EXACTAMENTE el "App name" del consent screen
+   APP_PRIVACY_URL=https://tudominio.com/privacidad
+   APP_TERMS_URL=https://tudominio.com/terminos
+   ```
+
+   Con eso, `https://crm.tudominio.com/` muestra (sin login ni redirección)
+   una landing con ese nombre en el título de la pestaña y en el
+   encabezado, más los enlaces legales. Comprobalo en una ventana de
+   incógnito antes de pulsar "I have fixed the issues".
 
 El método de etiqueta `<meta>` no sirve en Vocero: la página raíz redirige
 al login y Search Console no sigue redirecciones.
