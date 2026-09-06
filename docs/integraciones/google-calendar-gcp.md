@@ -109,6 +109,40 @@ Calendar** de cada empresa aparece el botón **Conectar con Google**.
    evento aparece en el Google Calendar y el turno en la lista de la
    integración.
 
+## 6b. Verificar el dominio en Search Console (para la verificación de la app)
+
+Cuando pidas la verificación de la app OAuth (para quitar el aviso "app no
+verificada"), Google exige que el dominio de la app esté verificado en
+**Google Search Console** con la misma cuenta que administra el proyecto.
+Vocero sirve el archivo de verificación por vos:
+
+1. Entrá a <https://search.google.com/search-console> con la cuenta del
+   proyecto de Google Cloud → **Agregar propiedad** → tipo **Prefijo de
+   URL** → `https://crm.tudominio.com` (con https, sin barra final).
+2. Método **Archivo HTML** → **Descargar**. El archivo se llama
+   `google<token>.html` (por ejemplo `google1234abcd5678ef90.html`) y
+   contiene `google-site-verification: google<token>.html`. No lo subas a
+   ningún lado: solo necesitás el nombre.
+3. En Railway/Coolify agregá la variable (runtime, sin rebuild) y reiniciá:
+
+   ```bash
+   GOOGLE_SITE_VERIFICATION=google1234abcd5678ef90.html
+   ```
+
+4. Comprobá en el navegador que
+   `https://crm.tudominio.com/google1234abcd5678ef90.html` responde el texto
+   `google-site-verification: google1234abcd5678ef90.html` (sin login, sin
+   redirección). Después, en Search Console, **Verificar**.
+5. Dejá la variable puesta para siempre: Google vuelve a comprobar el
+   archivo periódicamente y, si desaparece, retira la verificación.
+6. En Google Cloud → **Google Auth Platform → Branding** agregá el dominio
+   en **Dominios autorizados** (`tudominio.com`) y completá los enlaces de
+   página principal, política de privacidad y términos que la verificación
+   pide.
+
+El método de etiqueta `<meta>` no sirve en Vocero: la página raíz redirige
+al login y Search Console no sigue redirecciones.
+
 ## 7. Problemas frecuentes
 
 | Síntoma | Causa | Solución |

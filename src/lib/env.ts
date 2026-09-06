@@ -44,6 +44,9 @@ const envSchema = z.object({
     .default("https://accounts.google.com/o/oauth2/v2/auth"),
   GOOGLE_TOKEN_URL: z.string().url().default("https://oauth2.googleapis.com/token"),
   GOOGLE_API_BASE_URL: z.string().url().default("https://www.googleapis.com"),
+  /** Token del archivo `google<token>.html` de Search Console (verificación
+   * del dominio para aprobar la app OAuth). Público por naturaleza. */
+  GOOGLE_SITE_VERIFICATION: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
