@@ -15,6 +15,8 @@ export const GET = withAuth(async (session) => {
       return apiError(404, "not_connected", "Google Calendar no está conectado");
     }
     if (err instanceof GoogleAuthError || err instanceof GoogleApiError) {
+      // Diagnóstico en el log del servidor (mensaje sin tokens).
+      console.error("[integraciones] calendarList falló:", err.message);
       return apiError(
         502,
         "provider_error",

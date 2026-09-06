@@ -270,14 +270,34 @@ function RulesCard({
     setInstructions(integration.bookingInstructions ?? "");
   }, [integration]);
 
-  useEffect(() => {
-    fetch("/api/integrations/google-calendar/calendars")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { calendars: { id: string; summary: string; primary: boolean }[] } | null) =>
-        setCalendars(d?.calendars ?? [])
-      )
-      .catch(() => setCalendars([]));
+  const [calendarsError, setCalendarsError] = useState<string | null>(null);
+  const [calendarsLoading, setCalendarsLoading] = useState(false);
+
+  // Lista VIVA de la cuenta (con ocultos y paginada). Un calendario creado
+  // después de abrir la página aparece con "Actualizar lista".
+  const loadCalendars = useCallback(async () => {
+    setCalendarsLoading(true);
+    setCalendarsError(null);
+    const res = await fetch("/api/integrations/google-calendar/calendars").catch(() => null);
+    setCalendarsLoading(false);
+    if (!res) {
+      setCalendarsError("No se pudo consultar los calendarios.");
+      setCalendars([]);
+      return;
+    }
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+      setCalendarsError(j?.error?.message ?? "No se pudo consultar los calendarios.");
+      setCalendars([]);
+      return;
+    }
+    const d = (await res.json()) as { calendars: { id: string; summary: string; primary: boolean }[] };
+    setCalendars(d.calendars);
   }, []);
+
+  useEffect(() => {
+    void loadCalendars();
+  }, [loadCalendars]);
 
   const timezoneOptions = useMemo(
     () => (TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]),
@@ -348,14 +368,27 @@ function RulesCard({
         <fieldset disabled={!canManage} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="gc-calendar">Calendario destino</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="gc-calendar">Calendario destino</Label>
+                <button
+                  type="button"
+                  className="text-xs text-brand-text hover:underline disabled:opacity-50"
+                  onClick={() => void loadCalendars()}
+                  disabled={calendarsLoading}
+                  data-testid="gc-calendars-refresh"
+                >
+                  {calendarsLoading ? "Actualizando…" : "Actualizar lista"}
+                </button>
+              </div>
               <select
                 id="gc-calendar"
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 value={calendarId}
                 onChange={(e) => setCalendarId(e.target.value)}
               >
-                {(calendars ?? []).length === 0 && <option value={calendarId}>{integration.calendarName ?? calendarId}</option>}
+                {!(calendars ?? []).some((c) => c.id === calendarId) && (
+                  <option value={calendarId}>{integration.calendarName ?? calendarId}</option>
+                )}
                 {(calendars ?? []).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.summary}
@@ -363,6 +396,14 @@ function RulesCard({
                   </option>
                 ))}
               </select>
+              {calendarsError && <p className="text-xs text-[#a2504c]">{calendarsError}</p>}
+              {!calendarsError && calendars !== null && (
+                <p className="text-xs text-muted-foreground">
+                  {calendars.length} calendario{calendars.length === 1 ? "" : "s"} con permiso de
+                  escritura en {integration.accountEmail ?? "la cuenta conectada"}. ¿Falta uno? Creá o
+                  compartilo con esa cuenta y pulsá &quot;Actualizar lista&quot;.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="gc-tz">Zona horaria del negocio</Label>

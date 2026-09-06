@@ -70,13 +70,37 @@ async function request<T>(
   }
 }
 
+/**
+ * Calendarios de la cuenta con permiso de escritura, incluidos los que el
+ * usuario ocultó de su lista (`showHidden`) y paginando (`pageToken`): un
+ * calendario recién creado o escondido no debe faltar en el selector.
+ */
 export async function listCalendars(accessToken: string): Promise<CalendarSummary[]> {
-  const json = await request<{
-    items?: { id?: string; summary?: string; primary?: boolean; accessRole?: string }[];
-  }>(accessToken, "GET", "/calendar/v3/users/me/calendarList?minAccessRole=writer");
-  return (json.items ?? [])
-    .filter((c): c is { id: string; summary?: string; primary?: boolean } => Boolean(c.id))
-    .map((c) => ({ id: c.id, summary: c.summary ?? c.id, primary: Boolean(c.primary) }));
+  const out: CalendarSummary[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const params = new URLSearchParams({
+      minAccessRole: "writer",
+      showHidden: "true",
+      maxResults: "250",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const json = await request<{
+      items?: { id?: string; summary?: string; summaryOverride?: string; primary?: boolean }[];
+      nextPageToken?: string;
+    }>(accessToken, "GET", `/calendar/v3/users/me/calendarList?${params.toString()}`);
+    for (const c of json.items ?? []) {
+      if (!c.id) continue;
+      out.push({
+        id: c.id,
+        summary: c.summaryOverride ?? c.summary ?? c.id,
+        primary: Boolean(c.primary),
+      });
+    }
+    pageToken = json.nextPageToken;
+    if (!pageToken) break;
+  }
+  return out;
 }
 
 /** Intervalos ocupados del calendario en [timeMin, timeMax): nada más. */
