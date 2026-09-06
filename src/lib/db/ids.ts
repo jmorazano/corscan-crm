@@ -21,6 +21,8 @@ const prefixes = {
   campaignRecipient: "cr",
   initiatedSend: "isnd",
   sendSettings: "ss",
+  calendarIntegration: "cint",
+  appointment: "apt",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

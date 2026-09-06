@@ -51,6 +51,11 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ action: "handoff", reason: "cliente" });
   }
 
+  // Agenda de turnos (005, research D10): despacho determinista de las
+  // acciones-herramienta. Solo si el prompt trae la sección de agenda.
+  const calendarTurn = dispatchCalendar(messages, system, lastUser, text);
+  if (calendarTurn) return calendarTurn;
+
   // Intención de compra → mover a Interesado.
   if (
     text.includes("lo compro") ||
@@ -69,4 +74,98 @@ export function aiMockCompletion(messages: InMessage[]): string {
     action: "reply",
     text: `Respuesta de prueba sobre: ${eco}`,
   });
+}
+
+/**
+ * Turno con agenda (005). Reglas:
+ * - Con resultado de herramienta `[HERRAMIENTA]` en los mensajes:
+ *   · DISPONIBILIDAD/RESERVA RECHAZADA con huecos + intención de reserva
+ *     ("dale", "reservá", "el de las 10") → book_appointment del hueco
+ *     elegido (por HH:MM si lo dijo; si no, el primero).
+ *   · con huecos sin intención de reserva → reply listando 3 opciones.
+ *   · sin huecos / agenda no disponible → handoff con despedida.
+ * - Sin resultado de herramienta: cualquier mención de turno/horario o
+ *   intención de reserva → check_availability (fecha YYYY-MM-DD si aparece).
+ */
+function dispatchCalendar(
+  messages: InMessage[],
+  system: string,
+  lastUser: string,
+  text: string
+): string | null {
+  if (!system.includes("AGENDA DE TURNOS")) return null;
+  const tool = [...messages]
+    .reverse()
+    .find((m) => m.role === "system" && m.content.startsWith("[HERRAMIENTA]"));
+  const wantsBooking =
+    /\b(dale|reserv|agend[aá]me|agendalo|confirm[aá]|el de las|quiero el|me viene|ese me sirve|perfecto el)\b/.test(
+      text
+    );
+  // "disponibles" (producto) NO cuenta: solo vocabulario de agenda.
+  const mentionsCalendar = /\b(turno|cita|horarios?|disponibilidad|agendar|reservar)\b/.test(text);
+
+  if (tool) {
+    const slots = [...tool.content.matchAll(/^- (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}) \((.+)\)$/gm)].map(
+      (m) => ({ key: m[1]!, label: m[2]! })
+    );
+    // Reserva rechazada por el servidor (ocupado / fuera de reglas): un
+    // modelo sensato ofrece las alternativas, no vuelve a reservar a ciegas.
+    if (tool.content.startsWith("[HERRAMIENTA] RESERVA RECHAZADA") && slots.length > 0) {
+      const options = slots.slice(0, 3).map((s) => s.label).join(", ");
+      return JSON.stringify({
+        action: "reply",
+        text: `Uy, ese horario se acaba de ocupar. Te puedo ofrecer: ${options}. ¿Cuál preferís?`,
+      });
+    }
+    if (slots.length === 0) {
+      return JSON.stringify({
+        action: "handoff",
+        reason: "agenda",
+        farewell: "Te confirmo el turno con el equipo en un momento.",
+      });
+    }
+    if (wantsBooking) {
+      const cleaned = text.replace(/\b(dale|el de las|a las)\b/g, " ");
+      const hm = /(\d{1,2})(?::(\d{2}))?\s*(?:hs|h)?\b/.exec(cleaned);
+      const hour = hm ? Number(hm[1]) : null;
+      const minute = hm?.[2] ? Number(hm[2]) : 0;
+      const suffix = `T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      // Hora pedida que NO está en la lista: el mock la reserva igual (emula
+      // un modelo que ignora la herramienta) para ejercitar el rechazo
+      // server-side; sin hora → el primer hueco.
+      const chosen =
+        hour !== null
+          ? (slots.find((s) => s.key.endsWith(suffix)) ?? {
+              key: `${slots[0]!.key.slice(0, 10)}${suffix}`,
+              label: `${slots[0]!.label.slice(0, -5)}${suffix.slice(1)}`,
+            })
+          : slots[0]!;
+      return JSON.stringify({
+        action: "book_appointment",
+        start: chosen.key,
+        note: "Consulta por WhatsApp",
+        reply: `¡Listo! Te agendé el turno para el ${chosen.label}. Te esperamos.`,
+      });
+    }
+    const options = slots.slice(0, 3).map((s) => s.label).join(", ");
+    return JSON.stringify({
+      action: "reply",
+      text: `Tengo estos horarios disponibles: ${options}. ¿Cuál te queda mejor?`,
+    });
+  }
+
+  if (mentionsCalendar || wantsBooking) {
+    // Fecha: la última YYYY-MM-DD que dijo el cliente en TODA la
+    // conversación (un modelo real usa el contexto: "dale, el de las 9"
+    // refiere al día que pidió antes).
+    const date = [...messages]
+      .reverse()
+      .filter((m) => m.role === "user")
+      .map((m) => /(\d{4}-\d{2}-\d{2})/.exec(m.content)?.[1])
+      .find((d): d is string => Boolean(d));
+    return JSON.stringify(
+      date ? { action: "check_availability", date } : { action: "check_availability" }
+    );
+  }
+  return null;
 }

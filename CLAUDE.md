@@ -40,19 +40,25 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Plantillas de WhatsApp (alta, sync, borrado, preview/variables) | `src/server/whatsapp/templates.ts` + `src/lib/template-body.ts` (reglas puras compartidas con el editor) + `/api/templates` + `src/components/settings/templates-client.tsx` + `src/components/templates/template-preview.tsx` |
 | Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
+| Integraciones (sección del sidenav) | `src/app/(app)/integrations/` + `src/components/integrations/` + `/api/integrations` (índice de tarjetas; agregar una integración = tarjeta + módulo en `src/server/<integración>/`) |
+| Google Calendar: OAuth, tokens cifrados, reglas de turnos, huecos, reservas | `src/lib/google/` (adaptador OAuth + cliente REST de Calendar, única frontera con Google) · `src/server/calendar/` (`integration.ts` tokens/estado, `rules.ts` Zod, `slots.ts` cálculo puro, `availability.ts` reglas+freeBusy, `booking.ts` reserva idempotente, `agent-tools.ts` puente con el agente) · `/api/integrations/google-calendar/*` · env de instancia `GOOGLE_CLIENT_ID/SECRET` (guía: `docs/integraciones/google-calendar-gcp.md`) |
+| Acciones-herramienta del agente (agenda) | `check_availability` / `book_appointment` en `src/server/ai/actions.ts`; loop acotado (2 vueltas) en `pipeline.ts`; sección "AGENDA DE TURNOS" en `prompts.ts` (solo con calendario conectado); sandbox `is_test` jamás toca Google |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
-ai-mock) tras un gate único (`src/lib/dev-guard.ts`): 404 incondicional en
-producción.
+ai-mock + google-mock) tras un gate único (`src/lib/dev-guard.ts`): 404
+incondicional en producción.
 
 ## Reglas de la constitución (no negociables)
 
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
-- **Soberanía (II, endurecida)**: dependencias de runtime SOLO WhatsApp Cloud
-  API + proveedor LLM OpenRouter-compatible opcional. PROHIBIDO en v1
-  introducir S3/R2, email, Stripe, Google u otros servicios externos. Auth y
-  BD self-hosted.
+- **Soberanía (II, endurecida, v1.5.0)**: dependencias de runtime SOLO
+  WhatsApp Cloud API + proveedor LLM OpenRouter-compatible opcional +
+  **integraciones opcionales POR EMPRESA vía OAuth** (hoy: Google Calendar;
+  las habilita el operador por env, las conecta cada empresa, tokens
+  cifrados, adaptador dedicado, el instalador no las necesita). PROHIBIDO en
+  v1 introducir S3/R2, email, Stripe u otros servicios externos fuera de esas
+  categorías. Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
 - **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;
@@ -131,7 +137,9 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **004-contacts-campaigns** — plan de implementación en
-[specs/004-contacts-campaigns/plan.md](specs/004-contacts-campaigns/plan.md)
+Feature en curso: **005-integrations-google-calendar** — plan de
+implementación en
+[specs/005-integrations-google-calendar/plan.md](specs/005-integrations-google-calendar/plan.md)
 (spec, research, data-model, contratos y quickstart en el mismo directorio).
+Anterior: 004-contacts-campaigns (en producción).
 <!-- SPECKIT END -->

@@ -26,9 +26,17 @@ export function buildAgentSystemPrompt(input: {
   profile: AgentProfile;
   kb: KbEntry[];
   stages: { name: string }[];
+  /**
+   * Sección "AGENDA DE TURNOS" (005, FR-016): solo cuando la empresa tiene
+   * calendario conectado. Habilita las acciones-herramienta de la agenda.
+   */
+  calendarSection?: string | null;
+  /** false = la empresa no deja que el agente agende (solo informa). */
+  calendarBookingEnabled?: boolean;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
+  const calendar = input.calendarSection ?? null;
   return [
     `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
@@ -39,6 +47,7 @@ export function buildAgentSystemPrompt(input: {
     profile.greeting ? `Saludo sugerido para conversaciones nuevas: ${profile.greeting}` : null,
     `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
     `Etapas del pipeline disponibles: ${stageNames}`,
+    calendar,
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
       '- {"action":"none"} — no responder nada.',
@@ -46,10 +55,26 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
+      ...(calendar
+        ? [
+            '- {"action":"check_availability","date":"YYYY-MM-DD"} — consultar horarios libres de la agenda (date opcional). Te respondo con los horarios y vos volvés a contestar.',
+            ...(input.calendarBookingEnabled !== false
+              ? [
+                  '- {"action":"book_appointment","start":"YYYY-MM-DDTHH:MM","note":"...","reply":"..."} — agendar el turno elegido por el cliente (start EXACTO de un horario que te devolví; reply = confirmación al cliente).',
+                ]
+              : []),
+          ]
+        : []),
       "Reglas duras:",
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
       "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      ...(calendar
+        ? [
+            "- Si el cliente pide turno/cita/horario → PRIMERO check_availability; jamás ofrezcas horarios que no te haya devuelto la herramienta.",
+            '- Los mensajes que empiezan con "[HERRAMIENTA]" son resultados de la agenda (no del cliente): usalos para tu próxima acción.',
+          ]
+        : []),
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]

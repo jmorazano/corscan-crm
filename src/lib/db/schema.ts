@@ -562,3 +562,95 @@ export const sendSettings = pgTable(
   },
   (t) => [uniqueIndex("send_settings_org_uq").on(t.organizationId)]
 );
+
+/* ============================================================
+ * Integraciones (feature 005): Google Calendar por empresa + turnos.
+ * ============================================================ */
+
+/**
+ * Conexión de calendario POR EMPRESA (data-model 005): refresh token
+ * cifrado (AES-256-GCM), caché cifrada del access token, calendario destino
+ * y reglas de turnos. A lo sumo UNA por organización.
+ */
+export const calendarIntegration = pgTable(
+  "calendar_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: ["google"] }).notNull().default("google"),
+    accountEmail: text("account_email"),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    calendarName: text("calendar_name"),
+    timezone: text("timezone")
+      .notNull()
+      .default("America/Argentina/Buenos_Aires"),
+    refreshTokenCipher: text("refresh_token_cipher").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    accessTokenCipher: text("access_token_cipher"),
+    accessTokenIv: text("access_token_iv"),
+    accessTokenTag: text("access_token_tag"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    /** reconnect_required: refresh rechazado (invalid_grant) — research D9. */
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
+    agentBookingEnabled: boolean("agent_booking_enabled").notNull().default(true),
+    slotMinutes: integer("slot_minutes").notNull().default(30),
+    bufferMinutes: integer("buffer_minutes").notNull().default(0),
+    minLeadHours: integer("min_lead_hours").notNull().default(2),
+    horizonDays: integer("horizon_days").notNull().default(14),
+    /** { "0".."6": [["HH:MM","HH:MM"], …] } — 0 = domingo. */
+    weeklyHours: jsonb("weekly_hours").notNull(),
+    bookingInstructions: text("booking_instructions"),
+    connectedBy: text("connected_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("calendar_integration_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Turno registrado en el CRM (data-model 005). UNIQUE (org, contacto,
+ * inicio) = idempotencia de la acción del agente (FR-012).
+ */
+export const appointment = pgTable(
+  "appointment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    googleEventId: text("google_event_id"),
+    calendarId: text("calendar_id").notNull(),
+    startsAt: timestamp("starts_at").notNull(),
+    endsAt: timestamp("ends_at").notNull(),
+    timezone: text("timezone").notNull(),
+    title: text("title").notNull(),
+    note: text("note"),
+    status: text("status", { enum: ["confirmed", "cancelled"] })
+      .notNull()
+      .default("confirmed"),
+    createdBy: text("created_by", { enum: ["agent", "user"] })
+      .notNull()
+      .default("agent"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("appointment_org_contact_start_uq").on(
+      t.organizationId,
+      t.contactId,
+      t.startsAt
+    ),
+    index("appointment_org_starts_idx").on(t.organizationId, t.startsAt),
+  ]
+);

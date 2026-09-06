@@ -31,6 +31,19 @@ const envSchema = z.object({
   // Inteligencia artificial). Solo la base del proveedor sigue siendo de
   // instancia (transporte del adaptador; interceptada por el ai-mock).
   OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api"),
+  // Integraciones (005): la app de Google es DEL OPERADOR (una por
+  // instancia, como META_APP_ID); la conexión es POR EMPRESA (tokens
+  // cifrados en calendar_integration). Sin client id/secret la tarjeta de
+  // Google Calendar explica que el operador debe habilitarla. Las tres URLs
+  // son de transporte: el google-mock del self-test las intercepta.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_AUTH_URL: z
+    .string()
+    .url()
+    .default("https://accounts.google.com/o/oauth2/v2/auth"),
+  GOOGLE_TOKEN_URL: z.string().url().default("https://oauth2.googleapis.com/token"),
+  GOOGLE_API_BASE_URL: z.string().url().default("https://www.googleapis.com"),
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
@@ -122,4 +135,13 @@ export function isEmbeddedSignupConfigured(): boolean {
  */
 export function isCoexistenceUiEnabled(): boolean {
   return process.env.COEXISTENCE_UI_ENABLED === "true" || isMockEnabled();
+}
+
+/**
+ * true si el operador habilitó la integración de Google en esta instancia
+ * (client id + secret). Sin ambas, la tarjeta no ofrece "Conectar".
+ */
+export function isGoogleIntegrationConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 }

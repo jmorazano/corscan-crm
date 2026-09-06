@@ -11,6 +11,16 @@ import { SendError, sendText } from "@/server/inbox/send";
 import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import {
+  executeBookAppointment,
+  executeCheckAvailability,
+  loadCalendarContext,
+  renderCalendarSection,
+  type CalendarContext,
+} from "@/server/calendar/agent-tools";
+
+/** Vueltas extra al modelo por resultados de herramienta (research D6). */
+const MAX_TOOL_ROUNDS = 2;
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -147,10 +157,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .where(eq(schema.pipelineStage.organizationId, organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
+  // Agenda (005): la sección solo existe si la empresa conectó calendario.
+  // Un fallo al cargarla NO tumba el turno: el agente opera sin agenda.
+  let calendar: CalendarContext | null = null;
+  try {
+    calendar = await loadCalendarContext(organizationId, conversation.contactId);
+  } catch (err) {
+    console.error("[agente] no se pudo cargar la agenda:", err instanceof Error ? err.message : err);
+  }
+
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: buildAgentSystemPrompt({ profile, kb, stages }),
+      content: buildAgentSystemPrompt({
+        profile,
+        kb,
+        stages,
+        calendarSection: calendar ? renderCalendarSection(calendar) : null,
+        calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
+      }),
     },
     ...history
       .filter((m) => m.text)
@@ -170,6 +195,94 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   }
 
   let action: AgentActionType = result.data;
+
+  // Loop de herramienta de la agenda (D6): el servidor ejecuta, el modelo
+  // vuelve a decidir con el resultado; acotado a MAX_TOOL_ROUNDS.
+  let lastAvailabilityText: string | null = null;
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    if (action.action !== "check_availability" && action.action !== "book_appointment") break;
+
+    // Sin agenda (o agendado deshabilitado para reservas): el modelo no
+    // debió elegir esto — degradar a derivación amable.
+    if (!calendar || calendar.integration.status === "reconnect_required") {
+      await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
+      await applyHandoff(conversationId, organizationId, "modelo");
+      return;
+    }
+    if (action.action === "book_appointment" && !calendar.integration.rules.agentBookingEnabled) {
+      await deliverReply(conversation, "Perfecto, un compañero del equipo te confirma ese turno enseguida.");
+      await applyHandoff(conversationId, organizationId, "modelo");
+      return;
+    }
+
+    let toolText: string;
+    if (action.action === "check_availability") {
+      const out = await executeCheckAvailability(calendar, action.date, conversation.isTest);
+      toolText = out.text;
+      lastAvailabilityText = out.slots.length > 0 ? out.slots.map((s) => s.label).join(", ") : null;
+    } else {
+      const contact = await loadContact(organizationId, conversation.contactId);
+      if (!contact) return;
+      const out = await executeBookAppointment(calendar, {
+        organizationId,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        conversationId,
+        start: action.start,
+        note: action.note,
+        sandbox: conversation.isTest,
+      });
+      if (out.kind === "booked") {
+        const reply = action.reply?.trim()
+          ? action.reply
+          : `¡Listo! Tu turno quedó confirmado para el ${out.appointment.whenText}.`;
+        await deliverReply(conversation, reply);
+        if (!conversation.isTest) {
+          await appendLeadNote(
+            organizationId,
+            conversation.contactId,
+            `Turno agendado: ${out.appointment.whenText}${action.note ? ` — ${action.note}` : ""}`
+          );
+          publish(organizationId, {
+            type: "conversation.updated",
+            data: { conversation: { id: conversationId } },
+          });
+        }
+        return;
+      }
+      if (out.kind === "escalate") {
+        await deliverReply(conversation, out.text);
+        await applyHandoff(conversationId, organizationId, "error");
+        return;
+      }
+      toolText = out.text;
+    }
+
+    messages.push({ role: "system", content: toolText });
+    const next = await chatJson(aiConfig, AgentAction, messages);
+    if (!next.ok) {
+      console.error(`[agente] fallo del proveedor tras herramienta (raw): ${next.detail}`);
+      await applyHandoff(conversationId, organizationId, "error");
+      return;
+    }
+    action = next.data;
+  }
+
+  // Agotadas las vueltas y el modelo sigue pidiendo herramienta: degradar
+  // a una respuesta útil con lo último que se supo, sin colgarse.
+  if (action.action === "check_availability" || action.action === "book_appointment") {
+    if (lastAvailabilityText) {
+      await deliverReply(
+        conversation,
+        `Tengo estos horarios disponibles: ${lastAvailabilityText}. ¿Cuál te queda mejor?`
+      );
+      return;
+    }
+    await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
+    await applyHandoff(conversationId, organizationId, "modelo");
+    return;
+  }
 
   if (action.action === "move_stage") {
     const stage = resolveStage(action.stage, stages);
@@ -210,6 +323,19 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 }
 
 type Conversation = typeof schema.conversation.$inferSelect;
+
+async function loadContact(
+  organizationId: string,
+  contactId: string
+): Promise<{ id: string; name: string; phone: string } | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.contact.id, name: schema.contact.name, phone: schema.contact.phone })
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(

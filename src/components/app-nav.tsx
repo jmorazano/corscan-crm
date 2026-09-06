@@ -9,6 +9,7 @@ import {
   Kanban,
   LogOut,
   Megaphone,
+  Plug,
   Settings,
   Shield,
   Sparkles,
@@ -26,6 +27,8 @@ const NAV = [
   { href: "/campaigns", label: "Campañas", icon: Megaphone },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+  // Integraciones (005): las conexiones externas por empresa viven acá.
+  { href: "/integrations", label: "Integraciones", icon: Plug },
 ] as const;
 
 export function AppNav({

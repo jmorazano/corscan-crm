@@ -43,6 +43,13 @@
       "when": 1788649967122,
       "tag": "0005_acoustic_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788654683189,
+      "tag": "0006_soft_james_howlett",
+      "breakpoints": true
     }
   ]
 }

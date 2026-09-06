@@ -1,7 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.3.0 → 1.4.0
+Versión: 1.4.0 → 1.5.0
+
+Cambios (feature 005-integrations-google-calendar, 5-sep-2026):
+  - Principio II: se agrega una TERCERA categoría de dependencia externa en
+    runtime: **integraciones opcionales POR EMPRESA vía OAuth** (la primera:
+    Google Calendar para que el agente agende turnos). Condiciones duras:
+    sin ellas el producto funciona completo; las habilita el operador de la
+    instancia con credenciales propias de app (env); las conecta cada
+    empresa con consentimiento explícito; tokens cifrados en reposo;
+    aisladas tras adaptador dedicado; el instalador NO las necesita. La
+    prohibición de S3/R2, email y Stripe/billing se mantiene; "servicios de
+    Google" deja de estar prohibido en bloque y pasa a regirse por esta
+    categoría.
+  - Motivación escrita: pedido explícito del dueño (5-sep-2026) de que el
+    agente consulte disponibilidad y agende turnos en el Google Calendar del
+    negocio — sirve a "convertir conversaciones" (Principio VIII).
+  - Bump: MINOR (expansión material del alcance de II).
+
+Versión anterior: 1.3.0 → 1.4.0
 
 Cambios (feature 004-contacts-campaigns, 5-sep-2026):
   - Principio VIII: se refina el alcance del canal. Las CAMPAÑAS DE PLANTILLAS
@@ -94,9 +112,19 @@ dependencias externas en runtime es CERRADA:
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
+  3. **Integraciones opcionales POR EMPRESA vía OAuth** (desde 1.5.0; la
+     primera: Google Calendar). Condiciones NO negociables: (a) sin la
+     integración el producto funciona completo; (b) la habilita el operador de
+     la instancia con credenciales de app propias inyectadas por entorno; (c)
+     la conecta cada empresa con consentimiento explícito y puede
+     desconectarla cuando quiera; (d) los tokens se cifran en reposo y jamás
+     salen al cliente ni a logs; (e) se aísla tras un adaptador dedicado; (f)
+     el instalador NO la necesita; (g) el sandbox del Laboratorio jamás la
+     toca.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
-  email, Stripe u otro billing, y servicios de Google. Cualquier feature que los
-  requiera queda fuera del alcance de v1.
+  email, Stripe u otro billing. Cualquier feature que los requiera queda fuera
+  del alcance de v1. Cualquier servicio externo que no encaje en las tres
+  categorías anteriores también queda fuera.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta y (opcional) un token de OpenRouter. Nada más.
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
@@ -293,4 +321,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05
+**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05
