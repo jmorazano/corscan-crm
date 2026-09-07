@@ -73,9 +73,20 @@ export async function graphRequest<T>(
   }
 
   if (!res.ok) {
-    const err = (json as { error?: { message?: string; code?: number; type?: string } })
-      ?.error;
-    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
+    const err = (
+      json as {
+        error?: {
+          message?: string;
+          code?: number;
+          type?: string;
+          error_user_msg?: string;
+          error_data?: { details?: string };
+        };
+      }
+    )?.error;
+    const detail = err?.error_data?.details ?? err?.error_user_msg;
+    const message = err?.message ?? `Meta respondió ${res.status}`;
+    throw new MetaApiError(detail ? `${message}: ${detail}` : message, {
       status: res.status,
       code: err?.code ?? null,
       type: err?.type ?? null,
@@ -126,9 +137,20 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   }
 
   if (!res.ok) {
-    const err = (json as { error?: { message?: string; code?: number; type?: string } })
-      ?.error;
-    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
+    const err = (
+      json as {
+        error?: {
+          message?: string;
+          code?: number;
+          type?: string;
+          error_user_msg?: string;
+          error_data?: { details?: string };
+        };
+      }
+    )?.error;
+    const detail = err?.error_data?.details ?? err?.error_user_msg;
+    const message = err?.message ?? `Meta respondió ${res.status}`;
+    throw new MetaApiError(detail ? `${message}: ${detail}` : message, {
       status: res.status,
       code: err?.code ?? null,
       type: err?.type ?? null,

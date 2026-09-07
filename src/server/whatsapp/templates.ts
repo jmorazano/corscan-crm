@@ -229,12 +229,19 @@ export async function deleteTemplate(
         throw new TemplateError("meta_unavailable", "Meta no está disponible ahora");
       }
       if (!isTemplateMissingError(err)) {
-        console.warn(
-          `[templates] DELETE ${template.name} falló en Meta: status=${err.status} code=${err.code} type=${err.type} ${err.message}`
-        );
-        throw new TemplateError("meta_error", err.message);
+        // Meta responde `(#100) Invalid parameter` (no 404) cuando el hsm_id
+        // ya no existe — p. ej. plantilla borrada desde el Business Manager o
+        // WABA migrada a otro portfolio. Se confirma con un GET por nombre.
+        const gone = await isGoneInMeta(creds, template).catch(() => false);
+        if (!gone) {
+          console.warn(
+            `[templates] DELETE ${template.name} falló en Meta: status=${err.status} code=${err.code} type=${err.type} ${err.message}`
+          );
+          throw new TemplateError("meta_error", err.message);
+        }
       }
-      // 404 / "no existe": ya no está en Meta → se limpia localmente igual.
+      // 404 / "no existe" / no aparece en el listado: ya no está en Meta → se
+      // limpia localmente igual.
     }
   }
 
@@ -251,6 +258,29 @@ export async function deleteTemplate(
 }
 
 /** Meta responde 404, o 400 con "does not exist"/"not found", si ya no está. */
+/**
+ * ¿La plantilla ya no existe en la WABA? Verdadero si el listado por nombre no
+ * trae ni su id remoto ni una entrada con el mismo nombre+idioma.
+ */
+async function isGoneInMeta(
+  creds: { wabaId: string; token: string },
+  template: { name: string; language: string; waTemplateId: string | null }
+): Promise<boolean> {
+  const params = new URLSearchParams({
+    name: template.name,
+    fields: "id,name,language",
+    limit: "50",
+  });
+  const res = await graphRequest<{
+    data?: { id?: string; name?: string; language?: string }[];
+  }>(`${creds.wabaId}/message_templates?${params}`, { token: creds.token });
+  return !(res.data ?? []).some(
+    (t) =>
+      (template.waTemplateId && t.id === template.waTemplateId) ||
+      (t.name === template.name && t.language === template.language)
+  );
+}
+
 function isTemplateMissingError(err: MetaApiError): boolean {
   if (err.status === 404) return true;
   return /does not exist|not exist|not found|no existe/i.test(err.message);

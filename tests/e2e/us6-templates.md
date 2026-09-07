@@ -48,6 +48,9 @@
     100/200 (parámetro inválido, permisos), la plantilla muestra el error
     inline (`meta_error`) y la conexión sigue `connected`. Solo 401 o codes
     190/102 marcan `reconnect_required`.
+    ✅ Caso real (WABA migrada / borrada desde Business Manager): el DELETE
+    por hsm_id responde code 100 «Invalid parameter»; el servicio hace un GET
+    por nombre y, si Meta ya no la lista, limpia la fila local igual.
 16. Con la conexión en `reconnect_required` (forzar por SQL en local), en
     `/settings/whatsapp` el banner ofrece «Verificar token guardado».
     ✅ `POST /api/settings/whatsapp/recheck` → 200 si el token guardado sigue

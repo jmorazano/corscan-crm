@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const graphCalls: { path: string; method?: string }[] = [];
 let graphImpl: () => Promise<unknown> = () => Promise.resolve({ success: true });
+/** Respuesta del GET de verificación por nombre (listado de Meta). */
+let listImpl: () => Promise<unknown> = () => Promise.resolve({ data: [] });
 let selectRows: Record<string, unknown>[] = [];
 let campaignCount = 0;
 const deleteCalls: unknown[] = [];
@@ -24,6 +26,7 @@ vi.mock("@/lib/meta/client", async () => {
     ...actual,
     graphRequest: (path: string, opts: { method?: string }) => {
       graphCalls.push({ path, method: opts.method });
+      if ((opts.method ?? "GET") === "GET") return listImpl();
       return graphImpl();
     },
   };
@@ -103,6 +106,7 @@ beforeEach(() => {
   deleteCalls.length = 0;
   whereArgs.length = 0;
   graphImpl = () => Promise.resolve({ success: true });
+  listImpl = () => Promise.resolve({ data: [] });
   selectRows = [row];
   campaignCount = 0;
   reconnectMarks = 0;
@@ -167,9 +171,26 @@ describe("deleteTemplate", () => {
     expect(deleteCalls).toHaveLength(0);
   });
 
-  it("error OAuthException NO-auth (code 100/200) → meta_error SIN marcar reconexión", async () => {
+  it("code 100 'Invalid parameter' y Meta ya no la lista → se limpia localmente (caso real: WABA migrada)", async () => {
+    const { MetaApiError } = await import("@/lib/meta/client");
+    graphImpl = () =>
+      Promise.reject(
+        new MetaApiError("Invalid parameter", { status: 400, code: 100, type: "OAuthException" })
+      );
+    listImpl = () => Promise.resolve({ data: [] });
+    const { deleteTemplate } = await import("@/server/whatsapp/templates");
+    await deleteTemplate("org_1", "tpl_1");
+    expect(graphCalls.map((c) => c.method ?? "GET")).toEqual(["DELETE", "GET"]);
+    expect(graphCalls[1]?.path).toContain("message_templates?name=seguimiento");
+    expect(deleteCalls).toHaveLength(1);
+    expect(reconnectMarks).toBe(0);
+  });
+
+  it("error OAuthException NO-auth (code 100/200) con la plantilla AÚN en Meta → meta_error SIN marcar reconexión", async () => {
     const { MetaApiError } = await import("@/lib/meta/client");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    listImpl = () =>
+      Promise.resolve({ data: [{ id: "123", name: "seguimiento", language: "es_AR" }] });
     for (const code of [100, 200]) {
       graphImpl = () =>
         Promise.reject(
