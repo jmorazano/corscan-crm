@@ -1,10 +1,17 @@
-import { and, count, desc, eq, isNotNull } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { sanitizeTags } from "@/lib/tags";
+import {
+  campaignPaceMs,
+  likePattern,
+  parseCampaignFilters,
+} from "@/server/campaigns/manage";
+import { getQuotaUsage } from "@/server/campaigns/quota";
+import { previewSegment } from "@/server/campaigns/recipients";
 import { countVariables } from "@/server/whatsapp/templates";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +22,9 @@ export const dynamic = "force-dynamic";
  * entrega asíncrono (message.status='failed' de un enviado) — el caso real
  * más común (número inexistente) sería invisible sin la fusión.
  */
-export const GET = withAuth(async (session) => {
+export const GET = withAuth(async (session, req: Request) => {
   const db = getDb();
+  const filters = parseCampaignFilters(new URL(req.url).searchParams);
   const campaigns = await db
     .select({
       campaign: schema.campaign,
@@ -28,9 +36,33 @@ export const GET = withAuth(async (session) => {
       eq(schema.campaign.templateId, schema.template.id)
     )
     .where(
-      scoped(schema.campaign.organizationId, session.organizationId, undefined)
+      scoped(
+        schema.campaign.organizationId,
+        session.organizationId,
+        and(
+          filters.statuses.length > 0
+            ? inArray(schema.campaign.status, filters.statuses)
+            : undefined,
+          filters.q ? ilike(schema.campaign.name, likePattern(filters.q)) : undefined
+        )
+      )
     )
     .orderBy(desc(schema.campaign.createdAt));
+
+  // Un borrador no tiene destinatarios (se congelan al lanzar): se muestra
+  // cuántos contactos son elegibles HOY con su filtro, como en el alta.
+  const eligibleNow = new Map<string, number>();
+  await Promise.all(
+    campaigns
+      .filter((c) => c.campaign.status === "draft")
+      .map(async ({ campaign: c }) => {
+        eligibleNow.set(
+          c.id,
+          await previewSegment(session.organizationId, c.tagFilter)
+        );
+      })
+  );
+  const [quota, paceMs] = [await getQuotaUsage(session.organizationId), campaignPaceMs()];
 
   const statusCounts = await db
     .select({
@@ -91,6 +123,7 @@ export const GET = withAuth(async (session) => {
   for (const r of repliedCounts) bump(r.campaignId, "replied", r.n);
 
   return Response.json({
+    settings: { paceMs, ...quota },
     campaigns: campaigns.map(({ campaign: c, templateName }) => {
       const k = byId.get(c.id) ?? {};
       return {
@@ -101,7 +134,11 @@ export const GET = withAuth(async (session) => {
         templateName: templateName ?? c.templateName ?? "(plantilla borrada)",
         tagFilter: c.tagFilter,
         variableMode: c.variableMode,
+        createdAt: c.createdAt.toISOString(),
         launchedAt: c.launchedAt?.toISOString() ?? null,
+        completedAt: c.completedAt?.toISOString() ?? null,
+        cancelledAt: c.cancelledAt?.toISOString() ?? null,
+        eligibleNow: eligibleNow.get(c.id) ?? null,
         counts: {
           total:
             (k.pending ?? 0) +

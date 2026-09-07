@@ -118,6 +118,12 @@ export function TemplatesClient() {
   );
 }
 
+const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
+  draft: "borrador",
+  running: "en curso",
+  paused: "pausada",
+};
+
 function TemplateRow({
   template: t,
   onDeleted,
@@ -127,6 +133,9 @@ function TemplateRow({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blockedBy, setBlockedBy] = useState<
+    { id: string; name: string; status: string }[]
+  >([]);
 
   async function remove() {
     if (
@@ -138,15 +147,20 @@ function TemplateRow({
     }
     setDeleting(true);
     setError(null);
+    setBlockedBy([]);
     const res = await fetch(`/api/templates/${t.id}`, { method: "DELETE" }).catch(
       () => null
     );
     setDeleting(false);
     if (!res?.ok) {
       const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: {
+          message?: string;
+          campaigns?: { id: string; name: string; status: string }[];
+        };
       } | null;
       setError(data?.error?.message ?? "No se pudo borrar la plantilla");
+      setBlockedBy(data?.error?.campaigns ?? []);
       return;
     }
     onDeleted(t.id);
@@ -177,6 +191,23 @@ function TemplateRow({
           </p>
         )}
         {error && <p className="text-xs text-destructive">{error}</p>}
+        {blockedBy.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 text-xs" data-testid="blocked-by">
+            {blockedBy.map((c) => (
+              <li key={c.id}>
+                <a
+                  href={`/campaigns?campaign=${encodeURIComponent(c.id)}`}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground hover:border-brand/60"
+                >
+                  {c.name}
+                  <span className="text-muted-foreground">
+                    · {CAMPAIGN_STATUS_LABELS[c.status] ?? c.status}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="pt-1">
           <Button
             variant="outline"

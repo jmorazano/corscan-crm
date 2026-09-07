@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -26,10 +26,18 @@ export class TemplateError extends Error {
     | "meta_unavailable"
     | "in_use";
 
-  constructor(code: TemplateError["code"], message: string) {
+  /** Datos extra para el cliente (p. ej. las campañas que bloquean el borrado). */
+  extra: Record<string, unknown> | undefined;
+
+  constructor(
+    code: TemplateError["code"],
+    message: string,
+    extra?: Record<string, unknown>
+  ) {
     super(message);
     this.name = "TemplateError";
     this.code = code;
+    this.extra = extra;
   }
 }
 
@@ -189,8 +197,12 @@ export async function deleteTemplate(
   const template = rows[0];
   if (!template) throw new TemplateError("not_found", "Plantilla no encontrada");
 
-  const campaigns = await db
-    .select({ n: count() })
+  const blocking = await db
+    .select({
+      id: schema.campaign.id,
+      name: schema.campaign.name,
+      status: schema.campaign.status,
+    })
     .from(schema.campaign)
     .where(
       scoped(
@@ -201,12 +213,13 @@ export async function deleteTemplate(
           inArray(schema.campaign.status, ["draft", "running", "paused"])
         )
       )
-    );
-  const inUse = Number(campaigns[0]?.n ?? 0);
-  if (inUse > 0) {
+    )
+    .limit(20);
+  if (blocking.length > 0) {
     throw new TemplateError(
       "in_use",
-      `La plantilla la usan ${inUse} campaña(s) activa(s) (borrador, en curso o pausada); cancelalas o terminalas antes de borrarla`
+      `La plantilla la usan ${blocking.length} campaña(s) activa(s) (borrador, en curso o pausada): borrá el borrador o cancelá la campaña antes de borrarla`,
+      { campaigns: blocking }
     );
   }
 

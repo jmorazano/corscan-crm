@@ -38,6 +38,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Campañas (runner, cupo 24h, elegibilidad) | `src/server/campaigns/` (runner at-most-once + quota con reserva + recipients) + `/api/campaigns` + `src/components/campaigns/` |
 | Import de contactos / tags / opt-out | `src/server/contacts-import.ts` + `src/lib/phone.ts` (wa_id, regla AR del 9) + `src/lib/import-columns.ts` + wizard en `src/components/contacts/` |
 | Plantillas de WhatsApp (alta, sync, borrado, preview/variables) | `src/server/whatsapp/templates.ts` + `src/lib/template-body.ts` (reglas puras compartidas con el editor) + `/api/templates` + `src/components/settings/templates-client.tsx` + `src/components/templates/template-preview.tsx` |
+| Gestión de campañas (filtros status/q en la URL, borrado, elegibles en vivo del borrador, ciclo de vida en la UI) | `src/server/campaigns/manage.ts` (filtros puros, `deleteCampaign` guardado por estado) · `GET /api/campaigns?status=&q=` (+ `settings` ritmo/cupo, `eligibleNow`) · `DELETE /api/campaigns/[id]` · `src/components/campaigns/campaigns-client.tsx` (panel «cómo funciona», acciones por fila con confirmación, stepper del detalle) · el 409 `in_use` de plantillas devuelve `campaigns` para enlazarlas |
 | Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
 | Integraciones (sección del sidenav) | `src/app/(app)/integrations/` + `src/components/integrations/` + `/api/integrations` (índice de tarjetas; agregar una integración = tarjeta + módulo en `src/server/<integración>/`) |
@@ -138,10 +139,9 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **006-tags-filters** (etiquetas en contactos y
-conversaciones, filtros persistidos en la URL, selección bulk y paginación)
-— plan en [specs/006-tags-filters/plan.md](specs/006-tags-filters/plan.md)
-(spec, data-model, contrato `contracts/tags-api.md`, quickstart y tasks en
-el mismo directorio). Anterior: 005-integrations-google-calendar (en
-producción).
+Feature en curso: **007-campaign-management** (gestión de campañas:
+filtros y búsqueda en la URL, borrado, elegibles en vivo del borrador y
+ciclo de vida explicado en la UI) — spec, plan y tasks en
+[specs/007-campaign-management/](specs/007-campaign-management/spec.md).
+Anterior: 006-tags-filters (en producción, 75598ec).
 <!-- SPECKIT END -->

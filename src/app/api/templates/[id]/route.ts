@@ -21,7 +21,7 @@ export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
     return Response.json({ ok: true, template: serializeTemplate(template) });
   } catch (err) {
     if (err instanceof TemplateError) {
-      return apiError(templateErrorStatus(err), err.code, err.message);
+      return apiError(templateErrorStatus(err), err.code, err.message, err.extra);
     }
     throw err;
   }

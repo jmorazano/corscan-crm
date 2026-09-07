@@ -56,7 +56,16 @@ vi.mock("@/lib/db", () => {
       from: (table: { __name: string }) => ({
         where: () => {
           if (table.__name === "campaign") {
-            return Promise.resolve([{ n: campaignCount }]);
+            const rows = Array.from({ length: campaignCount }, (_, i) => ({
+              id: `cmp_${i + 1}`,
+              name: `Campaña ${i + 1}`,
+              status: "draft",
+            }));
+            const chain = Promise.resolve(rows) as Promise<unknown> & {
+              limit: () => Promise<unknown>;
+            };
+            chain.limit = () => Promise.resolve(rows);
+            return chain;
           }
           const chain = Promise.resolve(selectRows) as Promise<unknown> & {
             limit: () => Promise<unknown>;
@@ -146,6 +155,13 @@ describe("deleteTemplate", () => {
     expect(err).toBeInstanceOf(TemplateError);
     expect((err as InstanceType<typeof TemplateError>).code).toBe("in_use");
     expect(templateErrorStatus(err as InstanceType<typeof TemplateError>)).toBe(409);
+    // El cliente recibe QUÉ campañas bloquean para enlazarlas.
+    expect((err as InstanceType<typeof TemplateError>).extra).toEqual({
+      campaigns: [
+        { id: "cmp_1", name: "Campaña 1", status: "draft" },
+        { id: "cmp_2", name: "Campaña 2", status: "draft" },
+      ],
+    });
     expect(graphCalls).toHaveLength(0);
     expect(deleteCalls).toHaveLength(0);
   });

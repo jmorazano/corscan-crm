@@ -2,6 +2,13 @@ import { and, asc, count, eq, gt, isNotNull } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import {
+  campaignPaceMs,
+  CampaignError,
+  deleteCampaign,
+} from "@/server/campaigns/manage";
+import { getQuotaUsage } from "@/server/campaigns/quota";
+import { previewSegment } from "@/server/campaigns/recipients";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +116,14 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   const s = Object.fromEntries(statusCounts.map((r) => [r.status, r.n]));
   const d = Object.fromEntries(deliveryCounts.map((r) => [r.status, r.n]));
 
+  const eligibleNow =
+    campaign.status === "draft"
+      ? await previewSegment(session.organizationId, campaign.tagFilter)
+      : null;
+  const quota = await getQuotaUsage(session.organizationId);
+
   return Response.json({
+    settings: { paceMs: campaignPaceMs(), ...quota },
     campaign: {
       id: campaign.id,
       name: campaign.name,
@@ -120,8 +134,11 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
       tagFilter: campaign.tagFilter,
       variableMode: campaign.variableMode,
       variableText: campaign.variableText,
+      createdAt: campaign.createdAt.toISOString(),
       launchedAt: campaign.launchedAt?.toISOString() ?? null,
       completedAt: campaign.completedAt?.toISOString() ?? null,
+      cancelledAt: campaign.cancelledAt?.toISOString() ?? null,
+      eligibleNow,
     },
     counts: {
       total:
@@ -150,4 +167,21 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
     })),
     nextCursor,
   });
+});
+
+/**
+ * Borra una campaña que no está enviando (borrador, completada o cancelada).
+ * 409 `in_progress` si está en curso/pausada: cancelala primero.
+ */
+export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+  const { id } = await ctx.params;
+  try {
+    const deleted = await deleteCampaign(session.organizationId, id);
+    return Response.json({ ok: true, campaign: deleted });
+  } catch (err) {
+    if (err instanceof CampaignError) {
+      return apiError(err.code === "not_found" ? 404 : 409, err.code, err.message);
+    }
+    throw err;
+  }
 });
