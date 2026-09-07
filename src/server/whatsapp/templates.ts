@@ -229,6 +229,9 @@ export async function deleteTemplate(
         throw new TemplateError("meta_unavailable", "Meta no está disponible ahora");
       }
       if (!isTemplateMissingError(err)) {
+        console.warn(
+          `[templates] DELETE ${template.name} falló en Meta: status=${err.status} code=${err.code} type=${err.type} ${err.message}`
+        );
         throw new TemplateError("meta_error", err.message);
       }
       // 404 / "no existe": ya no está en Meta → se limpia localmente igual.

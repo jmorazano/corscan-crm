@@ -78,6 +78,34 @@ export function WhatsappWizard() {
     void refetch();
   }, [refetch]);
 
+  const [recheck, setRecheck] = useState<{ busy: boolean; error: string | null }>({
+    busy: false,
+    error: null,
+  });
+
+  const recheckToken = useCallback(async () => {
+    setRecheck({ busy: true, error: null });
+    try {
+      const res = await fetch("/api/settings/whatsapp/recheck", { method: "POST" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        setRecheck({
+          busy: false,
+          error:
+            data?.error?.message ??
+            "El token guardado ya no sirve: reconectá con Meta o pegá uno nuevo.",
+        });
+        return;
+      }
+      setRecheck({ busy: false, error: null });
+      await refetch();
+    } catch {
+      setRecheck({ busy: false, error: "No se pudo verificar ahora. Probá de nuevo." });
+    }
+  }, [refetch]);
+
   if (!loaded) {
     return <p className="text-sm text-muted-foreground">Cargando…</p>;
   }
@@ -92,9 +120,26 @@ export function WhatsappWizard() {
               El token de WhatsApp expiró o fue revocado.
             </p>
             <p className="text-[#a2504c]/80">
-              Los envíos están pausados. Pega un token nuevo abajo y prueba la
-              conexión para reconectar.
+              Los envíos están pausados. Primero verificá el token guardado: si
+              sigue vivo, la conexión se restaura sola. Si no, reconectá abajo.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void recheckToken()}
+                disabled={recheck.busy}
+                data-testid="recheck-token"
+              >
+                {recheck.busy ? "Verificando…" : "Verificar token guardado"}
+              </Button>
+              {recheck.error && (
+                <span className="text-xs text-[#a2504c]" data-testid="recheck-error">
+                  {recheck.error}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}

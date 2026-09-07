@@ -24,11 +24,14 @@ export class MetaApiError extends Error {
     this.details = opts.details;
   }
 
-  /** Token vencido/revocado → la conexión requiere re-autenticación. */
+  /**
+   * Token vencido/revocado → la conexión requiere re-autenticación.
+   * OJO: Graph etiqueta como `OAuthException` casi todos sus errores (100
+   * parámetro inválido, 200 permisos, 33 objeto inexistente…), así que el
+   * `type` NO alcanza: solo el 401 y los códigos 190/102 son de token.
+   */
   get isAuthError(): boolean {
-    return (
-      this.status === 401 || this.code === 190 || this.type === "OAuthException"
-    );
+    return this.status === 401 || this.code === 190 || this.code === 102;
   }
 }
 

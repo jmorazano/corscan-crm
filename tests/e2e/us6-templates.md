@@ -42,6 +42,18 @@
 14. Camino infeliz: plantilla usada por una campaña en borrador/en curso/pausada.
     ✅ 409 `in_use` con el motivo inline en la fila; nada se toca en Meta.
 
+## Regresión: un error no-auth de Meta NO debe desconectar el número
+
+15. Si Meta responde a un DELETE (o a un alta) con `OAuthException` de code
+    100/200 (parámetro inválido, permisos), la plantilla muestra el error
+    inline (`meta_error`) y la conexión sigue `connected`. Solo 401 o codes
+    190/102 marcan `reconnect_required`.
+16. Con la conexión en `reconnect_required` (forzar por SQL en local), en
+    `/settings/whatsapp` el banner ofrece «Verificar token guardado».
+    ✅ `POST /api/settings/whatsapp/recheck` → 200 si el token guardado sigue
+    vivo; el banner desaparece y vuelve «Número conectado» sin reconectar.
+    ✅ Si el token está muerto: 422 con el motivo inline y el estado no cambia.
+
 ## Envío con ventana cerrada
 
 5. Abrir una conversación con ventana cerrada en la bandeja.

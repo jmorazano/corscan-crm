@@ -31,10 +31,19 @@ describe("MetaApiError.isAuthError", () => {
     );
   });
 
-  it("OAuthException es error de auth", () => {
-    expect(
-      new MetaApiError("x", { status: 400, type: "OAuthException" }).isAuthError
-    ).toBe(true);
+  it("code 102 (sesión inválida) es error de auth", () => {
+    expect(new MetaApiError("x", { status: 400, code: 102 }).isAuthError).toBe(
+      true
+    );
+  });
+
+  it("OAuthException con otro code (100/200) NO es error de auth", () => {
+    for (const code of [100, 200, 33, 10]) {
+      expect(
+        new MetaApiError("x", { status: 400, code, type: "OAuthException" })
+          .isAuthError
+      ).toBe(false);
+    }
   });
 
   it("un 500 cualquiera NO es error de auth", () => {

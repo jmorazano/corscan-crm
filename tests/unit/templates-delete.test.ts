@@ -36,11 +36,15 @@ vi.mock("@/lib/db/tenant", () => ({
   },
 }));
 
+let reconnectMarks = 0;
 vi.mock("@/server/whatsapp/credentials", () => ({
   getCredentialsByOrg: () =>
     Promise.resolve({ wabaId: "waba_1", token: "tok", status: "connected" }),
   getCredentialsListByWabaId: () => Promise.resolve([]),
-  markReconnectRequired: () => Promise.resolve(),
+  markReconnectRequired: () => {
+    reconnectMarks += 1;
+    return Promise.resolve();
+  },
 }));
 
 vi.mock("@/lib/db", () => {
@@ -101,6 +105,7 @@ beforeEach(() => {
   graphImpl = () => Promise.resolve({ success: true });
   selectRows = [row];
   campaignCount = 0;
+  reconnectMarks = 0;
 });
 
 describe("deleteTemplate", () => {
@@ -159,6 +164,43 @@ describe("deleteTemplate", () => {
     await expect(deleteTemplate("org_1", "tpl_1")).rejects.toMatchObject({
       code: "meta_unavailable",
     });
+    expect(deleteCalls).toHaveLength(0);
+  });
+
+  it("error OAuthException NO-auth (code 100/200) → meta_error SIN marcar reconexión", async () => {
+    const { MetaApiError } = await import("@/lib/meta/client");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const code of [100, 200]) {
+      graphImpl = () =>
+        Promise.reject(
+          new MetaApiError("(#100) Unsupported delete request", {
+            status: 400,
+            code,
+            type: "OAuthException",
+          })
+        );
+      const { deleteTemplate } = await import("@/server/whatsapp/templates");
+      await expect(deleteTemplate("org_1", "tpl_1")).rejects.toMatchObject({
+        code: "meta_error",
+      });
+    }
+    expect(reconnectMarks).toBe(0);
+    expect(deleteCalls).toHaveLength(0);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("token vencido de verdad (code 190) → reconnect_required y se marca", async () => {
+    const { MetaApiError } = await import("@/lib/meta/client");
+    graphImpl = () =>
+      Promise.reject(
+        new MetaApiError("expired", { status: 400, code: 190, type: "OAuthException" })
+      );
+    const { deleteTemplate } = await import("@/server/whatsapp/templates");
+    await expect(deleteTemplate("org_1", "tpl_1")).rejects.toMatchObject({
+      code: "reconnect_required",
+    });
+    expect(reconnectMarks).toBe(1);
     expect(deleteCalls).toHaveLength(0);
   });
 

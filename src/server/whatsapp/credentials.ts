@@ -166,6 +166,15 @@ export async function markReconnectRequired(
     .where(scoped(schema.metaCredentials.organizationId, organizationId));
 }
 
+/** Restaura `connected` (p. ej. tras reverificar que el token guardado sigue vivo). */
+export async function markConnected(organizationId: string): Promise<void> {
+  const db = getDb();
+  await db
+    .update(schema.metaCredentials)
+    .set({ status: "connected", updatedAt: new Date() })
+    .where(scoped(schema.metaCredentials.organizationId, organizationId));
+}
+
 /** Últimos 4 caracteres del token para mostrar en UI (jamás el token). */
 export function tokenLast4(token: string): string {
   return token.slice(-4);
