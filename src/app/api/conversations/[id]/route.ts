@@ -14,9 +14,21 @@ const patchSchema = z.object({
   aiEnabled: z.boolean().optional(),
   reactivate: z.boolean().optional(),
   markRead: z.boolean().optional(),
+  /** 006: reemplaza las etiquetas de la conversación (saneadas). */
+  tags: z.array(z.string().max(80)).max(30).optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
+
+/** Una conversación por id (006): el hilo abierto no depende de la página. */
+export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+  const { id } = await ctx.params;
+  const row = await getConversation(session.organizationId, id);
+  if (!row) return apiError(404, "not_found", "Conversación no encontrada");
+  return Response.json({
+    conversation: serializeConversation(row.conversation, row.contact),
+  });
+});
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;

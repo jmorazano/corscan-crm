@@ -3,7 +3,9 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { listConversations } from "@/server/inbox/queries";
+import { parseTagMode, parseTagsParam } from "@/lib/tags";
+import { decodeCursor, parseLimit } from "@/lib/pagination";
+import { listConversationsPage } from "@/server/inbox/queries";
 import { getOrCreateConversation } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send";
 import { isWindowOpen } from "@/server/inbox/window";
@@ -26,11 +28,22 @@ export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? new Date(sinceParam) : undefined;
-  const conversations = await listConversations(
-    session.organizationId,
-    since && !Number.isNaN(since.getTime()) ? since : undefined
-  );
-  return Response.json({ conversations });
+  // 006: filtros (etiquetas, búsqueda, no leídas) y paginación por cursor,
+  // todo resuelto en SQL (contrato tags-api.md).
+  const page = await listConversationsPage(session.organizationId, {
+    since: since && !Number.isNaN(since.getTime()) ? since : undefined,
+    tags: parseTagsParam(
+      url.searchParams.get("tags"),
+      url.searchParams.get("tag")
+    ),
+    mode: parseTagMode(url.searchParams.get("mode")),
+    q: url.searchParams.get("q") ?? undefined,
+    unreadOnly: url.searchParams.get("filter") === "unread",
+    limit: parseLimit(url.searchParams.get("limit")),
+    cursor: decodeCursor(url.searchParams.get("cursor")),
+    contactId: url.searchParams.get("contactId") ?? undefined,
+  });
+  return Response.json(page);
 });
 
 const startSchema = z.object({

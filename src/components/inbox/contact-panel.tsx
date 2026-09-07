@@ -8,6 +8,8 @@ import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { TagEditor } from "@/components/tags/tag-editor";
+import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -19,6 +21,7 @@ const HANDOFF_LABELS: Record<string, string> = {
 export function ContactPanel({
   conversation,
   refreshKey = 0,
+  conversationFacets = [],
   onPatchConversation,
   onDelete,
   onClose,
@@ -26,9 +29,12 @@ export function ContactPanel({
   conversation: ConversationDto;
   /** Aumenta con cada evento SSE relevante: dispara un refetch en vivo. */
   refreshKey?: number;
+  /** Catálogo de etiquetas de conversación (sugerencias del editor). */
+  conversationFacets?: TagFacet[];
   onPatchConversation: (patch: {
     aiEnabled?: boolean;
     reactivate?: boolean;
+    tags?: string[];
   }) => Promise<void>;
   /** Borra la conversación o el contacto entero; null = éxito. */
   onDelete: (target: "conversation" | "contact") => Promise<string | null>;
@@ -50,8 +56,19 @@ export function ContactPanel({
   >(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Etiquetas (006): las de la conversación (optimistas sobre el DTO) y las
+  // del contacto (segmento de campañas), editables por separado.
+  const [convTags, setConvTags] = useState<string[]>(conversation.tags);
+  const [contactTags, setContactTags] = useState<string[]>([]);
+  const [contactFacetsRev, setContactFacetsRev] = useState(0);
+  const { facets: contactFacets } = useTagFacets("contacts", contactFacetsRev);
 
   const contactId = conversation.contact.id;
+  const conversationTagsKey = conversation.tags.join(",");
+  useEffect(() => {
+    setConvTags(conversation.tags);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- la clave resume el array
+  }, [conversation.id, conversationTagsKey]);
 
   // Cambiar de conversación descarta cualquier confirmación pendiente.
   useEffect(() => {
@@ -81,6 +98,7 @@ export function ContactPanel({
     ]).catch(() => [null, null, null]);
     if (detail) {
       setNotes(detail.contact?.notes ?? "");
+      setContactTags(detail.contact?.tags ?? []);
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
     }
@@ -100,6 +118,7 @@ export function ContactPanel({
     if (detail) {
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+      setContactTags(detail.contact?.tags ?? []);
     }
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
@@ -126,6 +145,21 @@ export function ContactPanel({
       body: JSON.stringify({ stageId, position: 0 }),
     }).catch(() => null);
     void refreshLive();
+  }
+
+  function saveConversationTags(next: string[]) {
+    setConvTags(next); // optimista; el refetch de la lista confirma
+    void onPatchConversation({ tags: next });
+  }
+
+  async function saveContactTags(next: string[]) {
+    setContactTags(next);
+    await fetch(`/api/contacts/${contactId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tags: next }),
+    }).catch(() => null);
+    setContactFacetsRev((v) => v + 1);
   }
 
   async function saveNotes() {
@@ -255,6 +289,31 @@ export function ContactPanel({
               </div>
             )}
           </div>
+        </section>
+
+        {/* Etiquetas (006) */}
+        <section className="border-b p-4" data-testid="panel-tags">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+            Etiquetas de la conversación
+          </p>
+          <TagEditor
+            tags={convTags}
+            suggestions={conversationFacets}
+            onChange={saveConversationTags}
+            ariaLabel="Etiquetas de la conversación"
+            placeholder="Ej. urgente, esperando-pago…"
+          />
+          <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+            Etiquetas del contacto
+          </p>
+          <TagEditor
+            tags={contactTags}
+            suggestions={contactFacets}
+            onChange={(next) => void saveContactTags(next)}
+            disabled={!notesLoaded}
+            ariaLabel="Etiquetas del contacto"
+            placeholder="Segmento para campañas…"
+          />
         </section>
 
         {/* Stepper de etapa */}

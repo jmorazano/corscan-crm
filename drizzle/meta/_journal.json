@@ -50,6 +50,13 @@
       "when": 1788654683189,
       "tag": "0006_soft_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788813339930,
+      "tag": "0007_faithful_thundra",
+      "breakpoints": true
     }
   ]
 }

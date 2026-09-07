@@ -10,6 +10,8 @@ export type EventHandlers = {
     status: string;
   }) => void;
   onConversationUpdated?: (data: { conversation: unknown }) => void;
+  /** Cambio en bloque (006): varias conversaciones a la vez. */
+  onConversationsUpdated?: (data: { conversationIds: string[] }) => void;
   onConversationDeleted?: (data: { conversationId: string }) => void;
   onLabRun?: (data: {
     runId: string;
@@ -62,6 +64,9 @@ export function useEvents(handlers: EventHandlers): void {
     );
     listen("conversation.updated", (d) =>
       handlersRef.current.onConversationUpdated?.(d as never)
+    );
+    listen("conversations.updated", (d) =>
+      handlersRef.current.onConversationsUpdated?.(d as never)
     );
     listen("conversation.deleted", (d) =>
       handlersRef.current.onConversationDeleted?.(d as never)

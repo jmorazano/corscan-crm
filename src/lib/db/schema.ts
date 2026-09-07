@@ -206,6 +206,10 @@ export const conversation = pgTable(
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),
+    /** Etiquetas de triage de la conversación (006): saneadas como las del
+     * contacto pero independientes de ellas (el contacto segmenta campañas;
+     * la conversación organiza el trabajo del día). */
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -215,6 +219,7 @@ export const conversation = pgTable(
       .on(t.organizationId, t.contactId)
       .where(sql`${t.isTest} = false`),
     index("conversation_org_last_idx").on(t.organizationId, t.lastMessageAt),
+    index("conversation_tags_gin_idx").using("gin", t.tags),
   ]
 );
 

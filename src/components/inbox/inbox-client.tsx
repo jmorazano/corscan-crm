@@ -1,27 +1,74 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { serializeTagsParam, type TagOps } from "@/lib/tags";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
-import { ConversationList } from "./conversation-list";
+import {
+  readTagFilter,
+  tagFilterPatch,
+  useQueryFilters,
+} from "@/components/use-query-filters";
+import { useTagFacets } from "@/components/tags/use-tag-facets";
+import { ConversationList, type ListFilter } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+
+type ConversationPage = {
+  conversations: ConversationDto[];
+  total: number;
+  unreadTotal: number;
+  nextCursor: string | null;
+};
 
 export function InboxClient() {
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
+  const [pageMeta, setPageMeta] = useState<{
+    total: number;
+    unreadTotal: number;
+    nextCursor: string | null;
+  }>({ total: 0, unreadTotal: 0, nextCursor: null });
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Hilo abierto que no está en la página cargada (enlace directo, filtro
+  // que lo excluye, más allá de "Cargar más"): se trae por id.
+  const [selectedFallback, setSelectedFallback] =
+    useState<ConversationDto | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
   const [detailRev, setDetailRev] = useState(0);
+
+  // 006: búsqueda, "No leídas" y etiquetas persistidos en la URL (FR-003) y
+  // resueltos en el servidor junto con la paginación por cursor (FR-009).
+  const { params, set: setParams } = useQueryFilters();
+  const tagFilter = useMemo(() => readTagFilter(params), [params]);
+  const tagsKey = serializeTagsParam(tagFilter.tags);
+  const listQuery = params.get("q") ?? "";
+  const listFilter: ListFilter =
+    params.get("filter") === "unread" ? "unread" : "all";
+  const filterRef = useRef({
+    tagsKey,
+    mode: tagFilter.mode,
+    q: listQuery,
+    filter: listFilter,
+  });
+  filterRef.current = {
+    tagsKey,
+    mode: tagFilter.mode,
+    q: listQuery,
+    filter: listFilter,
+  };
+  const [facetsRev, setFacetsRev] = useState(0);
+  const { facets } = useTagFacets("conversations", facetsRev);
 
   useEffect(() => {
     setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false");
@@ -32,22 +79,68 @@ export function InboxClient() {
   }, []);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
-  const lastFetchRef = useRef<string | null>(null);
+  const loadedCountRef = useRef(0);
+  loadedCountRef.current = conversations?.length ?? 0;
 
   // Secuencia de refetch: una respuesta vieja que resuelva tarde no puede
   // pisar a una nueva — sin esto, un snapshot previo a un borrado podía
   // "resucitar" la conversación eliminada en el sidebar.
   const conversationsSeqRef = useRef(0);
 
+  const buildListQuery = useCallback((extra?: Record<string, string>) => {
+    const f = filterRef.current;
+    const qs = new URLSearchParams();
+    if (f.tagsKey) {
+      qs.set("tags", f.tagsKey);
+      if (f.mode === "all") qs.set("mode", "all");
+    }
+    if (f.q.trim()) qs.set("q", f.q.trim());
+    if (f.filter === "unread") qs.set("filter", "unread");
+    for (const [k, v] of Object.entries(extra ?? {})) qs.set(k, v);
+    return `/api/conversations?${qs}`;
+  }, []);
+
+  // Refetch de la primera página con el tamaño ya cargado (acotado), así lo
+  // que el operador tenía a la vista sigue a la vista tras cada evento.
   const refetchConversations = useCallback(async () => {
     const seq = ++conversationsSeqRef.current;
-    const res = await fetch("/api/conversations").catch(() => null);
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(DEFAULT_PAGE_SIZE, loadedCountRef.current)
+    );
+    const res = await fetch(buildListQuery({ limit: String(limit) })).catch(
+      () => null
+    );
     if (!res?.ok) return;
-    const data = (await res.json()) as { conversations: ConversationDto[] };
+    const data = (await res.json()) as ConversationPage;
     if (seq !== conversationsSeqRef.current) return; // llegó una más nueva
     setConversations(data.conversations);
-    lastFetchRef.current = new Date().toISOString();
-  }, []);
+    setPageMeta({
+      total: data.total,
+      unreadTotal: data.unreadTotal,
+      nextCursor: data.nextCursor,
+    });
+  }, [buildListQuery]);
+
+  const loadMore = useCallback(async () => {
+    const cursor = pageMeta.nextCursor;
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    const seq = conversationsSeqRef.current;
+    const res = await fetch(buildListQuery({ cursor })).catch(() => null);
+    setLoadingMore(false);
+    if (!res?.ok) return;
+    const data = (await res.json()) as ConversationPage;
+    if (seq !== conversationsSeqRef.current) return; // hubo un refetch en el medio
+    setConversations((prev) => {
+      const seen = new Set((prev ?? []).map((c) => c.id));
+      return [
+        ...(prev ?? []),
+        ...data.conversations.filter((c) => !seen.has(c.id)),
+      ];
+    });
+    setPageMeta((m) => ({ ...m, nextCursor: data.nextCursor }));
+  }, [buildListQuery, pageMeta.nextCursor, loadingMore]);
 
   const refetchMessages = useCallback(async (conversationId: string) => {
     const res = await fetch(
@@ -58,9 +151,14 @@ export function InboxClient() {
     if (selectedIdRef.current === conversationId) setMessages(data.messages);
   }, []);
 
+  // Cambio de filtros: la búsqueda se debounce-a; el resto va al instante.
   useEffect(() => {
-    void refetchConversations();
-  }, [refetchConversations]);
+    const t = setTimeout(
+      () => void refetchConversations(),
+      listQuery ? 250 : 0
+    );
+    return () => clearTimeout(t);
+  }, [refetchConversations, tagsKey, tagFilter.mode, listFilter, listQuery]);
 
   const select = useCallback(
     (id: string) => {
@@ -76,13 +174,53 @@ export function InboxClient() {
     [refetchMessages]
   );
 
-  // Enlace directo desde Contactos/Pipeline: /inbox?contact=<id>
-  const searchParams = useSearchParams();
-  const contactParam = searchParams.get("contact");
+  const inList = conversations?.find((c) => c.id === selectedId) ?? null;
+  const needsFallback = selectedId !== null && conversations !== null && !inList;
   useEffect(() => {
-    if (!contactParam || selectedIdRef.current) return;
-    const match = conversations?.find((c) => c.contact.id === contactParam);
-    if (match) select(match.id);
+    if (!needsFallback || !selectedId) {
+      setSelectedFallback(null);
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/conversations/${selectedId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { conversation?: ConversationDto } | null) => {
+        if (!cancelled && data?.conversation) setSelectedFallback(data.conversation);
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [needsFallback, selectedId, detailRev]);
+
+  const selected =
+    inList ?? (selectedFallback?.id === selectedId ? selectedFallback : null);
+  const selectedRef = useRef<ConversationDto | null>(null);
+  selectedRef.current = selected;
+
+  // Enlace directo desde Contactos/Pipeline: /inbox?contact=<id>. Si la
+  // conversación no está en la página cargada, se busca por contacto.
+  const contactParam = params.get("contact");
+  useEffect(() => {
+    if (!contactParam || selectedIdRef.current || conversations === null) return;
+    const match = conversations.find((c) => c.contact.id === contactParam);
+    if (match) {
+      select(match.id);
+      return;
+    }
+    let cancelled = false;
+    void fetch(
+      `/api/conversations?contactId=${encodeURIComponent(contactParam)}&limit=1`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: ConversationPage | null) => {
+        const found = data?.conversations[0];
+        if (!cancelled && found && !selectedIdRef.current) select(found.id);
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
   }, [contactParam, conversations, select]);
 
   useEvents({
@@ -114,6 +252,13 @@ export function InboxClient() {
       void refetchConversations();
       // El agente movió de etapa o cambió el handoff: refresca el panel en vivo.
       setDetailRev((v) => v + 1);
+      setFacetsRev((v) => v + 1);
+    },
+    onConversationsUpdated: () => {
+      // Etiquetado en bloque desde otra pestaña/operador (FR-007).
+      void refetchConversations();
+      setDetailRev((v) => v + 1);
+      setFacetsRev((v) => v + 1);
     },
     onConversationDeleted: ({ conversationId }) => {
       // Si otro operador (u otra pestaña) la borró, soltar la selección para
@@ -131,8 +276,6 @@ export function InboxClient() {
       setDetailRev((v) => v + 1);
     },
   });
-
-  const selected = conversations?.find((c) => c.id === selectedId) ?? null;
 
   const sendText = useCallback(
     async (text: string): Promise<string | null> => {
@@ -160,14 +303,43 @@ export function InboxClient() {
   );
 
   const patchConversation = useCallback(
-    async (patch: { aiEnabled?: boolean; reactivate?: boolean }) => {
+    async (patch: {
+      aiEnabled?: boolean;
+      reactivate?: boolean;
+      tags?: string[];
+    }) => {
       if (!selectedIdRef.current) return;
       await fetch(`/api/conversations/${selectedIdRef.current}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(patch),
       }).catch(() => null);
+      if (patch.tags) setFacetsRev((v) => v + 1);
+      setDetailRev((v) => v + 1);
       void refetchConversations();
+    },
+    [refetchConversations]
+  );
+
+  // Etiquetado en bloque (006, FR-004): un request; devuelve el error o null.
+  const bulkTags = useCallback(
+    async (ids: string[], ops: TagOps): Promise<string | null> => {
+      const res = await fetch("/api/conversations/bulk-tags", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids, ...ops }),
+      }).catch(() => null);
+      if (!res) return "Sin conexión con el servidor: no se aplicó el cambio.";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo aplicar el cambio; reintentá.";
+      }
+      setFacetsRev((v) => v + 1);
+      setDetailRev((v) => v + 1);
+      void refetchConversations();
+      return null;
     },
     [refetchConversations]
   );
@@ -176,8 +348,7 @@ export function InboxClient() {
   const deleteSelected = useCallback(
     async (target: "conversation" | "contact"): Promise<string | null> => {
       const conversationId = selectedIdRef.current;
-      const contactId = conversations?.find((c) => c.id === conversationId)
-        ?.contact.id;
+      const contactId = selectedRef.current?.contact.id;
       if (!conversationId) return "Sin conversación seleccionada";
       const url =
         target === "contact" && contactId
@@ -196,7 +367,7 @@ export function InboxClient() {
       void refetchConversations();
       return null;
     },
-    [conversations, refetchConversations]
+    [refetchConversations]
   );
 
   return (
@@ -207,6 +378,19 @@ export function InboxClient() {
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations()}
+          query={listQuery}
+          onQueryChange={(q) => setParams({ q: q || null })}
+          filter={listFilter}
+          onFilterChange={(f) => setParams({ filter: f === "unread" ? "unread" : null })}
+          tagFilter={tagFilter}
+          onTagFilterChange={(next) => setParams(tagFilterPatch(next))}
+          facets={facets}
+          onBulkTags={bulkTags}
+          total={pageMeta.total}
+          unreadTotal={pageMeta.unreadTotal}
+          hasMore={pageMeta.nextCursor !== null}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadMore()}
         />
       </section>
 
@@ -276,6 +460,7 @@ export function InboxClient() {
             <ContactPanel
               conversation={selected}
               refreshKey={detailRev}
+              conversationFacets={facets}
               onPatchConversation={patchConversation}
               onDelete={deleteSelected}
               onClose={() => togglePanel(false)}

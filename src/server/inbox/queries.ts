@@ -1,7 +1,14 @@
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
+import { sanitizeTags, type TagMode } from "@/lib/tags";
+import { tagsWhere } from "@/server/tags";
+import {
+  DEFAULT_PAGE_SIZE,
+  encodeCursor,
+  type Cursor,
+} from "@/lib/pagination";
 
 export type ConversationDto = {
   id: string;
@@ -16,52 +23,166 @@ export type ConversationDto = {
   windowOpen: boolean;
   windowRemainingMs: number;
   preview: string | null;
+  /** Etiquetas de triage de la conversación (006). */
+  tags: string[];
 };
 
+export type ListConversationsOptions = {
+  since?: Date;
+  tags?: readonly string[];
+  mode?: TagMode;
+  /** Búsqueda por nombre, teléfono, etiqueta o último mensaje (006). */
+  q?: string;
+  unreadOnly?: boolean;
+  /** Página por cursor keyset (006): tamaño y cursor del último elemento. */
+  limit?: number;
+  cursor?: Cursor | null;
+  /** Enlace directo: solo la conversación de este contacto. */
+  contactId?: string;
+};
+
+export type ConversationPage = {
+  conversations: ConversationDto[];
+  /** Total que cumple filtros (tags + q), sin la restricción de no leídas. */
+  total: number;
+  /** Conversaciones con mensajes sin leer (tags + q). */
+  unreadTotal: number;
+  /** Suma de mensajes sin leer (tags + q): el badge del menú lateral. */
+  unreadMessages: number;
+  /** Cursor para la página siguiente; null si no hay más. */
+  nextCursor: string | null;
+};
+
+/** Último mensaje de la conversación (texto o tipo de media). */
+const previewSql = sql<string | null>`(
+  select coalesce(m.text, m.type)
+  from message m
+  where m.conversation_id = ${schema.conversation.id}
+  order by m.created_at desc
+  limit 1
+)`;
+const stageSql = sql<string | null>`(
+  select s.name from lead l
+  join pipeline_stage s on s.id = l.stage_id
+  where l.contact_id = ${schema.contact.id}
+  limit 1
+)`;
+/** Clave de orden de la bandeja: fecha del último mensaje (o creación). */
+const sortKeySql = sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`;
+
+function conversationSearchWhere(q: string | undefined): SQL | undefined {
+  const term = q?.trim();
+  if (!term) return undefined;
+  const like = `%${term}%`;
+  return or(
+    ilike(schema.contact.name, like),
+    ilike(schema.contact.phone, like),
+    sql`exists (select 1 from unnest(${schema.conversation.tags}) t where t ilike ${like})`,
+    sql`${previewSql} ilike ${like}`
+  );
+}
+
+/**
+ * Página de la bandeja (006): filtros en SQL (tags, búsqueda, no leídas),
+ * keyset por (clave de orden, id) para que la lista viva no se corra, y
+ * totales para los contadores de la UI.
+ */
+export async function listConversationsPage(
+  organizationId: string,
+  options: ListConversationsOptions = {}
+): Promise<ConversationPage> {
+  const {
+    since,
+    tags = [],
+    mode = "any",
+    q,
+    unreadOnly = false,
+    limit = DEFAULT_PAGE_SIZE,
+    cursor = null,
+    contactId,
+  } = options;
+  const db = getDb();
+
+  const baseWhere = scoped(
+    schema.conversation.organizationId,
+    organizationId,
+    eq(schema.conversation.isTest, false),
+    since ? gt(schema.conversation.updatedAt, since) : undefined,
+    tagsWhere(schema.conversation.tags, tags, mode),
+    conversationSearchWhere(q),
+    contactId ? eq(schema.conversation.contactId, contactId) : undefined
+  );
+  const unreadWhere = gt(schema.conversation.unreadCount, 0);
+  const pageWhere = and(
+    baseWhere,
+    unreadOnly ? unreadWhere : undefined,
+    cursor
+      ? sql`(${sortKeySql}, ${schema.conversation.id}) < (${cursor.ts.toISOString()}::timestamp, ${cursor.id})`
+      : undefined
+  );
+
+  const [rows, aggRows] = await Promise.all([
+    db
+      .select({
+        conversation: schema.conversation,
+        contact: schema.contact,
+        preview: previewSql,
+        stageName: stageSql,
+      })
+      .from(schema.conversation)
+      .innerJoin(
+        schema.contact,
+        eq(schema.conversation.contactId, schema.contact.id)
+      )
+      .where(pageWhere)
+      .orderBy(desc(sortKeySql), desc(schema.conversation.id))
+      .limit(limit + 1),
+    // Un solo agregado para los tres contadores (total, con no leídos, suma
+    // de no leídos) sobre el mismo WHERE base.
+    db
+      .select({
+        total: count(),
+        unreadTotal: sql<number>`count(*) filter (where ${unreadWhere})`,
+        unreadMessages: sql<number>`coalesce(sum(${schema.conversation.unreadCount}), 0)`,
+      })
+      .from(schema.conversation)
+      .innerJoin(
+        schema.contact,
+        eq(schema.conversation.contactId, schema.contact.id)
+      )
+      .where(baseWhere),
+  ]);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+  return {
+    conversations: page.map((r) =>
+      serializeConversation(r.conversation, r.contact, r.preview, r.stageName)
+    ),
+    total: Number(aggRows[0]?.total ?? 0),
+    unreadTotal: Number(aggRows[0]?.unreadTotal ?? 0),
+    unreadMessages: Number(aggRows[0]?.unreadMessages ?? 0),
+    nextCursor:
+      hasMore && last
+        ? encodeCursor({
+            ts: last.conversation.lastMessageAt ?? last.conversation.createdAt,
+            id: last.conversation.id,
+          })
+        : null,
+  };
+}
+
+/** Lista completa (sin paginar): uso interno y compatibilidad. */
 export async function listConversations(
   organizationId: string,
-  since?: Date
+  options: Omit<ListConversationsOptions, "limit" | "cursor"> = {}
 ): Promise<ConversationDto[]> {
-  const db = getDb();
-  const previewSql = sql<string | null>`(
-    select coalesce(m.text, m.type)
-    from message m
-    where m.conversation_id = ${schema.conversation.id}
-    order by m.created_at desc
-    limit 1
-  )`;
-  const stageSql = sql<string | null>`(
-    select s.name from lead l
-    join pipeline_stage s on s.id = l.stage_id
-    where l.contact_id = ${schema.contact.id}
-    limit 1
-  )`;
-
-  const rows = await db
-    .select({
-      conversation: schema.conversation,
-      contact: schema.contact,
-      preview: previewSql,
-      stageName: stageSql,
-    })
-    .from(schema.conversation)
-    .innerJoin(
-      schema.contact,
-      eq(schema.conversation.contactId, schema.contact.id)
-    )
-    .where(
-      scoped(
-        schema.conversation.organizationId,
-        organizationId,
-        eq(schema.conversation.isTest, false),
-        since ? gt(schema.conversation.updatedAt, since) : undefined
-      )
-    )
-    .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
-
-  return rows.map((r) =>
-    serializeConversation(r.conversation, r.contact, r.preview, r.stageName)
-  );
+  const page = await listConversationsPage(organizationId, {
+    ...options,
+    limit: 10_000,
+  });
+  return page.conversations;
 }
 
 export async function getConversation(
@@ -126,17 +247,24 @@ export function serializeConversation(
     windowOpen: isWindowOpen(c.lastInboundAt),
     windowRemainingMs: windowRemainingMs(c.lastInboundAt),
     preview,
+    tags: c.tags ?? [],
   };
 }
 
 export async function updateConversation(
   organizationId: string,
   conversationId: string,
-  patch: { aiEnabled?: boolean; reactivate?: boolean; markRead?: boolean }
+  patch: {
+    aiEnabled?: boolean;
+    reactivate?: boolean;
+    markRead?: boolean;
+    tags?: string[];
+  }
 ) {
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.aiEnabled !== undefined) set.aiEnabled = patch.aiEnabled;
+  if (patch.tags !== undefined) set.tags = sanitizeTags(patch.tags);
   if (patch.reactivate) {
     set.handoffAt = null;
     set.handoffReason = null;

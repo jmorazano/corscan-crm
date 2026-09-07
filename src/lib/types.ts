@@ -13,6 +13,7 @@ export type ConversationDto = {
   windowOpen: boolean;
   windowRemainingMs: number;
   preview: string | null;
+  tags: string[];
 };
 
 export type MessageDto = {

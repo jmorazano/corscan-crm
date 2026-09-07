@@ -13,6 +13,8 @@ export type SseEvent =
       data: { conversationId: string; messageId: string; status: string };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
+  /** Cambio en bloque (006): un solo evento por operación, no uno por fila. */
+  | { type: "conversations.updated"; data: { conversationIds: string[] } }
   | { type: "conversation.deleted"; data: { conversationId: string } }
   | {
       type: "lab.run";

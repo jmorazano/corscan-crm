@@ -10,6 +10,8 @@ const config = [
       "dist/**",
       "drizzle/**",
       "scripts/**",
+      // Worktrees de sesiones paralelas (con su propio .next/node_modules).
+      ".claude/worktrees/**",
       "next-env.d.ts",
       ".tmp-seed-demo.mjs",
       ".tmp-seed-agent.mjs",

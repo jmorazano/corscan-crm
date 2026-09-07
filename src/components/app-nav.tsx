@@ -47,12 +47,12 @@ export function AppNav({
   const [unread, setUnread] = useState(0);
 
   async function refetchUnread() {
-    const res = await fetch("/api/conversations").catch(() => null);
+    // 006: la lista está paginada; el agregado del servidor cubre TODAS las
+    // conversaciones de la empresa, no solo la primera página.
+    const res = await fetch("/api/conversations?limit=1").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as {
-      conversations: { unreadCount: number }[];
-    };
-    setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
+    const data = (await res.json()) as { unreadMessages?: number };
+    setUnread(data.unreadMessages ?? 0);
   }
 
   useEffect(() => {

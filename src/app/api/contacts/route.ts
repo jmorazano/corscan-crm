@@ -1,22 +1,31 @@
-import { arrayContains, desc, count, ilike, isNull, or } from "drizzle-orm";
+import { desc, count, ilike, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizeToWaId } from "@/lib/phone";
-import { sanitizeTags } from "@/lib/tags";
+import { parseTagMode, parseTagsParam, sanitizeTags } from "@/lib/tags";
+import { tagsWhere } from "@/server/tags";
 import { serializeContact } from "@/server/contacts";
+import { parseLimit, parsePage } from "@/lib/pagination";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 200;
 
 export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim();
   const includeArchived = url.searchParams.get("archived") === "true";
-  const tag = url.searchParams.get("tag")?.trim().toLowerCase();
+  // 006: filtro multi-etiqueta `tags=a,b&mode=any|all`; `tag=` (004) sigue
+  // aceptado como alias.
+  const tags = parseTagsParam(
+    url.searchParams.get("tags"),
+    url.searchParams.get("tag")
+  );
+  const mode = parseTagMode(url.searchParams.get("mode"));
+  // 006: paginación por página (`page`, `limit`) persistida en la URL.
+  const page = parsePage(url.searchParams.get("page"));
+  const limit = parseLimit(url.searchParams.get("limit"));
 
   // Todos los filtros van al WHERE (004): filtrar en JS después del limit
   // devolvía una vista truncada engañosa tras un import grande.
@@ -30,7 +39,7 @@ export const GET = withAuth(async (session, req: Request) => {
         )
       : undefined,
     includeArchived ? undefined : isNull(schema.contact.archivedAt),
-    tag ? arrayContains(schema.contact.tags, [tag]) : undefined
+    tagsWhere(schema.contact.tags, tags, mode)
   );
 
   const db = getDb();
@@ -39,14 +48,19 @@ export const GET = withAuth(async (session, req: Request) => {
       .select()
       .from(schema.contact)
       .where(where)
-      .orderBy(desc(schema.contact.updatedAt))
-      .limit(PAGE_SIZE),
+      .orderBy(desc(schema.contact.updatedAt), desc(schema.contact.id))
+      .limit(limit)
+      .offset((page - 1) * limit),
     db.select({ total: count() }).from(schema.contact).where(where),
   ]);
+  const total = totalRows[0]?.total ?? rows.length;
 
   return Response.json({
     contacts: rows.map(serializeContact),
-    total: totalRows[0]?.total ?? rows.length,
+    total,
+    page,
+    pageSize: limit,
+    pages: Math.max(1, Math.ceil(total / limit)),
   });
 });
 
