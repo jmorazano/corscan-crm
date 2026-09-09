@@ -15,6 +15,8 @@ type Params = { params: Promise<{ id: string }> };
 const bodySchema = z.object({
   templateId: z.string().min(1),
   variable: z.string().trim().max(500).optional(),
+  /** 009: un valor por binding free_text (plantillas con bindings). */
+  freeTexts: z.array(z.string().trim().max(500)).max(5).optional(),
 });
 
 export const POST = withAuth(async (session, req: Request, ctx: Params) => {
@@ -28,6 +30,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       conversationId: id,
       templateId: body.data.templateId,
       variable: body.data.variable,
+      freeTexts: body.data.freeTexts,
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

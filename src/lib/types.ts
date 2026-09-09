@@ -37,6 +37,8 @@ export type TemplateDto = {
   rejectionReason: string | null;
   /** Ruta del binario del encabezado de imagen (008), o null si no tiene. */
   headerImageUrl: string | null;
+  /** 009: origen de cada variable ({{i+1}} ↔ posición i); null = legada. */
+  variableBindings: string[] | null;
 };
 
 export type StageDto = {

@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from "react";
 import type { TemplateDto } from "@/lib/types";
+import { originByKey, sampleValuesFor } from "@/lib/template-body";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TemplatePreview } from "@/components/templates/template-preview";
+
+export type TemplateSendValues = {
+  variable?: string;
+  /** 009: un valor por binding free_text, en orden. */
+  freeTexts?: string[];
+};
 
 /**
  * Selector de plantilla aprobada para conversaciones con ventana cerrada
@@ -20,11 +27,15 @@ export function TemplateSender({
   onSent: () => void;
   /** Envío alternativo (004): devuelve mensaje de error o null si salió.
    * Sin esta prop, postea a la conversación (comportamiento original). */
-  submit?: (templateId: string, variable?: string) => Promise<string | null>;
+  submit?: (
+    templateId: string,
+    values: TemplateSendValues
+  ) => Promise<string | null>;
 }) {
   const [templates, setTemplates] = useState<TemplateDto[] | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
   const [variable, setVariable] = useState("");
+  const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,16 +75,33 @@ export function TemplateSender({
   }
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
-  const needsVariable = selected ? /\{\{\s*1\s*\}\}/.test(selected.body) : false;
+  // 009: con bindings, los automáticos van solos y acá se tipean solo los
+  // textos libres; legado (bindings null): la única {{1}} de siempre.
+  const bindings = selected?.variableBindings ?? null;
+  const freeTextSlots = bindings
+    ? bindings
+        .map((b, i) => ({ binding: b, index: i + 1 }))
+        .filter((s) => s.binding === "free_text")
+    : [];
+  const needsVariable =
+    bindings === null && selected
+      ? /\{\{\s*1\s*\}\}/.test(selected.body)
+      : false;
+  const missingFreeText = freeTextSlots.some(
+    (s) => !(freeTexts[s.index] ?? "").trim()
+  );
 
   async function send() {
     if (!selected || sending) return;
     setSending(true);
     setError(null);
-    const value = needsVariable ? variable : undefined;
+    const values: TemplateSendValues =
+      bindings !== null
+        ? { freeTexts: freeTextSlots.map((s) => (freeTexts[s.index] ?? "").trim()) }
+        : { variable: needsVariable ? variable : undefined };
 
     if (submit) {
-      const errorMessage = await submit(selected.id, value);
+      const errorMessage = await submit(selected.id, values);
       setSending(false);
       if (errorMessage) {
         setError(errorMessage);
@@ -85,7 +113,7 @@ export function TemplateSender({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ templateId: selected.id, variable: value }),
+          body: JSON.stringify({ templateId: selected.id, ...values }),
         }
       );
       setSending(false);
@@ -99,6 +127,7 @@ export function TemplateSender({
     }
     setSelectedId("");
     setVariable("");
+    setFreeTexts({});
     onSent();
   }
 
@@ -124,8 +153,43 @@ export function TemplateSender({
         <TemplatePreview
           body={selected.body}
           headerImageUrl={selected.headerImageUrl}
+          variableValues={bindings ? sampleValuesFor(bindings) : undefined}
           compact
         />
+      )}
+      {bindings !== null && bindings.length > 0 && (
+        <div className="space-y-1.5" data-testid="sender-variables">
+          <ul className="space-y-1 text-xs text-muted-foreground">
+            {bindings.map((b, i) =>
+              b === "free_text" ? null : (
+                <li key={i} className="flex items-center gap-2">
+                  <code className="rounded bg-brand/15 px-1.5 py-0.5 font-mono text-[11px] text-brand-text">
+                    {`{{${i + 1}}}`}
+                  </code>
+                  {originByKey(b)?.label ?? b} — se completa solo
+                </li>
+              )
+            )}
+          </ul>
+          {freeTextSlots.map((s) => (
+            <div key={s.index} className="flex items-center gap-2">
+              <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                {`{{${s.index}}}`}
+              </code>
+              <Input
+                aria-label={`Texto libre para la variable ${s.index}`}
+                placeholder="texto libre"
+                value={freeTexts[s.index] ?? ""}
+                onChange={(e) =>
+                  setFreeTexts((prev) => ({
+                    ...prev,
+                    [s.index]: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          ))}
+        </div>
       )}
       {needsVariable && (
         <div className="space-y-1.5">
@@ -141,7 +205,12 @@ export function TemplateSender({
       {error && <p className="text-xs text-destructive">{error}</p>}
       <Button
         onClick={() => void send()}
-        disabled={!selected || sending || (needsVariable && !variable.trim())}
+        disabled={
+          !selected ||
+          sending ||
+          (needsVariable && !variable.trim()) ||
+          missingFreeText
+        }
       >
         {sending ? "Enviando…" : "Enviar plantilla"}
       </Button>

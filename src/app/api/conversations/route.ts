@@ -50,6 +50,8 @@ const startSchema = z.object({
   contactId: z.string().min(1),
   templateId: z.string().min(1),
   variable: z.string().trim().max(500).optional(),
+  /** 009: un valor por binding free_text (plantillas con bindings). */
+  freeTexts: z.array(z.string().trim().max(500)).max(5).optional(),
 });
 
 const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -146,6 +148,7 @@ export const POST = withAuth(async (session, req: Request) => {
       conversation,
       contact,
       variable: body.data.variable,
+      freeTexts: body.data.freeTexts,
     });
     const reconciliation = await reconcileContactWaId(
       organizationId,

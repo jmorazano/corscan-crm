@@ -651,14 +651,14 @@ function StartTemplateDialog({
         </p>
         <TemplateSender
           onSent={() => router.push(`/inbox?contact=${contact.id}`)}
-          submit={async (templateId, variable) => {
+          submit={async (templateId, values) => {
             const res = await fetch("/api/conversations", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 contactId: contact.id,
                 templateId,
-                variable,
+                ...values,
               }),
             }).catch(() => null);
             if (!res) return "Sin conexión con el servidor";

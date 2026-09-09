@@ -7,7 +7,7 @@ describe("buildTemplateSendPayload", () => {
       buildTemplateSendPayload({
         name: "hola",
         language: "es_AR",
-        variable: null,
+        bodyParams: [],
         headerLink: null,
       })
     ).toEqual({ name: "hola", language: { code: "es_AR" } });
@@ -18,7 +18,7 @@ describe("buildTemplateSendPayload", () => {
       buildTemplateSendPayload({
         name: "hola",
         language: "es_AR",
-        variable: "Juan",
+        bodyParams: ["Juan"],
         headerLink: null,
       })
     ).toEqual({
@@ -34,7 +34,7 @@ describe("buildTemplateSendPayload", () => {
     const payload = buildTemplateSendPayload({
       name: "promo",
       language: "es_AR",
-      variable: "Juan",
+      bodyParams: ["Juan"],
       headerLink: "https://crm.example/api/template-media/tm_abc",
     });
     expect(payload.components).toEqual([
@@ -55,7 +55,7 @@ describe("buildTemplateSendPayload", () => {
     const payload = buildTemplateSendPayload({
       name: "promo",
       language: "es_AR",
-      variable: null,
+      bodyParams: [],
       headerLink: "https://crm.example/api/template-media/tm_abc",
     });
     expect(payload.components).toHaveLength(1);

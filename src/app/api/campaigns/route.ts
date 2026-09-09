@@ -13,6 +13,7 @@ import {
 import { getQuotaUsage } from "@/server/campaigns/quota";
 import { previewSegment } from "@/server/campaigns/recipients";
 import { countVariables } from "@/server/whatsapp/templates";
+import { freeTextCount } from "@/lib/template-body";
 
 export const dynamic = "force-dynamic";
 
@@ -165,6 +166,8 @@ const createSchema = z.object({
   tagFilter: z.array(z.string().max(80)).max(30).default([]),
   variableMode: z.enum(["contact_name", "fixed"]).default("contact_name"),
   variableText: z.string().trim().max(500).optional(),
+  /** 009: un valor por binding free_text (plantillas con bindings). */
+  freeTexts: z.array(z.string().trim().max(500)).max(5).optional(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
@@ -185,20 +188,47 @@ export const POST = withAuth(async (session, req: Request) => {
     .limit(1);
   const template = templates[0];
   if (!template) return apiError(404, "not_found", "Plantilla no encontrada");
-  const variables = countVariables(template.body);
-  if (variables > 1) {
-    return apiError(422, "invalid", "v1 admite una sola variable {{1}}");
-  }
-  if (
-    variables === 1 &&
-    body.data.variableMode === "fixed" &&
-    !body.data.variableText?.trim()
-  ) {
-    return apiError(
-      422,
-      "invalid",
-      "La plantilla tiene {{1}}: indicá el texto fijo o usá el nombre del contacto"
-    );
+
+  const bindings = template.variableBindings ?? null;
+  let variableValues: string[] | null = null;
+  if (bindings !== null) {
+    // Plantilla 009: los automáticos se resuelven al enviar; acá solo se
+    // congelan los textos libres (uno por binding free_text, no vacíos).
+    const needed = freeTextCount(bindings);
+    const given = (body.data.freeTexts ?? []).map((t) => t.trim());
+    if (given.length !== needed || given.some((t) => !t)) {
+      return apiError(
+        422,
+        "invalid",
+        needed === 0
+          ? "Esta plantilla no lleva textos libres"
+          : `Completá el texto libre de la plantilla (${needed} valor${needed > 1 ? "es" : ""})`
+      );
+    }
+    variableValues = given;
+  } else {
+    if (body.data.freeTexts !== undefined) {
+      return apiError(
+        422,
+        "invalid",
+        "Esta plantilla usa el modo clásico de variable ({{1}})"
+      );
+    }
+    const variables = countVariables(template.body);
+    if (variables > 1) {
+      return apiError(422, "invalid", "v1 admite una sola variable {{1}}");
+    }
+    if (
+      variables === 1 &&
+      body.data.variableMode === "fixed" &&
+      !body.data.variableText?.trim()
+    ) {
+      return apiError(
+        422,
+        "invalid",
+        "La plantilla tiene {{1}}: indicá el texto fijo o usá el nombre del contacto"
+      );
+    }
   }
 
   const inserted = await db
@@ -212,6 +242,7 @@ export const POST = withAuth(async (session, req: Request) => {
       tagFilter: sanitizeTags(body.data.tagFilter),
       variableMode: body.data.variableMode,
       variableText: body.data.variableText?.trim() || null,
+      variableValues,
     })
     .returning({ id: schema.campaign.id });
   return Response.json({ id: inserted[0]!.id }, { status: 201 });

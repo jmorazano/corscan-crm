@@ -46,6 +46,28 @@ export const POST = withAuth(async (session, req: Request) => {
     return apiError(422, "invalid", "Datos de la plantilla inválidos");
   }
 
+  // 009: orígenes de variables como JSON string dentro del multipart.
+  const variablesRaw = form.get("variables");
+  let variables: string[] | undefined;
+  if (typeof variablesRaw === "string" && variablesRaw.trim()) {
+    const parsedVars = z
+      .array(z.string().min(1).max(40))
+      .max(5)
+      .safeParse(
+        (() => {
+          try {
+            return JSON.parse(variablesRaw);
+          } catch {
+            return null;
+          }
+        })()
+      );
+    if (!parsedVars.success) {
+      return apiError(422, "invalid", "Orígenes de variables inválidos");
+    }
+    variables = parsedVars.data;
+  }
+
   const file = form.get("headerImage");
   let headerImage: { bytes: Buffer; mime: string } | undefined;
   if (file instanceof File && file.size > 0) {
@@ -67,7 +89,7 @@ export const POST = withAuth(async (session, req: Request) => {
   try {
     const { row, headerMediaId } = await createTemplate(
       session.organizationId,
-      { ...parsed.data, headerImage }
+      { ...parsed.data, headerImage, variables }
     );
     return Response.json(
       { template: serializeTemplate(row, headerMediaId) },

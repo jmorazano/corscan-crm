@@ -17,22 +17,27 @@ describe("countVariables / validateBodyVariables (FR-050)", () => {
     expect(validateBodyVariables("Hola {{1}}, ¿retomamos?")).toBeNull();
   });
 
-  it("dos variables → inválido (acotamiento v1)", () => {
+  it("dos variables contiguas → válido (009)", () => {
     expect(countVariables("Hola {{1}}, tu pedido {{2}} llegó")).toBe(2);
     expect(
       validateBodyVariables("Hola {{1}}, tu pedido {{2}} llegó")
-    ).toMatch(/una sola variable/);
+    ).toBeNull();
   });
 
-  it("variable {{2}} sola → inválida (debe ser {{1}})", () => {
-    expect(validateBodyVariables("Tu pedido {{2}} llegó")).toMatch(/\{\{1\}\}/);
+  it("variable {{2}} sola → inválida (hueco: falta {{1}})", () => {
+    expect(validateBodyVariables("Tu pedido {{2}} llegó")).toMatch(
+      /consecutivas/
+    );
   });
 });
 
 describe("renderBody", () => {
-  it("sustituye la variable por el valor", () => {
-    expect(renderBody("Hola {{1}}, ¿retomamos?", "María")).toBe(
+  it("sustituye cada variable por su valor posicional (009)", () => {
+    expect(renderBody("Hola {{1}}, ¿retomamos?", ["María"])).toBe(
       "Hola María, ¿retomamos?"
+    );
+    expect(renderBody("{{1}} de {{2}}: {{1}}", ["Ana", "Acme"])).toBe(
+      "Ana de Acme: Ana"
     );
   });
 

@@ -250,7 +250,11 @@ export async function executeCampaign(campaignId: string): Promise<void> {
     await pauseCampaign(campaignId, "channel");
     return;
   }
-  const needsVariable = countVariables(template.body) === 1;
+  // Legado (bindings null): la única {{1}} según variableMode. Con bindings
+  // (009) el embudo resuelve solo; acá solo viajan los textos libres.
+  const templateBindings = template.variableBindings ?? null;
+  const needsVariable =
+    templateBindings === null && countVariables(template.body) === 1;
 
   let consecutiveFailures = 0;
   let lastFailureKey: string | null = null;
@@ -348,6 +352,10 @@ export async function executeCampaign(campaignId: string): Promise<void> {
           ? (current.variableText ?? "")
           : contact.name
         : undefined;
+      const freeTexts =
+        templateBindings !== null
+          ? (current.variableValues ?? [])
+          : undefined;
 
       let result;
       try {
@@ -358,6 +366,7 @@ export async function executeCampaign(campaignId: string): Promise<void> {
           conversation,
           contact,
           variable,
+          freeTexts,
         });
       } catch (err) {
         // Un solo reintento para fallos transitorios del canal.
@@ -370,6 +379,7 @@ export async function executeCampaign(campaignId: string): Promise<void> {
             conversation,
             contact,
             variable,
+            freeTexts,
           });
         } else {
           throw err;

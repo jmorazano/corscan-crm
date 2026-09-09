@@ -67,7 +67,15 @@ export {
   renderBody,
   validateBodyVariables,
 } from "@/lib/template-body";
-import { countVariables, renderBody, validateBodyVariables } from "@/lib/template-body";
+import {
+  countVariables,
+  renderBody,
+  resolveVariableValues,
+  sampleValuesFor,
+  validateBodyVariables,
+  VARIABLE_ORIGIN_KEYS,
+} from "@/lib/template-body";
+import { formatPhone } from "@/lib/utils";
 
 type TemplateRow = typeof schema.template.$inferSelect;
 
@@ -84,6 +92,7 @@ export function serializeTemplate(
     status: t.status,
     rejectionReason: t.rejectionReason,
     headerImageUrl: headerMediaId ? headerMediaUrl(headerMediaId) : null,
+    variableBindings: t.variableBindings ?? null,
   };
 }
 
@@ -126,10 +135,29 @@ export async function createTemplate(
     category: string;
     body: string;
     headerImage?: HeaderImageInput;
+    /** 009: origen de cada variable, posición i ↔ {{i+1}}. */
+    variables?: string[];
   }
 ): Promise<{ row: TemplateRow; headerMediaId: string | null }> {
   const variableError = validateBodyVariables(input.body);
   if (variableError) throw new TemplateError("invalid", variableError);
+
+  // 009: bindings obligatorios y exactos cuando el cuerpo tiene variables.
+  const variableCount = countVariables(input.body);
+  const bindings = input.variables ?? [];
+  if (bindings.length !== variableCount) {
+    throw new TemplateError(
+      "invalid",
+      variableCount === 0
+        ? "El cuerpo no tiene variables: no corresponde definir orígenes"
+        : `Definí el origen de cada variable del cuerpo (${variableCount})`
+    );
+  }
+  for (const b of bindings) {
+    if (!(VARIABLE_ORIGIN_KEYS as readonly string[]).includes(b)) {
+      throw new TemplateError("invalid", `Origen de variable desconocido: ${b}`);
+    }
+  }
 
   let headerImage: { bytes: Buffer; mime: "image/jpeg" | "image/png" } | null =
     null;
@@ -164,7 +192,6 @@ export async function createTemplate(
     );
   }
 
-  const hasVariable = countVariables(input.body) === 1;
   let waTemplateId: string | null = null;
   try {
     // Orden D5: primero Meta (upload del ejemplo + alta), después la BD —
@@ -200,8 +227,10 @@ export async function createTemplate(
             {
               type: "BODY",
               text: input.body,
-              ...(hasVariable
-                ? { example: { body_text: [["ejemplo"]] } }
+              // 009: una muestra por variable, coherente con su origen —
+              // el revisor de Meta ve el mensaje como lo verá el cliente.
+              ...(variableCount > 0
+                ? { example: { body_text: [sampleValuesFor(bindings)] } }
                 : {}),
             },
           ],
@@ -236,6 +265,7 @@ export async function createTemplate(
         body: input.body,
         status: "pending",
         waTemplateId,
+        variableBindings: variableCount > 0 ? bindings : null,
       })
       .onConflictDoUpdate({
         target: [
@@ -249,6 +279,7 @@ export async function createTemplate(
           status: "pending",
           rejectionReason: null,
           waTemplateId,
+          variableBindings: variableCount > 0 ? bindings : null,
           updatedAt: new Date(),
         },
       })
@@ -533,13 +564,14 @@ export async function applyTemplateStatusEvent(
 }
 
 /**
- * Objeto `template` del payload de envío (008): puro y unit-testeable. Sin
- * imagen ni variable el resultado es byte-a-byte el histórico (FR-009).
+ * Objeto `template` del payload de envío (008/009): puro y unit-testeable.
+ * `bodyParams` lleva un valor por variable {{n}} en orden; vacío y sin
+ * imagen ⇒ resultado byte-a-byte el histórico.
  */
 export function buildTemplateSendPayload(input: {
   name: string;
   language: string;
-  variable: string | null;
+  bodyParams: readonly string[];
   headerLink: string | null;
 }) {
   const components = [
@@ -553,11 +585,14 @@ export function buildTemplateSendPayload(input: {
           },
         ]
       : []),
-    ...(input.variable !== null
+    ...(input.bodyParams.length > 0
       ? [
           {
             type: "body",
-            parameters: [{ type: "text", text: input.variable }],
+            parameters: input.bodyParams.map((text) => ({
+              type: "text",
+              text,
+            })),
           },
         ]
       : []),
@@ -589,6 +624,8 @@ export async function sendTemplateCore(input: {
   conversation: typeof schema.conversation.$inferSelect;
   contact: typeof schema.contact.$inferSelect;
   variable?: string;
+  /** 009: valores de los bindings free_text (solo plantillas con bindings). */
+  freeTexts?: string[];
 }): Promise<SendTemplateResult> {
   const db = getDb();
   const { template, creds, conversation, contact } = input;
@@ -596,7 +633,9 @@ export async function sendTemplateCore(input: {
   if (template.status !== "approved") {
     throw new TemplateError("invalid", "Solo se pueden enviar plantillas aprobadas");
   }
-  const needsVariable = countVariables(template.body) === 1;
+  // Camino LEGADO (bindings null, 009): contrato intacto de la única {{1}}.
+  const bindings = template.variableBindings ?? null;
+  const needsVariable = bindings === null && countVariables(template.body) === 1;
   if (needsVariable && !input.variable?.trim()) {
     throw new TemplateError("invalid", "La plantilla requiere el valor de {{1}}");
   }
@@ -632,6 +671,31 @@ export async function sendTemplateCore(input: {
     ? `${getEnv().APP_BASE_URL}${headerMediaUrl(media[0].id)}`
     : null;
 
+  // 009: un valor por {{n}} — legado: la única {{1}}; con bindings: cada
+  // origen resuelto acá, pegado a los datos reales del destinatario.
+  let bodyParams: string[];
+  if (bindings === null) {
+    bodyParams = needsVariable ? [input.variable!.trim()] : [];
+  } else {
+    let orgName = "";
+    if (bindings.includes("org_name")) {
+      const orgs = await db
+        .select({ name: schema.organization.name })
+        .from(schema.organization)
+        .where(eq(schema.organization.id, input.organizationId))
+        .limit(1);
+      orgName = orgs[0]?.name ?? "";
+    }
+    const resolved = resolveVariableValues(bindings, {
+      contactName: contact.name,
+      contactPhone: formatPhone(contact.phone),
+      orgName,
+      freeTexts: input.freeTexts,
+    });
+    if (!resolved.ok) throw new TemplateError("invalid", resolved.error);
+    bodyParams = resolved.values;
+  }
+
   const { waMessageId, waId } = await callGraphSend(creds, {
     messaging_product: "whatsapp",
     to: normalizeRecipient(contact.phone),
@@ -639,7 +703,7 @@ export async function sendTemplateCore(input: {
     template: buildTemplateSendPayload({
       name: template.name,
       language: template.language,
-      variable: needsVariable ? input.variable!.trim() : null,
+      bodyParams,
       headerLink,
     }),
   });
@@ -654,7 +718,7 @@ export async function sendTemplateCore(input: {
       direction: "out",
       type: "template",
       templateId: template.id,
-      text: renderBody(template.body, input.variable?.trim()),
+      text: renderBody(template.body, bodyParams),
       status: "pending",
     })
     .returning();
@@ -738,6 +802,7 @@ export async function sendTemplate(input: {
   conversationId: string;
   templateId: string;
   variable?: string;
+  freeTexts?: string[];
 }): Promise<{ messageId: string }> {
   const resolved = await resolveTemplateSend(input);
 
@@ -766,6 +831,7 @@ export async function sendTemplate(input: {
       conversation: resolved.conversation,
       contact: resolved.contact,
       variable: input.variable,
+      freeTexts: input.freeTexts,
     });
     return { messageId: result.messageId };
   } catch (err) {

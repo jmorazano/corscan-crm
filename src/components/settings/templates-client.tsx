@@ -13,9 +13,12 @@ import type { TemplateDto } from "@/lib/types";
 import {
   countVariables,
   findOpenVariableAtCursor,
-  TEMPLATE_VARIABLES,
+  MAX_TEMPLATE_VARIABLES,
+  originByKey,
+  sampleValuesFor,
   validateBodyVariables,
-  type TemplateVariable,
+  VARIABLE_ORIGINS,
+  type VariableOrigin,
 } from "@/lib/template-body";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -222,7 +225,14 @@ function TemplateRow({
           </Button>
         </div>
       </div>
-      <TemplatePreview body={t.body} headerImageUrl={t.headerImageUrl} compact />
+      <TemplatePreview
+        body={t.body}
+        headerImageUrl={t.headerImageUrl}
+        variableValues={
+          t.variableBindings ? sampleValuesFor(t.variableBindings) : undefined
+        }
+        compact
+      />
     </div>
   );
 }
@@ -237,12 +247,12 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   const [language, setLanguage] = useState("es_MX");
   const [category, setCategory] = useState<"UTILITY" | "MARKETING">("UTILITY");
   const [body, setBody] = useState("");
-  const [sample, setSample] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [headerImage, setHeaderImage] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [bindings, setBindings] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // El objectURL del preview se libera al reemplazarlo o desmontar.
@@ -257,7 +267,25 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   }, [headerImage]);
 
   const variableError = useMemo(() => validateBodyVariables(body), [body]);
-  const usesVariable = countVariables(body) === 1 && !variableError;
+  const varCount = variableError ? 0 : countVariables(body);
+
+  // Los bindings siguen al cuerpo: uno por variable, en orden. Al agregar la
+  // primera se propone "nombre del contacto"; las siguientes, texto libre.
+  useEffect(() => {
+    setBindings((prev) => {
+      if (prev.length === varCount) return prev;
+      const next = prev.slice(0, varCount);
+      while (next.length < varCount) {
+        next.push(next.length === 0 ? "contact_name" : "free_text");
+      }
+      return next;
+    });
+  }, [varCount]);
+
+  const previewValues = useMemo(
+    () => (varCount > 0 ? sampleValuesFor(bindings) : undefined),
+    [bindings, varCount]
+  );
 
   function pickImage(file: File | null) {
     setImageError(null);
@@ -288,6 +316,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
     form.set("language", language);
     form.set("category", category);
     form.set("body", body);
+    if (varCount > 0) form.set("variables", JSON.stringify(bindings));
     if (headerImage) form.set("headerImage", headerImage);
     const res = await fetch("/api/templates", {
       method: "POST",
@@ -313,9 +342,10 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle>Nueva plantilla</CardTitle>
         <CardDescription>
-          Escribí <code>{"{{"}</code> para insertar una variable. Por ahora se
-          admite UNA sola, <code>{"{{1}}"}</code>. Se envía a aprobación de
-          Meta al crearla.
+          Escribí <code>{"{{"}</code> para insertar una variable (hasta{" "}
+          {MAX_TEMPLATE_VARIABLES}) y elegí su origen: nombre del contacto, su
+          teléfono, tu empresa o texto libre. Se envía a aprobación de Meta al
+          crearla.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -361,7 +391,51 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
               </div>
             </div>
 
-            <BodyEditor value={body} onChange={setBody} error={variableError} />
+            <BodyEditor
+              value={body}
+              onChange={setBody}
+              error={variableError}
+              nextIndex={varCount + 1}
+              onPickOrigin={(key) => setBindings((prev) => [...prev, key])}
+            />
+
+            {varCount > 0 && (
+              <div className="space-y-1.5" data-testid="variable-bindings">
+                <Label>Origen de cada variable</Label>
+                <div className="space-y-1.5">
+                  {bindings.map((binding, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                        {`{{${i + 1}}}`}
+                      </code>
+                      <select
+                        aria-label={`Origen de la variable ${i + 1}`}
+                        value={binding}
+                        onChange={(e) =>
+                          setBindings((prev) =>
+                            prev.map((b, j) => (j === i ? e.target.value : b))
+                          )
+                        }
+                        className="flex h-8 w-full max-w-xs rounded-md border border-input bg-card px-2 text-sm"
+                      >
+                        {VARIABLE_ORIGINS.map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="hidden truncate text-xs text-text-3 md:block">
+                        {originByKey(binding)?.description}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-text-3">
+                  Los orígenes automáticos se completan solos al enviar; el
+                  texto libre se pide al crear la campaña o al enviar 1:1.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="tpl-image">Imagen de encabezado (opcional)</Label>
@@ -413,23 +487,9 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             </p>
             <TemplatePreview
               body={body}
-              sampleValue={sample}
+              variableValues={previewValues}
               headerImageUrl={imagePreview}
             />
-            {usesVariable && (
-              <div className="space-y-1.5">
-                <Label htmlFor="tpl-sample" className="text-xs">
-                  Probar {"{{1}}"} con
-                </Label>
-                <Input
-                  id="tpl-sample"
-                  placeholder={TEMPLATE_VARIABLES[0].sample}
-                  value={sample}
-                  onChange={(e) => setSample(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
-            )}
             <p className="text-xs text-text-3">
               Formato admitido: *negrita*, _cursiva_, ~tachado~ y ```código```.
             </p>
@@ -442,30 +502,35 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
 
 /**
  * Textarea del cuerpo con autocompletado de variables: al escribir `{{`
- * aparece la lista de variables disponibles (flechas + Enter/Tab insertan,
- * Escape cierra). El botón «Variable» inserta en el cursor.
+ * aparece el CATÁLOGO DE ORÍGENES (009) — elegir uno inserta la próxima
+ * variable {{n}} y deja su origen atado. El botón «Variable» inserta con el
+ * origen por defecto (nombre del contacto para {{1}}, texto libre después).
  */
 function BodyEditor({
   value,
   onChange,
   error,
+  nextIndex,
+  onPickOrigin,
 }: {
   value: string;
   onChange: (next: string) => void;
   error: string | null;
+  nextIndex: number;
+  onPickOrigin: (originKey: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [menu, setMenu] = useState<{ start: number; end: number; query: string } | null>(
     null
   );
   const [active, setActive] = useState(0);
-  const alreadyUsed = countVariables(value) >= 1;
+  const atMax = nextIndex > MAX_TEMPLATE_VARIABLES;
 
-  const options: TemplateVariable[] = useMemo(() => {
+  const options: VariableOrigin[] = useMemo(() => {
     if (!menu) return [];
     const q = menu.query.toLowerCase();
-    return TEMPLATE_VARIABLES.filter(
-      (v) => v.key.startsWith(q) || v.label.toLowerCase().includes(q)
+    return VARIABLE_ORIGINS.filter(
+      (o) => o.key.includes(q) || o.label.toLowerCase().includes(q)
     );
   }, [menu]);
 
@@ -475,17 +540,23 @@ function BodyEditor({
     setActive(0);
   }
 
-  function insertVariable(v: TemplateVariable, range?: { start: number; end: number }) {
+  function insertVariable(
+    origin: VariableOrigin,
+    range?: { start: number; end: number }
+  ) {
+    if (atMax) return;
     const el = ref.current;
+    const token = `{{${nextIndex}}}`;
     const start = range?.start ?? el?.selectionStart ?? value.length;
     const end = range?.end ?? el?.selectionEnd ?? value.length;
-    const next = value.slice(0, start) + v.token + value.slice(end);
+    const next = value.slice(0, start) + token + value.slice(end);
     onChange(next);
+    onPickOrigin(origin.key);
     setMenu(null);
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      const pos = start + v.token.length;
+      const pos = start + token.length;
       el.setSelectionRange(pos, pos);
     });
   }
@@ -527,13 +598,17 @@ function BodyEditor({
             type="button"
             variant="outline"
             size="sm"
-            disabled={alreadyUsed}
+            disabled={atMax}
             title={
-              alreadyUsed
-                ? "Ya usaste la única variable disponible ({{1}})"
+              atMax
+                ? `Máximo ${MAX_TEMPLATE_VARIABLES} variables por plantilla`
                 : "Insertar variable en el cursor"
             }
-            onClick={() => insertVariable(TEMPLATE_VARIABLES[0])}
+            onClick={() =>
+              insertVariable(
+                nextIndex === 1 ? VARIABLE_ORIGINS[0] : VARIABLE_ORIGINS[3]
+              )
+            }
           >
             <Braces className="h-3.5 w-3.5" />
             Variable
@@ -568,45 +643,44 @@ function BodyEditor({
             className="absolute left-2 top-full z-20 mt-1 w-[min(100%,360px)] overflow-hidden rounded-md border border-border-strong bg-popover shadow-md"
           >
             <p className="border-b bg-subtle px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-3">
-              Variables disponibles
+              {atMax
+                ? `Máximo ${MAX_TEMPLATE_VARIABLES} variables`
+                : `Insertar {{${nextIndex}}} con origen…`}
             </p>
             {options.length === 0 && (
               <p className="px-3 py-2 text-xs text-text-3">
-                Ninguna variable coincide con «{menu.query}». Solo se admite {"{{1}}"}.
+                Ningún origen coincide con «{menu.query}».
               </p>
             )}
-            {options.map((v, i) => {
-              const used = alreadyUsed;
-              return (
-                <button
-                  key={v.key}
-                  type="button"
-                  role="option"
-                  aria-selected={i === active}
-                  disabled={used}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => insertVariable(v, menu)}
-                  className={cn(
-                    "flex w-full items-start gap-3 px-3 py-2 text-left text-sm",
-                    i === active && !used && "bg-accent",
-                    used && "cursor-not-allowed opacity-60"
-                  )}
-                >
-                  <code className="mt-px shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
-                    {v.token}
-                  </code>
-                  <span className="min-w-0">
-                    <span className="block font-medium">{v.label}</span>
-                    <span className="block text-xs text-text-3">
-                      {used
-                        ? "Ya está en el cuerpo: v1 admite una sola variable."
-                        : v.description}
-                    </span>
+            {options.map((o, i) => (
+              <button
+                key={o.key}
+                type="button"
+                role="option"
+                aria-selected={i === active}
+                disabled={atMax}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => insertVariable(o, menu)}
+                className={cn(
+                  "flex w-full items-start gap-3 px-3 py-2 text-left text-sm",
+                  i === active && !atMax && "bg-accent",
+                  atMax && "cursor-not-allowed opacity-60"
+                )}
+              >
+                <code className="mt-px shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                  {`{{${nextIndex}}}`}
+                </code>
+                <span className="min-w-0">
+                  <span className="block font-medium">{o.label}</span>
+                  <span className="block text-xs text-text-3">
+                    {atMax
+                      ? `Máximo ${MAX_TEMPLATE_VARIABLES} variables por plantilla.`
+                      : o.description}
                   </span>
-                </button>
-              );
-            })}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -614,8 +688,8 @@ function BodyEditor({
         <p className="text-xs text-destructive">{error}</p>
       ) : (
         <p className="text-xs text-text-3">
-          {TEMPLATE_VARIABLES[0].token} = {TEMPLATE_VARIABLES[0].label.toLowerCase()}{" "}
-          (o un valor fijo al enviar).
+          Cada variable {"{{n}}"} se ata a un origen abajo; los automáticos se
+          completan solos al enviar.
         </p>
       )}
     </div>

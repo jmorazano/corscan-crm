@@ -19,6 +19,7 @@ import {
 import type { TemplateDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
 import { sanitizeTags } from "@/lib/tags";
+import { originByKey, sampleValuesFor } from "@/lib/template-body";
 import { useEvents } from "@/components/use-events";
 import { useQueryFilters } from "@/components/use-query-filters";
 import { TagChip } from "@/components/tags/tag-chip";
@@ -762,6 +763,8 @@ function NewCampaignDialog({
     "contact_name"
   );
   const [variableText, setVariableText] = useState("");
+  /** 009: valores por índice de variable free_text ({{n}} → texto). */
+  const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
   const [eligible, setEligible] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -796,7 +799,22 @@ function NewCampaignDialog({
     [facets, tags]
   );
   const selected = templates?.find((t) => t.id === templateId) ?? null;
-  const needsVariable = selected ? /\{\{\s*1\s*\}\}/.test(selected.body) : false;
+  // 009: plantilla con bindings → los automáticos se resuelven solos y acá
+  // solo se cargan los textos libres; legado (bindings null) → radios de {{1}}.
+  const bindings = selected?.variableBindings ?? null;
+  const freeTextSlots = useMemo(
+    () =>
+      bindings
+        ? bindings
+            .map((b, i) => ({ binding: b, index: i + 1 }))
+            .filter((s) => s.binding === "free_text")
+        : [],
+    [bindings]
+  );
+  const needsVariable =
+    bindings === null && selected
+      ? /\{\{\s*1\s*\}\}/.test(selected.body)
+      : false;
 
   async function create() {
     setSaving(true);
@@ -808,8 +826,12 @@ function NewCampaignDialog({
         name: name.trim(),
         templateId,
         tagFilter: tags,
-        variableMode,
-        variableText: variableMode === "fixed" ? variableText : undefined,
+        ...(bindings !== null
+          ? { freeTexts: freeTextSlots.map((s) => freeTexts[s.index] ?? "") }
+          : {
+              variableMode,
+              variableText: variableMode === "fixed" ? variableText : undefined,
+            }),
       }),
     }).catch(() => null);
     setSaving(false);
@@ -877,6 +899,11 @@ function NewCampaignDialog({
             <TemplatePreview
               body={selected.body}
               headerImageUrl={selected.headerImageUrl}
+              variableValues={
+                selected.variableBindings
+                  ? sampleValuesFor(selected.variableBindings)
+                  : undefined
+              }
               compact
             />
           )}
@@ -916,6 +943,41 @@ function NewCampaignDialog({
                 `${eligible} contacto(s) elegible(s) hoy (con consentimiento, sin baja).`}
             </p>
           </div>
+          {bindings !== null && bindings.length > 0 && (
+            <div className="space-y-1.5" data-testid="cmp-variables">
+              <span className="text-sm font-medium">Variables de la plantilla</span>
+              <ul className="space-y-1 text-sm">
+                {bindings.map((b, i) =>
+                  b === "free_text" ? null : (
+                    <li key={i} className="flex items-center gap-2 text-muted-foreground">
+                      <code className="rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                        {`{{${i + 1}}}`}
+                      </code>
+                      {originByKey(b)?.label ?? b} — se completa solo
+                    </li>
+                  )
+                )}
+              </ul>
+              {freeTextSlots.map((s) => (
+                <div key={s.index} className="flex items-center gap-2">
+                  <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                    {`{{${s.index}}}`}
+                  </code>
+                  <Input
+                    placeholder="texto para todos los destinatarios"
+                    aria-label={`Texto libre para la variable ${s.index}`}
+                    value={freeTexts[s.index] ?? ""}
+                    onChange={(e) =>
+                      setFreeTexts((prev) => ({
+                        ...prev,
+                        [s.index]: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           {needsVariable && (
             <div className="space-y-1.5">
               <span className="text-sm font-medium">
@@ -965,7 +1027,8 @@ function NewCampaignDialog({
               !name.trim() ||
               !templateId ||
               saving ||
-              (needsVariable && variableMode === "fixed" && !variableText.trim())
+              (needsVariable && variableMode === "fixed" && !variableText.trim()) ||
+              freeTextSlots.some((s) => !(freeTexts[s.index] ?? "").trim())
             }
             onClick={() => void create()}
             data-testid="cmp-create"

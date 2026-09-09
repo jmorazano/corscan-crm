@@ -383,6 +383,9 @@ export const template = pgTable(
       .default("draft"),
     rejectionReason: text("rejection_reason"),
     waTemplateId: text("wa_template_id"),
+    /** 009: origen de cada variable ({{i+1}} ↔ posición i). NULL = plantilla
+     * anterior a la feature: conserva el flujo legado completo. */
+    variableBindings: jsonb("variable_bindings").$type<string[] | null>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -494,6 +497,9 @@ export const campaign = pgTable(
       .notNull()
       .default("contact_name"),
     variableText: text("variable_text"),
+    /** 009: textos libres congelados al crear la campaña (uno por binding
+     * free_text de la plantilla, en orden). NULL en campañas legadas. */
+    variableValues: jsonb("variable_values").$type<string[] | null>(),
     /** Transiciones finales con guard WHERE (monotónicas, patrón lab). */
     status: text("status", {
       enum: ["draft", "running", "paused", "completed", "cancelled"],

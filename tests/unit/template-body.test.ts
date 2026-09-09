@@ -3,7 +3,7 @@ import {
   findOpenVariableAtCursor,
   parseInlineFormat,
   splitBodyVariables,
-  TEMPLATE_VARIABLES,
+  VARIABLE_ORIGINS,
 } from "@/lib/template-body";
 
 describe("splitBodyVariables (preview)", () => {
@@ -76,8 +76,13 @@ describe("findOpenVariableAtCursor (autocompletado)", () => {
   });
 });
 
-describe("TEMPLATE_VARIABLES", () => {
-  it("v1 expone exactamente {{1}}", () => {
-    expect(TEMPLATE_VARIABLES.map((v) => v.token)).toEqual(["{{1}}"]);
+describe("VARIABLE_ORIGINS (009)", () => {
+  it("expone los 4 orígenes del catálogo", () => {
+    expect(VARIABLE_ORIGINS.map((o) => o.key)).toEqual([
+      "contact_name",
+      "contact_phone",
+      "org_name",
+      "free_text",
+    ]);
   });
 });

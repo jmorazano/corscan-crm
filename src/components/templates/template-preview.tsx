@@ -3,16 +3,14 @@
 import { useEffect, useState } from "react";
 import { CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  parseInlineFormat,
-  splitBodyVariables,
-  TEMPLATE_VARIABLES,
-} from "@/lib/template-body";
+import { parseInlineFormat, splitBodyVariables } from "@/lib/template-body";
 
 type Props = {
   body: string;
   /** Valor de ejemplo con el que se muestra {{1}} (vacío = chip del token). */
   sampleValue?: string;
+  /** 009: valor resuelto por índice — variableValues[i] pinta {{i+1}}. */
+  variableValues?: readonly (string | undefined)[];
   /** URL del encabezado de imagen (008): ruta de la API u objectURL local. */
   headerImageUrl?: string | null;
   /** Sin marco de teléfono: solo la burbuja (para listas). */
@@ -28,6 +26,7 @@ type Props = {
 export function TemplatePreview({
   body,
   sampleValue,
+  variableValues,
   headerImageUrl,
   compact,
   className,
@@ -59,7 +58,11 @@ export function TemplatePreview({
         </span>
       ) : (
         <span className="whitespace-pre-wrap break-words">
-          <BodyRich body={body} sampleValue={sampleValue} />
+          <BodyRich
+            body={body}
+            sampleValue={sampleValue}
+            variableValues={variableValues}
+          />
         </span>
       )}
       <span className="float-right ml-2 mt-1 flex items-center gap-1">
@@ -115,26 +118,32 @@ function useClockLabel(): string {
   return time;
 }
 
-function BodyRich({ body, sampleValue }: { body: string; sampleValue?: string }) {
+function BodyRich({
+  body,
+  sampleValue,
+  variableValues,
+}: {
+  body: string;
+  sampleValue?: string;
+  variableValues?: readonly (string | undefined)[];
+}) {
   const segments = splitBodyVariables(body);
   return (
     <>
       {segments.map((seg, i) => {
         if (seg.kind === "variable") {
-          const known = TEMPLATE_VARIABLES.find((v) => v.key === seg.key);
-          const value = sampleValue?.trim() || known?.sample || seg.raw;
+          const idx = Number(seg.key);
+          // 009: valor resuelto por índice; fallback legado para {{1}}.
+          const value =
+            variableValues?.[idx - 1] ??
+            (idx === 1 ? sampleValue?.trim() || undefined : undefined);
           return (
             <span
               key={i}
-              title={known ? `${seg.raw} · ${known.label}` : `${seg.raw} · variable no admitida`}
-              className={cn(
-                "rounded-[4px] px-1 py-px font-medium",
-                known
-                  ? "bg-brand/15 text-brand-text underline decoration-brand/50 decoration-dotted underline-offset-2"
-                  : "bg-destructive/15 text-destructive line-through"
-              )}
+              title={`${seg.raw}${value ? "" : " · variable"}`}
+              className="rounded-[4px] bg-brand/15 px-1 py-px font-medium text-brand-text underline decoration-brand/50 decoration-dotted underline-offset-2"
             >
-              {value}
+              {value ?? seg.raw}
             </span>
           );
         }
