@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   waMessageId: z.string().min(1),
   status: z.enum(["sent", "delivered", "read", "failed"]),
+  /** 010: texto de error a incluir cuando status=failed. */
+  error: z.string().max(300).optional(),
 });
 
 export async function POST(req: Request) {
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
     phoneNumberId: creds.phoneNumberId,
     waMessageId: body.data.waMessageId,
     status: body.data.status,
+    error: body.data.error,
   });
   const res = await deliverToWebhook(payload);
   return res.ok

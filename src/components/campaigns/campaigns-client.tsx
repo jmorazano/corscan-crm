@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Tag,
   Trash2,
@@ -20,6 +21,7 @@ import type { TemplateDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
 import { sanitizeTags } from "@/lib/tags";
 import { originByKey, sampleValuesFor } from "@/lib/template-body";
+import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { useEvents } from "@/components/use-events";
 import { useQueryFilters } from "@/components/use-query-filters";
 import { TagChip } from "@/components/tags/tag-chip";
@@ -81,7 +83,13 @@ type RecipientRow = {
   repliedAt: string | null;
 };
 
-type Action = "launch" | "pause" | "resume" | "cancel" | "delete";
+type Action =
+  | "launch"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "retry_failed"
+  | "delete";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Borrador",
@@ -685,6 +693,13 @@ function buildConfirm(
         destructive: true,
         onConfirm: run,
       };
+    case "retry_failed":
+      return {
+        title: `Reintentar fallidos de «${c.name}»`,
+        body: `Se reenvía SOLO a los ${c.counts.failed} destinatario(s) fallido(s) — quienes ya recibieron no reciben duplicados. La campaña vuelve a "en curso" con el mismo ritmo y cupo, y el mensaje fallido original queda en la conversación como historial.`,
+        confirmLabel: `Reintentar ${c.counts.failed} fallido(s)`,
+        onConfirm: run,
+      };
     case "delete":
       return {
         title: `Borrar «${c.name}»`,
@@ -1170,6 +1185,18 @@ function CampaignDetail({
               Reanudar
             </Button>
           )}
+          {(campaign.status === "completed" || campaign.status === "paused") &&
+            counts.failed > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => ask("retry_failed")}
+                data-testid="detail-retry-failed"
+              >
+                <RotateCcw className="mr-1.5 h-4 w-4" />
+                Reintentar fallidos ({counts.failed})
+              </Button>
+            )}
           {(campaign.status === "running" || campaign.status === "paused") && (
             <Button
               variant="ghost"
@@ -1248,7 +1275,8 @@ function CampaignDetail({
                       <RecipientStatus r={r} />
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {r.error ?? (r.skipReason ? SKIP_LABELS[r.skipReason] : "")}
+                      {friendlyDeliveryError(r.error) ??
+                        (r.skipReason ? SKIP_LABELS[r.skipReason] : "")}
                     </td>
                   </tr>
                 ))}

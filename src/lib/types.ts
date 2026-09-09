@@ -23,6 +23,8 @@ export type MessageDto = {
   type: string;
   text: string | null;
   status: "pending" | "sent" | "delivered" | "read" | "failed";
+  /** 010: motivo crudo del fallo de entrega (texto de Meta), si falló. */
+  error: string | null;
   aiGenerated: boolean;
   createdAt: string;
 };

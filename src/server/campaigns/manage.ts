@@ -124,3 +124,77 @@ export async function deleteCampaign(
 export function campaignPaceMs(): number {
   return getEnv().CAMPAIGN_PACE_MS;
 }
+
+/**
+ * Reencola los destinatarios FALLIDOS de una campaña (010): la única
+ * excepción deliberada a la monotonicidad de estados, guardada por estado de
+ * origen e idempotente (re-ejecutarla sin fallos nuevos devuelve 0).
+ *
+ * Dos clases de fallo, dos resets:
+ * - `status='failed'`: el canal rechazó el envío (nunca hubo wamid).
+ * - `status='sent'` con `message.status='failed'`: aceptado y luego fallido
+ *   por webhook (p. ej. facturación o límite de marketing 131049). Se
+ *   limpian message_id/wa_message_id/sent_at para que el reintento cree un
+ *   mensaje NUEVO — el fallido original queda en la conversación como
+ *   historial.
+ * Los `skipped` (baja, cancelación) NO se tocan: fueron decisiones, no
+ * fallos.
+ */
+export async function retryFailedRecipients(campaign: {
+  id: string;
+  organizationId: string;
+}): Promise<number> {
+  const db = getDb();
+
+  const sendFailed = await db
+    .update(schema.campaignRecipient)
+    .set({ status: "pending", error: null })
+    .where(
+      and(
+        eq(schema.campaignRecipient.organizationId, campaign.organizationId),
+        eq(schema.campaignRecipient.campaignId, campaign.id),
+        eq(schema.campaignRecipient.status, "failed")
+      )
+    )
+    .returning({ id: schema.campaignRecipient.id });
+
+  const deliveryFailedRows = await db
+    .select({ id: schema.campaignRecipient.id })
+    .from(schema.campaignRecipient)
+    .innerJoin(
+      schema.message,
+      eq(schema.campaignRecipient.messageId, schema.message.id)
+    )
+    .where(
+      and(
+        eq(schema.campaignRecipient.organizationId, campaign.organizationId),
+        eq(schema.campaignRecipient.campaignId, campaign.id),
+        eq(schema.campaignRecipient.status, "sent"),
+        eq(schema.message.status, "failed")
+      )
+    );
+  if (deliveryFailedRows.length > 0) {
+    await db
+      .update(schema.campaignRecipient)
+      .set({
+        status: "pending",
+        error: null,
+        messageId: null,
+        waMessageId: null,
+        sentAt: null,
+      })
+      .where(
+        and(
+          eq(schema.campaignRecipient.organizationId, campaign.organizationId),
+          inArray(
+            schema.campaignRecipient.id,
+            deliveryFailedRows.map((r) => r.id)
+          ),
+          // Guarda de carrera: solo si sigue en 'sent'.
+          eq(schema.campaignRecipient.status, "sent")
+        )
+      );
+  }
+
+  return sendFailed.length + deliveryFailedRows.length;
+}

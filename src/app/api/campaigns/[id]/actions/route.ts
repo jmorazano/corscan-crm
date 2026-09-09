@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { retryFailedRecipients } from "@/server/campaigns/manage";
 import { freezeRecipients } from "@/server/campaigns/recipients";
 import {
   publishProgress,
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 const actionSchema = z.object({
-  action: z.enum(["launch", "pause", "resume", "cancel"]),
+  action: z.enum(["launch", "pause", "resume", "cancel", "retry_failed"]),
 });
 
 /**
@@ -138,6 +139,45 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       spawnCampaignRunner(campaign.id);
       await publishProgress(resumed[0]);
       return Response.json({ ok: true }, { status: 202 });
+    }
+
+    case "retry_failed": {
+      // 010: reencola SOLO los fallidos y devuelve la campaña a "en curso".
+      // Guardas: terminada o pausada (en curso ya los va a procesar si se
+      // reencolan; borrador/cancelada no tienen nada que reintentar).
+      if (!["completed", "paused"].includes(campaign.status)) {
+        return apiError(
+          409,
+          "invalid_transition",
+          "Solo se reintentan los fallidos de una campaña terminada o pausada"
+        );
+      }
+      const retried = await retryFailedRecipients(campaign);
+      if (retried === 0) {
+        return apiError(422, "no_failed", "La campaña no tiene envíos fallidos");
+      }
+      const restarted = await db
+        .update(schema.campaign)
+        .set({
+          status: "running",
+          pausedReason: null,
+          completedAt: null,
+          runnerGeneration: sql`${schema.campaign.runnerGeneration} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.campaign.id, campaign.id),
+            inArray(schema.campaign.status, ["completed", "paused"])
+          )
+        )
+        .returning();
+      if (!restarted[0]) {
+        return apiError(409, "invalid_transition", "La campaña ya cambió de estado");
+      }
+      spawnCampaignRunner(campaign.id);
+      await publishProgress(restarted[0]);
+      return Response.json({ ok: true, retried }, { status: 202 });
     }
 
     case "cancel": {

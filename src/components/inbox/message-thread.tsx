@@ -10,10 +10,17 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { MessageDto } from "@/lib/types";
+import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { cn } from "@/lib/utils";
 import { mediaLabel } from "./helpers";
 
-function StatusTicks({ status }: { status: MessageDto["status"] }) {
+function StatusTicks({
+  status,
+  error,
+}: {
+  status: MessageDto["status"];
+  error?: string | null;
+}) {
   const cls = "h-[13px] w-[13px]";
   if (status === "pending") return <Clock3 className={cn(cls, "text-text-4")} strokeWidth={1.7} />;
   if (status === "sent") return <Check className={cn(cls, "text-text-4")} strokeWidth={1.7} />;
@@ -21,7 +28,17 @@ function StatusTicks({ status }: { status: MessageDto["status"] }) {
     return <CheckCheck className={cn(cls, "text-text-4")} strokeWidth={1.7} />;
   if (status === "read")
     return <CheckCheck className={cn(cls, "text-brand")} strokeWidth={1.7} />;
-  return <AlertTriangle className={cn(cls, "text-destructive")} strokeWidth={1.7} />;
+  // 010: el ⚠ dice POR QUÉ (tooltip + accesible); la línea completa va bajo
+  // la burbuja porque en mobile no hay hover.
+  const reason = friendlyDeliveryError(error) ?? "El mensaje no se pudo entregar";
+  return (
+    <span title={reason} aria-label={`No entregado: ${reason}`} role="img">
+      <AlertTriangle
+        className={cn(cls, "text-destructive")}
+        strokeWidth={1.7}
+      />
+    </span>
+  );
 }
 
 function dayLabel(iso: string): string {
@@ -112,8 +129,18 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
                   <span className="text-[10.5px] text-text-4">
                     {bubbleTime(m.createdAt)}
                   </span>
-                  {out && <StatusTicks status={m.status} />}
+                  {out && <StatusTicks status={m.status} error={m.error} />}
                 </span>
+                {out && m.status === "failed" && (
+                  <span
+                    data-testid="message-fail-reason"
+                    className="mt-1.5 block clear-both border-t border-destructive/20 pt-1 text-[11px] leading-snug text-destructive"
+                  >
+                    No entregado:{" "}
+                    {friendlyDeliveryError(m.error) ??
+                      "el canal no informó el motivo"}
+                  </span>
+                )}
               </div>
             </div>
           </div>

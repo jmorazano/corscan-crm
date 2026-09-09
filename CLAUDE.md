@@ -40,6 +40,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Plantillas de WhatsApp (alta, sync, borrado, preview/variables) | `src/server/whatsapp/templates.ts` + `src/lib/template-body.ts` (reglas puras compartidas con el editor) + `/api/templates` + `src/components/settings/templates-client.tsx` + `src/components/templates/template-preview.tsx` |
 | Imagen de encabezado de plantillas (008) | `src/lib/template-header.ts` (validación magic bytes/5MB) · `uploadResumable` en `src/lib/meta/client.ts` (ejemplo a Meta) · tabla `template_media` (blob 1:1, cascade) · `GET /api/template-media/[id]` (binario PÚBLICO — Meta lo baja en cada envío) · `POST /api/templates` es multipart · header en `sendTemplateCore`/`buildTemplateSendPayload` |
 | Variables de plantillas con origen (009) | catálogo `VARIABLE_ORIGINS` + validación contiguas ≤5 + `resolveVariableValues`/`renderBody(values[])` en `src/lib/template-body.ts` (puro, compartido con previews) · `template.variable_bindings` y `campaign.variable_values` (jsonb; NULL = flujo legado INTACTO) · resolución por destinatario en `sendTemplateCore` (contacto/`formatPhone`/nombre de la org) · `freeTexts` en `/api/campaigns`, `/api/conversations` y `/api/conversations/[id]/messages/template` |
+| Motivo de fallo y reintento de fallidos (010) | `src/lib/meta-errors.ts` (`friendlyDeliveryError`, traducciones de 131042/131049/131026/131047) · `MessageDto.error` + línea «No entregado…» en `message-thread.tsx` · `retryFailedRecipients` en `campaigns/manage.ts` (única excepción guardada a la monotonicidad: fallido→pendiente, ambas clases de fallo) · acción `retry_failed` en `/api/campaigns/[id]/actions` · botón «Reintentar fallidos (N)» en el detalle |
 | Gestión de campañas (filtros status/q en la URL, borrado, elegibles en vivo del borrador, ciclo de vida en la UI) | `src/server/campaigns/manage.ts` (filtros puros, `deleteCampaign` guardado por estado) · `GET /api/campaigns?status=&q=` (+ `settings` ritmo/cupo, `eligibleNow`) · `DELETE /api/campaigns/[id]` · `src/components/campaigns/campaigns-client.tsx` (panel «cómo funciona», acciones por fila con confirmación, stepper del detalle) · el 409 `in_use` de plantillas devuelve `campaigns` para enlazarlas |
 | Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
@@ -141,9 +142,9 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **009-template-variables** (hasta 5 variables posicionales
-con origen atado en la creación — nombre/teléfono del contacto, empresa,
-texto libre — resueltas solas al enviar; legacy intacto vía bindings NULL) —
-spec, plan y tasks en [specs/009-template-variables/](specs/009-template-variables/spec.md).
-Anterior: 008-template-images (en producción, 4b1cf23).
+Feature en curso: **010-campaign-retry** (motivo de fallo de entrega visible
+en bandeja y campañas + acción «Reintentar fallidos» que reencola solo los
+fallidos de la misma campaña) — spec, plan y tasks en
+[specs/010-campaign-retry/](specs/010-campaign-retry/spec.md).
+Anterior: 009-template-variables (en producción, 74ec45e).
 <!-- SPECKIT END -->

@@ -80,6 +80,8 @@ export function buildStatusPayload(input: {
   waMessageId: string;
   status: string;
   recipientId?: string;
+  /** 010: texto de error para status=failed (imita statuses[].errors). */
+  error?: string;
 }) {
   return {
     object: "whatsapp_business_account",
@@ -101,6 +103,9 @@ export function buildStatusPayload(input: {
                   status: input.status,
                   timestamp: String(Math.floor(Date.now() / 1000)),
                   recipient_id: input.recipientId ?? "5215511111111",
+                  ...(input.error
+                    ? { errors: [{ code: 131049, message: input.error }] }
+                    : {}),
                 },
               ],
             },
