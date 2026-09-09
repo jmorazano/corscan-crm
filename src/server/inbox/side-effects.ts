@@ -63,6 +63,36 @@ export async function onInboundSideEffects(input: {
           eq(schema.campaignRecipient.status, "pending")
         )
       );
+
+    // 011 (FR-005): la baja ordena el pipeline — el lead pasa a la etapa
+    // "perdido" de SU empresa. Sin lead o sin etapa lost: no-op (idempotente:
+    // re-aplicar deja el mismo estado). La reversión es manual: el lead no
+    // vuelve solo.
+    const lostStage = await db
+      .select({ id: schema.pipelineStage.id })
+      .from(schema.pipelineStage)
+      .where(
+        and(
+          eq(schema.pipelineStage.organizationId, organizationId),
+          eq(schema.pipelineStage.kind, "lost")
+        )
+      )
+      .limit(1);
+    if (lostStage[0]) {
+      await db
+        .update(schema.lead)
+        .set({
+          stageId: lostStage[0].id,
+          updatedAt: new Date(),
+          lastActivityAt: input.at,
+        })
+        .where(
+          and(
+            eq(schema.lead.organizationId, organizationId),
+            eq(schema.lead.contactId, contactId)
+          )
+        );
+    }
   }
 
   // FR-017: "respondió" = cualquier inbound posterior al envío de la

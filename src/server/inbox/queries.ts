@@ -12,7 +12,13 @@ import {
 
 export type ConversationDto = {
   id: string;
-  contact: { id: string; name: string; phone: string };
+  contact: {
+    id: string;
+    name: string;
+    phone: string;
+    /** 011: BAJA/STOP registrado — la bandeja lo señaliza. */
+    optedOut: boolean;
+  };
   stageName: string | null;
   aiEnabled: boolean;
   handoffAt: string | null;
@@ -236,7 +242,12 @@ export function serializeConversation(
 ): ConversationDto {
   return {
     id: c.id,
-    contact: { id: contact.id, name: contact.name, phone: contact.phone },
+    contact: {
+      id: contact.id,
+      name: contact.name,
+      phone: contact.phone,
+      optedOut: contact.optedOutAt !== null,
+    },
     stageName,
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,

@@ -58,7 +58,9 @@ const envSchema = z.object({
   APP_TERMS_URL: z.string().url().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
-  AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
+  /** 011: espera desde el ÚLTIMO mensaje entrante antes de que el agente
+   * responda (absorbe ráfagas de mensajes en una sola respuesta). */
+  AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(20000),
   /** Espaciado entre envíos del runner de campañas (004). No es secreto. */
   CAMPAIGN_PACE_MS: z.coerce.number().int().min(0).default(4000),
   WA_MOCK_ENABLED: z.string().optional(),

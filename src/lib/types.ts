@@ -2,7 +2,13 @@
 
 export type ConversationDto = {
   id: string;
-  contact: { id: string; name: string; phone: string };
+  contact: {
+    id: string;
+    name: string;
+    phone: string;
+    /** 011: BAJA/STOP registrado — la bandeja lo señaliza. */
+    optedOut: boolean;
+  };
   stageName: string | null;
   aiEnabled: boolean;
   handoffAt: string | null;

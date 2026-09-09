@@ -405,8 +405,17 @@ export function InboxClient() {
                   size="md"
                 />
                 <div>
-                  <p className="text-[15px] font-[650] leading-tight">
+                  <p className="flex items-center gap-2 text-[15px] font-[650] leading-tight">
                     {selected.contact.name}
+                    {selected.contact.optedOut && (
+                      <span
+                        data-testid="optout-badge"
+                        title="Respondió BAJA/STOP: no recibe más envíos iniciados por el negocio (se puede revertir desde su ficha)."
+                        className="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive"
+                      >
+                        Dado de baja
+                      </span>
+                    )}
                   </p>
                   <p
                     className={

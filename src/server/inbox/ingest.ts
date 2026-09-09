@@ -6,7 +6,10 @@ import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookValue } from "@/server/inbox/webhook";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
-import { onInboundSideEffects } from "@/server/inbox/side-effects";
+import {
+  isOptOutMessage,
+  onInboundSideEffects,
+} from "@/server/inbox/side-effects";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
@@ -213,7 +216,12 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
-  await maybeRunAgentTurn(organizationId, conversation.id);
+  // 011 (FR-007): el mensaje de baja no merece respuesta del agente — el
+  // side-effect ya marcó la baja; responder sería insistirle a quien pidió
+  // no recibir más.
+  if (!isOptOutMessage(input.type, input.text)) {
+    await maybeRunAgentTurn(organizationId, conversation.id);
+  }
 }
 
 function toDate(timestamp: string): Date {

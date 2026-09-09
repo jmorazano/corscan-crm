@@ -83,7 +83,14 @@ async function executeTurn(conversationId: string): Promise<void> {
     entry.running = false;
     if (entry.pending) {
       entry.pending = false;
-      void executeTurn(conversationId);
+      // 011: el turno pendiente RE-DEBOUNCEA — llegó gente escribiendo
+      // durante el turno anterior; esperar la ventana completa de nuevo da
+      // tiempo a que termine la ráfaga y produce UNA respuesta con todo.
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        void executeTurn(conversationId);
+      }, getEnv().AGENT_COALESCE_MS);
     } else {
       map.delete(conversationId);
     }
@@ -112,6 +119,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   // Condiciones de silencio: handoff activo o IA apagada en la conversación.
   if (conversation.handoffAt || !conversation.aiEnabled) return;
+
+  // 011 (FR-007): a un contacto dado de baja no se le responde nada —
+  // defensa en profundidad además del corte en la ingesta.
+  if (!conversation.isTest) {
+    const contactRow = await loadContact(organizationId, conversation.contactId);
+    if (contactRow?.optedOutAt) return;
+  }
 
   const profileRows = await db
     .select()
@@ -295,7 +309,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
       if (action.reply) {
-        await deliverReply(conversation, action.reply);
+        await deliverConversationalReply(conversation, action.reply, lastInbound.id);
       }
       return;
     }
@@ -305,16 +319,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     case "none":
       return;
     case "reply":
-      await deliverReply(conversation, action.text);
+      await deliverConversationalReply(conversation, action.text, lastInbound.id);
       return;
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
-      if (action.reply) await deliverReply(conversation, action.reply);
+      if (action.reply) {
+        await deliverConversationalReply(conversation, action.reply, lastInbound.id);
+      }
       return;
     }
     case "handoff": {
       if (action.farewell) {
-        await deliverReply(conversation, action.farewell);
+        await deliverConversationalReply(conversation, action.farewell, lastInbound.id);
       }
       await applyHandoff(conversationId, organizationId, "modelo");
       return;
@@ -327,14 +343,94 @@ type Conversation = typeof schema.conversation.$inferSelect;
 async function loadContact(
   organizationId: string,
   contactId: string
-): Promise<{ id: string; name: string; phone: string } | null> {
+): Promise<{
+  id: string;
+  name: string;
+  phone: string;
+  optedOutAt: Date | null;
+} | null> {
   const db = getDb();
   const rows = await db
-    .select({ id: schema.contact.id, name: schema.contact.name, phone: schema.contact.phone })
+    .select({
+      id: schema.contact.id,
+      name: schema.contact.name,
+      phone: schema.contact.phone,
+      optedOutAt: schema.contact.optedOutAt,
+    })
     .from(schema.contact)
     .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+export type ReplyDecision = "send" | "stale" | "duplicate";
+
+/**
+ * Decisión PURA de entrega conversacional (011, unit-testeable):
+ * - "stale": llegó un inbound nuevo mientras el modelo pensaba — la
+ *   respuesta se descarta y el turno se regenera con el contexto completo.
+ * - "duplicate": el texto es idéntico al último saliente — jamás repetir.
+ */
+export function conversationalReplyDecision(input: {
+  turnInboundId: string;
+  latestInboundId: string | null;
+  lastOutboundText: string | null;
+  text: string;
+}): ReplyDecision {
+  if (input.latestInboundId && input.latestInboundId !== input.turnInboundId) {
+    return "stale";
+  }
+  if (
+    input.lastOutboundText !== null &&
+    input.lastOutboundText.trim() === input.text.trim()
+  ) {
+    return "duplicate";
+  }
+  return "send";
+}
+
+/**
+ * Entrega conversacional con guardas (011). SOLO para respuestas de
+ * conversación (reply/farewell/notas): las confirmaciones de acciones ya
+ * ejecutadas (turno reservado) usan deliverReply directo — la acción
+ * ocurrió y el cliente debe enterarse igual (FR-004).
+ */
+async function deliverConversationalReply(
+  conversation: Conversation,
+  text: string,
+  turnInboundId: string
+): Promise<void> {
+  if (!conversation.isTest) {
+    const db = getDb();
+    const recent = await db
+      .select({
+        id: schema.message.id,
+        direction: schema.message.direction,
+        text: schema.message.text,
+      })
+      .from(schema.message)
+      .where(eq(schema.message.conversationId, conversation.id))
+      .orderBy(desc(schema.message.createdAt))
+      .limit(6);
+    const decision = conversationalReplyDecision({
+      turnInboundId,
+      latestInboundId: recent.find((m) => m.direction === "in")?.id ?? null,
+      lastOutboundText: recent.find((m) => m.direction === "out")?.text ?? null,
+      text,
+    });
+    if (decision === "stale") {
+      // Regenerar con todo lo nuevo; el debounce vuelve a esperar la ráfaga.
+      scheduleAgentTurn(conversation.id);
+      return;
+    }
+    if (decision === "duplicate") {
+      console.warn(
+        `[agente] respuesta idéntica suprimida en ${conversation.id}`
+      );
+      return;
+    }
+  }
+  await deliverReply(conversation, text);
 }
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
