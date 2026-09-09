@@ -222,10 +222,15 @@ function TemplateRow({
           </Button>
         </div>
       </div>
-      <TemplatePreview body={t.body} compact />
+      <TemplatePreview body={t.body} headerImageUrl={t.headerImageUrl} compact />
     </div>
   );
 }
+
+/** Tope y tipos de la imagen de encabezado (aviso temprano en cliente; el
+ * server re-valida por magic bytes). */
+const HEADER_IMAGE_MAX = 5 * 1024 * 1024;
+const HEADER_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
 
 function CreateForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
@@ -235,17 +240,58 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   const [sample, setSample] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [headerImage, setHeaderImage] = useState<File | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // El objectURL del preview se libera al reemplazarlo o desmontar.
+  useEffect(() => {
+    if (!headerImage) {
+      setImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(headerImage);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [headerImage]);
 
   const variableError = useMemo(() => validateBodyVariables(body), [body]);
   const usesVariable = countVariables(body) === 1 && !variableError;
 
+  function pickImage(file: File | null) {
+    setImageError(null);
+    if (!file) {
+      setHeaderImage(null);
+      return;
+    }
+    if (!HEADER_IMAGE_TYPES.includes(file.type)) {
+      setHeaderImage(null);
+      setImageError("Solo se admiten imágenes JPEG o PNG");
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    if (file.size > HEADER_IMAGE_MAX) {
+      setHeaderImage(null);
+      setImageError("La imagen supera el máximo de 5MB que acepta WhatsApp");
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    setHeaderImage(file);
+  }
+
   async function create() {
     setSaving(true);
     setError(null);
+    const form = new FormData();
+    form.set("name", name);
+    form.set("language", language);
+    form.set("category", category);
+    form.set("body", body);
+    if (headerImage) form.set("headerImage", headerImage);
     const res = await fetch("/api/templates", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, language, category, body }),
+      body: form,
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -257,6 +303,8 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
     }
     setName("");
     setBody("");
+    setHeaderImage(null);
+    if (fileInput.current) fileInput.current.value = "";
     onCreated();
   }
 
@@ -315,6 +363,41 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
 
             <BodyEditor value={body} onChange={setBody} error={variableError} />
 
+            <div className="space-y-1.5">
+              <Label htmlFor="tpl-image">Imagen de encabezado (opcional)</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInput}
+                  id="tpl-image"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+                  className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-accent"
+                />
+                {headerImage && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      pickImage(null);
+                      if (fileInput.current) fileInput.current.value = "";
+                    }}
+                  >
+                    Quitar
+                  </Button>
+                )}
+              </div>
+              {imageError ? (
+                <p className="text-xs text-destructive">{imageError}</p>
+              ) : (
+                <p className="text-xs text-text-3">
+                  JPEG o PNG de hasta 5MB. Va arriba del mensaje y Meta la
+                  revisa junto con el texto (recomendado ~800×418px).
+                </p>
+              )}
+            </div>
+
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button
               disabled={saving || !name.trim() || !body.trim() || !!variableError}
@@ -328,7 +411,11 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             <p className="text-xs font-medium uppercase tracking-wide text-text-3">
               Vista previa
             </p>
-            <TemplatePreview body={body} sampleValue={sample} />
+            <TemplatePreview
+              body={body}
+              sampleValue={sample}
+              headerImageUrl={imagePreview}
+            />
             {usesVariable && (
               <div className="space-y-1.5">
                 <Label htmlFor="tpl-sample" className="text-xs">

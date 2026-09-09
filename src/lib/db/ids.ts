@@ -15,6 +15,7 @@ const prefixes = {
   agentProfile: "agp",
   kbEntry: "kb",
   template: "tpl",
+  templateMedia: "tm",
   testRun: "run",
   testCase: "case",
   campaign: "cmp",

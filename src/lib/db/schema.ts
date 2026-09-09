@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -9,6 +10,14 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+/** bytea de Postgres (drizzle no lo trae de fábrica). Driver postgres.js:
+ * escribe/lee Buffer directamente. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -385,6 +394,27 @@ export const template = pgTable(
     ),
   ]
 );
+
+/**
+ * Imagen de encabezado de una plantilla (008). 1:1 real (template_id UNIQUE):
+ * borrar la plantilla arrastra su binario por cascade. El id (tm_…) es el
+ * segmento público no adivinable de /api/template-media/{id} — la ruta sirve
+ * el binario sin auth porque Meta lo descarga en cada envío.
+ */
+export const templateMedia = pgTable("template_media", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  templateId: text("template_id")
+    .notNull()
+    .unique()
+    .references(() => template.id, { onDelete: "cascade" }),
+  mime: text("mime").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  bytes: bytea("bytes").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const agentTestRun = pgTable(
   "agent_test_run",

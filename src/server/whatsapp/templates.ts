@@ -1,7 +1,14 @@
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
+import { getEnv } from "@/lib/env";
+import { validateHeaderImage } from "@/lib/template-header";
+import {
+  graphRequest,
+  MetaApiError,
+  normalizeRecipient,
+  uploadResumable,
+} from "@/lib/meta/client";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import {
@@ -64,7 +71,10 @@ import { countVariables, renderBody, validateBodyVariables } from "@/lib/templat
 
 type TemplateRow = typeof schema.template.$inferSelect;
 
-export function serializeTemplate(t: TemplateRow) {
+export function serializeTemplate(
+  t: TemplateRow,
+  headerMediaId?: string | null
+) {
   return {
     id: t.id,
     name: t.name,
@@ -73,16 +83,64 @@ export function serializeTemplate(t: TemplateRow) {
     body: t.body,
     status: t.status,
     rejectionReason: t.rejectionReason,
+    headerImageUrl: headerMediaId ? headerMediaUrl(headerMediaId) : null,
   };
 }
 
-/** Crea la plantilla y la manda a aprobación de Meta (FR-050). */
+/** Ruta RELATIVA del binario; el envío la absolutiza con APP_BASE_URL. */
+export function headerMediaUrl(mediaId: string): string {
+  return `/api/template-media/${mediaId}`;
+}
+
+/**
+ * Listado con su media 1:1 (LEFT JOIN solo del id — jamás el blob) ya
+ * serializado para la API.
+ */
+export async function listTemplates(organizationId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      template: schema.template,
+      headerMediaId: schema.templateMedia.id,
+    })
+    .from(schema.template)
+    .leftJoin(
+      schema.templateMedia,
+      eq(schema.templateMedia.templateId, schema.template.id)
+    )
+    .where(scoped(schema.template.organizationId, organizationId));
+  return rows
+    .sort((a, b) => b.template.createdAt.getTime() - a.template.createdAt.getTime())
+    .map((r) => serializeTemplate(r.template, r.headerMediaId));
+}
+
+export type HeaderImageInput = { bytes: Buffer; mime: string };
+
+/** Crea la plantilla y la manda a aprobación de Meta (FR-050; 008: con
+ * encabezado de imagen opcional — el ejemplo sube por Resumable Upload). */
 export async function createTemplate(
   organizationId: string,
-  input: { name: string; language: string; category: string; body: string }
-): Promise<TemplateRow> {
+  input: {
+    name: string;
+    language: string;
+    category: string;
+    body: string;
+    headerImage?: HeaderImageInput;
+  }
+): Promise<{ row: TemplateRow; headerMediaId: string | null }> {
   const variableError = validateBodyVariables(input.body);
   if (variableError) throw new TemplateError("invalid", variableError);
+
+  let headerImage: { bytes: Buffer; mime: "image/jpeg" | "image/png" } | null =
+    null;
+  if (input.headerImage) {
+    const check = validateHeaderImage(
+      input.headerImage.bytes,
+      input.headerImage.mime
+    );
+    if (!check.ok) throw new TemplateError("invalid", check.error);
+    headerImage = { bytes: input.headerImage.bytes, mime: check.mime };
+  }
 
   const creds = await getCredentialsByOrg(organizationId);
   if (!creds) {
@@ -98,9 +156,28 @@ export async function createTemplate(
     .replace(/[^a-z0-9_]/g, "");
   if (!name) throw new TemplateError("invalid", "Nombre de plantilla inválido");
 
+  const appId = getEnv().META_APP_ID;
+  if (headerImage && !appId) {
+    throw new TemplateError(
+      "invalid",
+      "Esta instancia no tiene META_APP_ID configurado: no se pueden subir imágenes de encabezado"
+    );
+  }
+
   const hasVariable = countVariables(input.body) === 1;
   let waTemplateId: string | null = null;
   try {
+    // Orden D5: primero Meta (upload del ejemplo + alta), después la BD —
+    // un fallo acá no deja plantilla fantasma ni imagen huérfana.
+    let headerHandle: string | null = null;
+    if (headerImage) {
+      headerHandle = await uploadResumable({
+        appId: appId!,
+        token: creds.token,
+        bytes: headerImage.bytes,
+        mime: headerImage.mime,
+      });
+    }
     const res = await graphRequest<{ id?: string; status?: string }>(
       `${creds.wabaId}/message_templates`,
       {
@@ -111,6 +188,15 @@ export async function createTemplate(
           language: input.language,
           category: input.category,
           components: [
+            ...(headerHandle
+              ? [
+                  {
+                    type: "HEADER",
+                    format: "IMAGE",
+                    example: { header_handle: [headerHandle] },
+                  },
+                ]
+              : []),
             {
               type: "BODY",
               text: input.body,
@@ -138,35 +224,57 @@ export async function createTemplate(
   }
 
   const db = getDb();
-  const inserted = await db
-    .insert(schema.template)
-    .values({
-      id: newId("template"),
-      organizationId,
-      name,
-      language: input.language,
-      category: input.category,
-      body: input.body,
-      status: "pending",
-      waTemplateId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        schema.template.organizationId,
-        schema.template.name,
-        schema.template.language,
-      ],
-      set: {
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(schema.template)
+      .values({
+        id: newId("template"),
+        organizationId,
+        name,
+        language: input.language,
         category: input.category,
         body: input.body,
         status: "pending",
-        rejectionReason: null,
         waTemplateId,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
-  return inserted[0]!;
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.template.organizationId,
+          schema.template.name,
+          schema.template.language,
+        ],
+        set: {
+          category: input.category,
+          body: input.body,
+          status: "pending",
+          rejectionReason: null,
+          waTemplateId,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const row = inserted[0]!;
+
+    // Reemplazo del media 1:1 en la MISMA tx: re-crear la plantilla con otra
+    // imagen la sustituye; re-crearla sin imagen la elimina (la versión que
+    // fue a revisión es de solo texto).
+    await tx
+      .delete(schema.templateMedia)
+      .where(eq(schema.templateMedia.templateId, row.id));
+    let headerMediaId: string | null = null;
+    if (headerImage) {
+      headerMediaId = newId("templateMedia");
+      await tx.insert(schema.templateMedia).values({
+        id: headerMediaId,
+        organizationId,
+        templateId: row.id,
+        mime: headerImage.mime,
+        byteSize: headerImage.bytes.byteLength,
+        bytes: headerImage.bytes,
+      });
+    }
+    return { row, headerMediaId };
+  });
 }
 
 /**
@@ -424,6 +532,43 @@ export async function applyTemplateStatusEvent(
   }
 }
 
+/**
+ * Objeto `template` del payload de envío (008): puro y unit-testeable. Sin
+ * imagen ni variable el resultado es byte-a-byte el histórico (FR-009).
+ */
+export function buildTemplateSendPayload(input: {
+  name: string;
+  language: string;
+  variable: string | null;
+  headerLink: string | null;
+}) {
+  const components = [
+    ...(input.headerLink
+      ? [
+          {
+            type: "header",
+            parameters: [
+              { type: "image", image: { link: input.headerLink } },
+            ],
+          },
+        ]
+      : []),
+    ...(input.variable !== null
+      ? [
+          {
+            type: "body",
+            parameters: [{ type: "text", text: input.variable }],
+          },
+        ]
+      : []),
+  ];
+  return {
+    name: input.name,
+    language: { code: input.language },
+    ...(components.length > 0 ? { components } : {}),
+  };
+}
+
 export type SendTemplateResult = {
   messageId: string;
   waMessageId: string;
@@ -476,24 +621,27 @@ export async function sendTemplateCore(input: {
     throw new TemplateError("reconnect_required", "Reconecta el número");
   }
 
+  // 008: una plantilla con imagen adjunta su encabezado en CADA envío (el
+  // handle del alta solo sirvió para la revisión). Solo el id — no el blob.
+  const media = await db
+    .select({ id: schema.templateMedia.id })
+    .from(schema.templateMedia)
+    .where(eq(schema.templateMedia.templateId, template.id))
+    .limit(1);
+  const headerLink = media[0]
+    ? `${getEnv().APP_BASE_URL}${headerMediaUrl(media[0].id)}`
+    : null;
+
   const { waMessageId, waId } = await callGraphSend(creds, {
     messaging_product: "whatsapp",
     to: normalizeRecipient(contact.phone),
     type: "template",
-    template: {
+    template: buildTemplateSendPayload({
       name: template.name,
-      language: { code: template.language },
-      ...(needsVariable
-        ? {
-            components: [
-              {
-                type: "body",
-                parameters: [{ type: "text", text: input.variable!.trim() }],
-              },
-            ],
-          }
-        : {}),
-    },
+      language: template.language,
+      variable: needsVariable ? input.variable!.trim() : null,
+      headerLink,
+    }),
   });
 
   const inserted = await db

@@ -169,6 +169,80 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
 }
 
 /**
+ * Sube un binario por la Resumable Upload API y devuelve el handle (`h`)
+ * que Meta acepta como `example.header_handle` en el alta de plantillas
+ * (008). Dos pasos: crear la sesión bajo el APP id y subir los bytes a la
+ * sesión. El paso 2 usa `Authorization: OAuth` (no Bearer) y body binario —
+ * por eso no pasa por graphRequest, pero vive acá: única frontera con Meta.
+ */
+export async function uploadResumable(input: {
+  appId: string;
+  token: string;
+  bytes: Buffer;
+  mime: string;
+}): Promise<string> {
+  const env = getEnv();
+  const qs = new URLSearchParams({
+    file_length: String(input.bytes.byteLength),
+    file_type: input.mime,
+  });
+  const session = await graphRequest<{ id?: string }>(
+    `${input.appId}/uploads?${qs}`,
+    { method: "POST", token: input.token }
+  );
+  if (!session.id) {
+    throw new MetaApiError("Meta no devolvió la sesión de subida", {
+      status: 0,
+      details: session,
+    });
+  }
+
+  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${session.id}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `OAuth ${input.token}`,
+        file_offset: "0",
+        "Content-Type": "application/octet-stream",
+      },
+      body: new Uint8Array(input.bytes),
+    });
+  } catch (cause) {
+    throw new MetaApiError("No se pudo contactar la API de Meta", {
+      status: 0,
+      details: cause,
+    });
+  }
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // respuesta no-JSON: se conserva el texto crudo en details
+  }
+  if (!res.ok) {
+    const err = (json as { error?: { message?: string; code?: number; type?: string } })
+      ?.error;
+    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
+      status: res.status,
+      code: err?.code ?? null,
+      type: err?.type ?? null,
+      details: json ?? text,
+    });
+  }
+  const handle = (json as { h?: string } | null)?.h;
+  if (!handle) {
+    throw new MetaApiError("Meta no devolvió el handle de la subida", {
+      status: res.status,
+      details: json ?? text,
+    });
+  }
+  return handle;
+}
+
+/**
  * Normaliza el destinatario para el envío. Números móviles de México llegan
  * de Meta como `521` + 10 dígitos (13 en total); enviar con ese `1` extra
  * produce el error 131030 — se envía como `52` + 10 dígitos.

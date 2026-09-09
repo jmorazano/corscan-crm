@@ -120,6 +120,33 @@ export async function POST(req: Request, ctx: Params) {
   const token = bearerToken(req);
   if (token.endsWith("-invalid")) return invalidTokenResponse();
 
+  // POST {appId}/uploads → sesión de la Resumable Upload API (008). Va antes
+  // del parseo JSON: el paso 2 llega con body binario.
+  if (path.length === 2 && path[1] === "uploads") {
+    const state = getWaMockState();
+    if (state.failUploads) {
+      state.failUploads = false;
+      return Response.json(
+        {
+          error: {
+            message: "Service temporarily unavailable",
+            type: "OAuthException",
+            code: 2,
+            fbtrace_id: "mock",
+          },
+        },
+        { status: 500 }
+      );
+    }
+    return Response.json({ id: `upload:mock-${nextN()}` });
+  }
+
+  // POST upload:mock-… → subida binaria; responde el handle del ejemplo.
+  if (path.length === 1 && path[0]!.startsWith("upload:")) {
+    await req.arrayBuffer().catch(() => null);
+    return Response.json({ h: `MOCK_HANDLE:${path[0]!.slice("upload:".length)}` });
+  }
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   // POST {phoneNumberId}/messages → registra en el outbox
@@ -162,6 +189,7 @@ export async function POST(req: Request, ctx: Params) {
       category: String(body.category ?? "UTILITY"),
       status: "PENDING",
       body: bodyComponent?.text ?? "",
+      components: body.components,
     };
     state.templates.push(tpl);
     return Response.json({ id: tpl.id, status: "PENDING", category: tpl.category });

@@ -35,6 +35,8 @@ export type TemplateDto = {
   body: string;
   status: "draft" | "pending" | "approved" | "rejected";
   rejectionReason: string | null;
+  /** Ruta del binario del encabezado de imagen (008), o null si no tiene. */
+  headerImageUrl: string | null;
 };
 
 export type StageDto = {

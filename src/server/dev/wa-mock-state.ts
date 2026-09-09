@@ -23,25 +23,43 @@ export type MockTemplate = {
   category: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   body: string;
+  /** Components crudos del alta (008): el guion E2E verifica el HEADER. */
+  components?: unknown;
 };
 
 type WaMockState = {
   outbox: OutboxEntry[];
   templates: MockTemplate[];
   counter: number;
+  /** Knob 008: el próximo upload resumable falla con 500 (camino infeliz). */
+  failUploads: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
 
 export function getWaMockState(): WaMockState {
   if (!globalForMock.__waMockState) {
-    globalForMock.__waMockState = { outbox: [], templates: [], counter: 0 };
+    globalForMock.__waMockState = {
+      outbox: [],
+      templates: [],
+      counter: 0,
+      failUploads: false,
+    };
+  }
+  // Migración suave del estado en caliente (dev recarga módulos).
+  if (globalForMock.__waMockState.failUploads === undefined) {
+    globalForMock.__waMockState.failUploads = false;
   }
   return globalForMock.__waMockState;
 }
 
 export function resetWaMockState(): void {
-  globalForMock.__waMockState = { outbox: [], templates: [], counter: 0 };
+  globalForMock.__waMockState = {
+    outbox: [],
+    templates: [],
+    counter: 0,
+    failUploads: false,
+  };
 }
 
 // Prefijo único por arranque del proceso: el contador vive en memoria y al

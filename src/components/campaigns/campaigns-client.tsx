@@ -23,6 +23,7 @@ import { useEvents } from "@/components/use-events";
 import { useQueryFilters } from "@/components/use-query-filters";
 import { TagChip } from "@/components/tags/tag-chip";
 import { TagPicker } from "@/components/tags/tag-picker";
+import { TemplatePreview } from "@/components/templates/template-preview";
 import { useTagFacets } from "@/components/tags/use-tag-facets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -873,9 +874,11 @@ function NewCampaignDialog({
             )}
           </div>
           {selected && (
-            <p className="rounded-md bg-secondary/60 p-2.5 text-xs text-muted-foreground">
-              {selected.body}
-            </p>
+            <TemplatePreview
+              body={selected.body}
+              headerImageUrl={selected.headerImageUrl}
+              compact
+            />
           )}
           <div className="space-y-1.5">
             <span className="text-sm font-medium">Segmento por etiquetas</span>

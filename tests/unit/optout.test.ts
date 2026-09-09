@@ -22,6 +22,12 @@ vi.mock("@/lib/db", async (importOriginal) => {
       update: () => ({
         set: () => ({ where: () => Promise.resolve() }),
       }),
+      // 008: lookup del media 1:1 de la plantilla (sin imagen en estos casos).
+      select: () => ({
+        from: () => ({
+          where: () => ({ limit: () => Promise.resolve([]) }),
+        }),
+      }),
     }),
   };
 });

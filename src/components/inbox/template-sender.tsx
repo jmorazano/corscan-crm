@@ -5,6 +5,7 @@ import type { TemplateDto } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TemplatePreview } from "@/components/templates/template-preview";
 
 /**
  * Selector de plantilla aprobada para conversaciones con ventana cerrada
@@ -120,9 +121,11 @@ export function TemplateSender({
         </select>
       </div>
       {selected && (
-        <p className="rounded-md bg-secondary/60 p-2.5 text-xs text-muted-foreground">
-          {selected.body}
-        </p>
+        <TemplatePreview
+          body={selected.body}
+          headerImageUrl={selected.headerImageUrl}
+          compact
+        />
       )}
       {needsVariable && (
         <div className="space-y-1.5">

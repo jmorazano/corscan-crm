@@ -13,6 +13,8 @@ type Props = {
   body: string;
   /** Valor de ejemplo con el que se muestra {{1}} (vacío = chip del token). */
   sampleValue?: string;
+  /** URL del encabezado de imagen (008): ruta de la API u objectURL local. */
+  headerImageUrl?: string | null;
   /** Sin marco de teléfono: solo la burbuja (para listas). */
   compact?: boolean;
   className?: string;
@@ -23,7 +25,13 @@ type Props = {
  * sobre el fondo del chat, variables resaltadas y formato inline
  * (*negrita*, _cursiva_, ~tachado~, ```mono```) aplicado.
  */
-export function TemplatePreview({ body, sampleValue, compact, className }: Props) {
+export function TemplatePreview({
+  body,
+  sampleValue,
+  headerImageUrl,
+  compact,
+  className,
+}: Props) {
   const time = useClockLabel();
   const empty = body.trim().length === 0;
 
@@ -35,6 +43,16 @@ export function TemplatePreview({ body, sampleValue, compact, className }: Props
         compact && "max-w-full"
       )}
     >
+      {headerImageUrl && (
+        // Binario propio de la API u objectURL local: sin optimizador de Next.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={headerImageUrl}
+          alt="Encabezado de la plantilla"
+          data-testid="template-preview-header-image"
+          className="mb-1.5 max-h-40 w-full rounded-md object-cover"
+        />
+      )}
       {empty ? (
         <span className="italic text-text-4">
           Escribí el cuerpo para ver cómo se lee…
