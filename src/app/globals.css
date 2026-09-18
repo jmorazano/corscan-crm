@@ -83,10 +83,23 @@
   html,
   body {
     height: 100%;
-    overscroll-behavior-y: contain;
+    /* El documento nunca scrollea (el shell es fijo): sin rebote propio. */
+    overscroll-behavior: none;
   }
   body {
     touch-action: manipulation;
+  }
+  /*
+    Scrollers internos (hilo, lista, columnas): sin encadenar el scroll al
+    documento. En iOS Safari, rebotar contra el fondo de un scroller dentro
+    de un contenedor fijo encadenaba al documento y, tras ese rebote, WebKit
+    dejaba de entregar el scroll al contenedor hasta re-renderizar (el hilo
+    «se quedaba fijo»). Con `contain` el rebote es del propio scroller.
+  */
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    overscroll-behavior: contain;
   }
   button,
   [role="button"],

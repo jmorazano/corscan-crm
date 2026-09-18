@@ -151,7 +151,7 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
         ref={scrollRef}
         onScroll={onScroll}
         data-testid="message-thread"
-        className="flex flex-1 flex-col gap-[3px] overflow-y-auto bg-chat px-3 py-4 md:px-[6%] md:py-5"
+        className="flex flex-1 flex-col gap-[3px] overflow-y-auto overscroll-y-contain bg-chat px-3 py-4 md:px-[6%] md:py-5"
       >
         {messages.map((m, i) => {
           const prev = messages[i - 1];
