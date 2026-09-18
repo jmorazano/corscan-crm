@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   failUploads: z.boolean().optional(),
+  /** 014: el próximo envío a Graph falla con 500 (503 de cara a la API). */
+  failNextSend: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -25,5 +27,11 @@ export async function POST(req: Request) {
   if (body.data.failUploads !== undefined) {
     state.failUploads = body.data.failUploads;
   }
-  return Response.json({ failUploads: state.failUploads });
+  if (body.data.failNextSend !== undefined) {
+    state.failNextSend = body.data.failNextSend;
+  }
+  return Response.json({
+    failUploads: state.failUploads,
+    failNextSend: state.failNextSend,
+  });
 }

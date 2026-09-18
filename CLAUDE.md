@@ -50,6 +50,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Etiquetas (contactos y conversaciones), filtros en la URL, bulk y paginación | `src/lib/tags.ts` (saneo + `applyTagOps`) · `src/lib/pagination.ts` (page/limit + cursor keyset) · `src/server/tags.ts` (`tagsWhere`, catálogo, bulk scoped) · `/api/tags` · `/api/contacts` (`tags`,`mode`,`page`) + `/api/contacts/bulk-tags` · `/api/conversations` (`tags`,`mode`,`q`,`filter`,`cursor`) + `/api/conversations/bulk-tags` + `GET /api/conversations/[id]` · hook `src/components/use-query-filters.ts` (estado en query params vía `history.replaceState`) · `src/components/tags/*` (chip, filtro, picker, barra bulk, editor) · evento SSE `conversations.updated` |
 | Acciones-herramienta del agente (agenda) | `check_availability` / `book_appointment` en `src/server/ai/actions.ts`; loop acotado (2 vueltas) en `pipeline.ts`; sección "AGENDA DE TURNOS" en `prompts.ts` (solo con calendario conectado); sandbox `is_test` jamás toca Google |
 | Notificaciones push (013) | Web Push estándar (constitución II, cat. 4): claves VAPID POR EMPRESA generadas al primer uso (`src/server/push/keys.ts`, privada cifrada) · suscripciones por dispositivo (`subscriptions.ts`, `organization_id`+`user_id`, `endpoint` único, modo `all`/`handoff`) · envío con `web-push` para firmar/cifrar y `fetch` propio (`notify.ts`, transporte inyectable, poda 404/410) · eventos de dominio en `events.ts` (`notifyInboundMessage` desde `ingest.ts`, `notifyHandoff` desde `pipeline.ts`, siempre en segundo plano; `is_test` nunca) · `/api/push/{vapid,subscriptions,test}` · SW mínimo `public/sw.js` (sin caché) + `src/lib/push-client.ts` + `usePush` + Ajustes → Notificaciones · `AppShell` registra el SW, re-sincroniza y pone el badge · push-mock `/api/dev/push-mock` (`?status=410`) |
+| API pública por empresa (014) | claves `vk_…` hasheadas (`src/lib/api-keys.ts` puro + `src/server/api-keys/keys.ts`) · `withApiKey` en `src/lib/api.ts` (401 `invalid_api_key`, 60/min → 429) · `/api/v1/templates`, `POST /api/v1/messages` (idempotencia reserva-primero en `api_request`, `Idempotency-Key`), `GET /api/v1/messages/[id]` · `src/server/public-api/` (`templates.ts` nombre/idioma + `resolveApiParams`, `send.ts` orquesta normalizar→contacto consent `api`→conversación→baja→cupo→`sendTemplateCore({via})`→reconciliar, `messages.ts`) · `src/lib/public-templates.ts` (variables `crm`/`caller` + curl, compartido con Ajustes → API) · `message.api_key_id` + `MessageDto.via` («Enviado por API · clave») · agente: `transactionalContext` + `isPlainAcknowledgment` (calla ante acuses tras notificación por API; sección `NOTIFICACIÓN AUTOMÁTICA` en el prompt) · `/api/settings/api-keys` + `src/components/settings/api-client.tsx` · referencia `docs/api/v1.md` · knob wa-mock `failNextSend` |
 | Móvil / PWA / gestos (012) | Mobile-first: base = móvil, `md:` = escritorio (768). Shell `src/components/app-shell.tsx` (tab bar inferior + hoja «Más» + `useHideTabBar`, alto real con teclado iOS) · `Dialog`/`ActionSheet` en `src/components/ui/` (hoja inferior en móvil, modal en escritorio, atrás cierra) · gestos puros en `src/lib/gestures.ts` + hooks/`SwipeRow` en `src/components/gestures.tsx` · bandeja apilada por URL (`?c=` hilo, `d=1` ficha; push en móvil, replace en escritorio) + atajos (⌘K, Alt+↑/↓, Esc, ⌘⇧U) + `/` respuestas rápidas + `markUnread` en `PATCH /api/conversations/[id]` · pipeline `MouseSensor`+`TouchSensor` con «Mover a…» · PWA: `src/app/manifest.ts` + `/api/pwa/icon/[size]` (ImageResponse) + `generateViewport` en `src/app/layout.tsx` · reglas globales móviles en `globals.css` (16px en campos, safe-area) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
@@ -145,9 +146,10 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **013-push-notifications** (Web Push estándar con VAPID
-por empresa: aviso de cada entrante o solo atención humana, toca y abre la
-conversación; Ajustes → Notificaciones) — spec, plan y tasks en
-[specs/013-push-notifications/](specs/013-push-notifications/spec.md).
-Anterior: 012-mobile-responsive (en producción, 304299a + fix 1053ac3).
+Feature en curso: **014-public-api** (API pública por empresa para envíos
+programáticos de plantillas: claves en Ajustes → API, `/api/v1/templates`,
+`POST /api/v1/messages` idempotente, estado del mensaje, agente mudo ante
+acuses de recibo) — spec, plan y tasks en
+[specs/014-public-api/](specs/014-public-api/spec.md).
+Anterior: 013-push-notifications (en producción, 63dbec1).
 <!-- SPECKIT END -->

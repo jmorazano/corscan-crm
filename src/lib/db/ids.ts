@@ -24,6 +24,8 @@ const prefixes = {
   sendSettings: "ss",
   calendarIntegration: "cint",
   appointment: "apt",
+  apiKey: "ak",
+  apiRequest: "areq",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

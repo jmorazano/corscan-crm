@@ -128,9 +128,10 @@ export const contact = pgTable(
     notes: text("notes"),
     /** Etiquetas de segmentación (004): saneadas (trim, lower, únicas). */
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
-    /** Consentimiento (004): NULL = sin registro → inelegible para campañas. */
+    /** Consentimiento (004): NULL = sin registro → inelegible para campañas.
+     * `api` (014): declarado por el sistema integrador al enviar por API. */
     consentSource: text("consent_source", {
-      enum: ["import", "inbound", "manual"],
+      enum: ["import", "inbound", "manual", "api"],
     }),
     consentAt: timestamp("consent_at"),
     /** Baja (004): set-si-null desde la ingesta (BAJA/STOP); excluye de todo
@@ -255,6 +256,9 @@ export const message = pgTable(
     /** Plantilla enviada (004): habilita el dedup de reintentos (FR-009) y
      * el tracking por campaña. Sin FK: la plantilla puede borrarse. */
     templateId: text("template_id"),
+    /** Clave de API que originó el saliente (014). Sin FK: la clave revocada
+     * conserva su fila y el hilo sigue mostrando «Enviado por API · nombre». */
+    apiKeyId: text("api_key_id"),
     text: text("text"),
     status: text("status", {
       enum: ["pending", "sent", "delivered", "read", "failed"],
@@ -739,5 +743,61 @@ export const pushSubscription = pgTable(
   (t) => [
     uniqueIndex("push_subscription_endpoint_uq").on(t.endpoint),
     index("push_subscription_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+/* ============================================================
+ * API pública (014): claves por empresa + idempotencia de envíos
+ * ============================================================ */
+
+/**
+ * Clave de API POR EMPRESA (014, data-model). En reposo solo el hash
+ * SHA-256 de la clave completa (256 bits de entropía: se busca por hash,
+ * índice único) y un prefijo visible para identificarla. Revocar es soft
+ * delete: la fila queda para que el hilo siga mostrando quién envió.
+ */
+export const apiKey = pgTable(
+  "api_key",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("api_key_hash_uq").on(t.keyHash),
+    index("api_key_org_idx").on(t.organizationId, t.createdAt),
+  ]
+);
+
+/**
+ * Idempotencia de `POST /api/v1/messages` (014, D2): reserva-primero.
+ * `status_code = 0` = en curso; con respuesta = replay. Solo se conserva si
+ * el mensaje se creó; ante error se borra para que el cliente reintente.
+ */
+export const apiRequest = pgTable(
+  "api_request",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    apiKeyId: text("api_key_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    statusCode: integer("status_code").notNull().default(0),
+    responseBody: jsonb("response_body").$type<Record<string, unknown> | null>(),
+    messageId: text("message_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("api_request_org_key_uq").on(t.organizationId, t.idempotencyKey),
   ]
 );

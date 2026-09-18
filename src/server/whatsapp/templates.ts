@@ -626,6 +626,9 @@ export async function sendTemplateCore(input: {
   variable?: string;
   /** 009: valores de los bindings free_text (solo plantillas con bindings). */
   freeTexts?: string[];
+  /** 014: origen externo — el mensaje queda marcado con la clave de API y
+   * la bandeja muestra «Enviado por API · label». */
+  via?: { apiKeyId: string; label: string };
 }): Promise<SendTemplateResult> {
   const db = getDb();
   const { template, creds, conversation, contact } = input;
@@ -718,6 +721,7 @@ export async function sendTemplateCore(input: {
       direction: "out",
       type: "template",
       templateId: template.id,
+      apiKeyId: input.via?.apiKeyId ?? null,
       text: renderBody(template.body, bodyParams),
       status: "pending",
     })
@@ -733,7 +737,10 @@ export async function sendTemplateCore(input: {
     type: "message.new",
     data: {
       conversationId: conversation.id,
-      message: serializeMessage(message),
+      message: serializeMessage(
+        message,
+        input.via ? { kind: "api", label: input.via.label } : null
+      ),
     },
   });
 

@@ -287,6 +287,15 @@ function Bubble({
           <span className="text-[10.5px] text-text-4">{bubbleTime(m.createdAt)}</span>
           {out && <StatusTicks status={m.status} error={m.error} />}
         </span>
+        {out && m.via?.kind === "api" && (
+          <span
+            data-testid="message-via-api"
+            className="mt-1.5 block clear-both border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3"
+            title="Notificación enviada por el sistema integrado de la empresa"
+          >
+            Enviado por API · {m.via.label}
+          </span>
+        )}
         {out && m.status === "failed" && (
           <span
             data-testid="message-fail-reason"

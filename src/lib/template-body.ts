@@ -96,6 +96,30 @@ export function freeTextCount(bindings: readonly string[]): number {
   return bindings.filter((b) => b === "free_text").length;
 }
 
+/** Largo máximo de un valor de variable (el CRM lo acota antes que Meta). */
+export const MAX_PARAM_LENGTH = 500;
+
+/**
+ * Regla de Meta para parámetros de plantilla (014, FR-006): sin saltos de
+ * línea ni tabulaciones ni más de 4 espacios consecutivos; no vacío; largo
+ * acotado. Compartida por la API pública, las campañas y el envío 1:1 —
+ * un valor inválido se rechaza acá con mensaje claro, jamás llega a Meta.
+ */
+export function validateParamValue(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "El valor no puede estar vacío";
+  if (trimmed.length > MAX_PARAM_LENGTH) {
+    return `El valor supera los ${MAX_PARAM_LENGTH} caracteres`;
+  }
+  if (/[\r\n\t]/.test(trimmed)) {
+    return "El valor no puede tener saltos de línea ni tabulaciones (regla de WhatsApp)";
+  }
+  if (/ {5,}/.test(trimmed)) {
+    return "El valor no puede tener más de 4 espacios seguidos (regla de WhatsApp)";
+  }
+  return null;
+}
+
 export type VariableResolution =
   | { ok: true; values: string[] }
   | { ok: false; error: string };
@@ -130,6 +154,11 @@ export function resolveVariableValues(
           ok: false,
           error: `Falta el valor del texto libre para {{${values.length + 1}}}`,
         };
+      }
+      // 014: regla de Meta aplicada en el único punto de resolución.
+      const invalid = validateParamValue(value);
+      if (invalid) {
+        return { ok: false, error: `{{${values.length + 1}}}: ${invalid}` };
       }
       values.push(value);
     } else {

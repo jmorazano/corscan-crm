@@ -33,6 +33,8 @@ type WaMockState = {
   counter: number;
   /** Knob 008: el próximo upload resumable falla con 500 (camino infeliz). */
   failUploads: boolean;
+  /** Knob 014: el próximo `POST …/messages` falla con 500 (Meta caída). */
+  failNextSend: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -44,11 +46,15 @@ export function getWaMockState(): WaMockState {
       templates: [],
       counter: 0,
       failUploads: false,
+      failNextSend: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
   if (globalForMock.__waMockState.failUploads === undefined) {
     globalForMock.__waMockState.failUploads = false;
+  }
+  if (globalForMock.__waMockState.failNextSend === undefined) {
+    globalForMock.__waMockState.failNextSend = false;
   }
   return globalForMock.__waMockState;
 }
@@ -59,6 +65,7 @@ export function resetWaMockState(): void {
     templates: [],
     counter: 0,
     failUploads: false,
+    failNextSend: false,
   };
 }
 

@@ -152,6 +152,22 @@ export async function POST(req: Request, ctx: Params) {
   // POST {phoneNumberId}/messages → registra en el outbox
   if (path.length === 2 && path[1] === "messages") {
     const state = getWaMockState();
+    if (state.failNextSend) {
+      // Knob 014: Meta caída una vez (se auto-apaga) — el envío NO se
+      // registra en el outbox, como un 500 real.
+      state.failNextSend = false;
+      return Response.json(
+        {
+          error: {
+            message: "Service temporarily unavailable",
+            type: "OAuthException",
+            code: 2,
+            fbtrace_id: "mock",
+          },
+        },
+        { status: 500 }
+      );
+    }
     const n = nextN();
     const to = String(body.to ?? "");
     const waMessageId = `wamid.mock.out.${n}`;

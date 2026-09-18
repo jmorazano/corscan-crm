@@ -6,6 +6,9 @@ type KbEntry = typeof schema.kbEntry.$inferSelect;
 /** Marcador del prompt del juez: el ai-mock lo usa para despachar veredictos. */
 export const JUDGE_MARKER = "[JUEZ]";
 
+/** Marcador de la sección transaccional (014): el ai-mock despacha `none`. */
+export const TRANSACTIONAL_MARKER = "NOTIFICACIÓN AUTOMÁTICA";
+
 export function renderKb(entries: KbEntry[]): string {
   if (entries.length === 0) return "(knowledge base vacío)";
   return entries
@@ -33,10 +36,23 @@ export function buildAgentSystemPrompt(input: {
   calendarSection?: string | null;
   /** false = la empresa no deja que el agente agende (solo informa). */
   calendarBookingEnabled?: boolean;
+  /**
+   * 014 (FR-011): texto de la última NOTIFICACIÓN enviada por el sistema
+   * de la empresa vía API. Con esto el modelo sabe que no inició él la
+   * charla y que un mero acuse de recibo no se responde.
+   */
+  transactionalNotice?: string | null;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
   const calendar = input.calendarSection ?? null;
+  const transactional = input.transactionalNotice
+    ? [
+        `${TRANSACTIONAL_MARKER}: el último mensaje de la empresa NO lo escribiste vos — fue una notificación enviada automáticamente por el sistema de la empresa: «${input.transactionalNotice}».`,
+        '- Si el cliente solo confirma, agradece o acusa recibo sin preguntar ni pedir nada → {"action":"none"} (no respondas nada).',
+        "- Si pregunta, pide algo o plantea un problema → atendelo con normalidad según el conocimiento del negocio.",
+      ].join("\n")
+    : null;
   return [
     `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
@@ -48,6 +64,7 @@ export function buildAgentSystemPrompt(input: {
     `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
     `Etapas del pipeline disponibles: ${stageNames}`,
     calendar,
+    transactional,
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
       '- {"action":"none"} — no responder nada.',

@@ -8,6 +8,9 @@ import {
   type SessionContext,
   type SuperAdminContext,
 } from "@/lib/auth/session";
+import { bearerFromHeader, looksLikeApiKey } from "@/lib/api-keys";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { touchApiKey, verifyApiKey } from "@/server/api-keys/keys";
 
 /** Respuesta de error estándar de la API interna (contrato api.md). */
 export function apiError(
@@ -88,6 +91,62 @@ export function withSuperAdmin<Args extends unknown[]>(
       return await handler(ctx, ...args);
     } catch (err) {
       console.error("[api] error no controlado:", err);
+      return apiError(500, "internal", "Error interno");
+    }
+  };
+}
+
+/** Contexto de una llamada autenticada por clave de API (014). */
+export type ApiKeyContext = {
+  organizationId: string;
+  apiKeyId: string;
+  apiKeyName: string;
+};
+
+/** 60 llamadas por minuto por clave (contrato api.md, research D7). */
+export const API_KEY_RATE_LIMIT = { windowMs: 60 * 1000, max: 60 };
+
+/**
+ * Envuelve un route handler de la API PÚBLICA (`/api/v1/*`, contrato
+ * specs/014-public-api/contracts/api.md): `Authorization: Bearer vk_…` →
+ * empresa. Sin clave, clave inválida o revocada → 401 `invalid_api_key`
+ * (mismo código para no revelar cuál existe); exceso → 429 `rate_limited`.
+ * El secreto jamás se loguea.
+ */
+export function withApiKey<Args extends unknown[]>(
+  handler: (ctx: ApiKeyContext, req: Request, ...args: Args) => Promise<Response>
+): (req: Request, ...args: Args) => Promise<Response> {
+  return async (req: Request, ...args: Args) => {
+    const token = bearerFromHeader(req.headers.get("authorization"));
+    if (!token || !looksLikeApiKey(token)) {
+      return apiError(
+        401,
+        "invalid_api_key",
+        "Falta o es inválida la clave de API (header Authorization: Bearer vk_…)"
+      );
+    }
+    const key = await verifyApiKey(token);
+    if (!key) {
+      return apiError(401, "invalid_api_key", "Clave de API inválida o revocada");
+    }
+    const rl = checkRateLimit(`apikey:${key.id}`, API_KEY_RATE_LIMIT);
+    if (!rl.allowed) {
+      return apiError(
+        429,
+        "rate_limited",
+        `Demasiadas llamadas: máximo ${API_KEY_RATE_LIMIT.max} por minuto por clave`,
+        { retryInSeconds: 60 }
+      );
+    }
+    void touchApiKey(key.id, key.lastUsedAt).catch(() => undefined);
+    try {
+      return await handler(
+        { organizationId: key.organizationId, apiKeyId: key.id, apiKeyName: key.name },
+        req,
+        ...args
+      );
+    } catch (err) {
+      console.error("[api/v1] error no controlado:", err);
       return apiError(500, "internal", "Error interno");
     }
   };

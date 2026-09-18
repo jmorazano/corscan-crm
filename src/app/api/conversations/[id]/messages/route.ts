@@ -21,7 +21,14 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
     id,
     since && !Number.isNaN(since.getTime()) ? since : undefined
   );
-  return Response.json({ messages: messages.map(serializeMessage) });
+  return Response.json({
+    messages: messages.map((r) =>
+      serializeMessage(
+        r.message,
+        r.apiKeyName ? { kind: "api", label: r.apiKeyName } : null
+      )
+    ),
+  });
 });
 
 const sendSchema = z.object({ text: z.string().trim().min(1).max(4096) });

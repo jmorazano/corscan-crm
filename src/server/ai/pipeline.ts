@@ -11,6 +11,7 @@ import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
 import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
+import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import {
   executeBookAppointment,
@@ -149,6 +150,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
   if (!lastInbound) return;
 
+  // 014 (FR-011): si lo último que mandó la empresa fue una NOTIFICACIÓN
+  // enviada por API (plantilla con api_key_id), un simple acuse de recibo
+  // del cliente no merece respuesta — se corta ANTES del proveedor. Si
+  // preguntó o pidió algo, el modelo atiende con la sección transaccional.
+  const transactional = transactionalContext(history);
+  if (transactional?.allAcknowledgments) return;
+
   // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
     await applyHandoff(conversationId, organizationId, "ventana");
@@ -190,6 +198,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         stages,
         calendarSection: calendar ? renderCalendarSection(calendar) : null,
         calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
+        transactionalNotice: transactional?.notice ?? null,
       }),
     },
     ...history
@@ -340,6 +349,46 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 }
 
 type Conversation = typeof schema.conversation.$inferSelect;
+
+export type TransactionalContext = {
+  /** Texto de la notificación (para el prompt). */
+  notice: string;
+  /** true si TODOS los entrantes desde esa notificación son acuses. */
+  allAcknowledgments: boolean;
+};
+
+/**
+ * Contexto transaccional PURO (014, research D5): mira el último saliente
+ * anterior a la ráfaga de entrantes. Si es una plantilla enviada por API,
+ * la conversación está en modo "notificación": devuelve el texto para el
+ * prompt y si los entrantes son solo acuses de recibo. Cualquier otro
+ * saliente (agente, operador, campaña) → null: comportamiento intacto.
+ */
+export function transactionalContext(
+  history: readonly {
+    direction: "in" | "out";
+    type: string;
+    text: string | null;
+    apiKeyId: string | null;
+  }[]
+): TransactionalContext | null {
+  let lastOut = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]!.direction === "out") {
+      lastOut = i;
+      break;
+    }
+  }
+  if (lastOut === -1) return null;
+  const outbound = history[lastOut]!;
+  if (outbound.type !== "template" || !outbound.apiKeyId) return null;
+  const inbounds = history.slice(lastOut + 1).filter((m) => m.direction === "in");
+  if (inbounds.length === 0) return null;
+  return {
+    notice: (outbound.text ?? "").slice(0, 300),
+    allAcknowledgments: inbounds.every((m) => isPlainAcknowledgment(m.text)),
+  };
+}
 
 async function loadContact(
   organizationId: string,

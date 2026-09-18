@@ -22,6 +22,9 @@ export type ConversationDto = {
   tags: string[];
 };
 
+/** 014: origen externo de un saliente («Enviado por API · <clave>»). */
+export type MessageVia = { kind: "api"; label: string };
+
 export type MessageDto = {
   id: string;
   conversationId: string;
@@ -32,6 +35,8 @@ export type MessageDto = {
   /** 010: motivo crudo del fallo de entrega (texto de Meta), si falló. */
   error: string | null;
   aiGenerated: boolean;
+  /** 014: null salvo mensajes originados por la API pública. */
+  via: MessageVia | null;
   createdAt: string;
 };
 

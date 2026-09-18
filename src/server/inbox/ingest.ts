@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import type { MessageDto, MessageVia } from "@/lib/types";
 import { publish } from "@/server/events/bus";
 import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -245,7 +246,11 @@ function toDate(timestamp: string): Date {
   return new Date();
 }
 
-export function serializeMessage(m: typeof schema.message.$inferSelect) {
+export function serializeMessage(
+  m: typeof schema.message.$inferSelect,
+  /** 014: etiqueta de origen externo (nombre de la clave de API). */
+  via: MessageVia | null = null
+): MessageDto {
   return {
     id: m.id,
     conversationId: m.conversationId,
@@ -255,6 +260,7 @@ export function serializeMessage(m: typeof schema.message.$inferSelect) {
     status: m.status,
     error: m.error ?? null,
     aiGenerated: m.aiGenerated,
+    via,
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };
 }

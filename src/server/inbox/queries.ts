@@ -214,15 +214,21 @@ export async function getConversation(
   return rows[0] ?? null;
 }
 
+/**
+ * Mensajes del hilo. 014: LEFT JOIN al nombre de la clave de API que
+ * originó cada saliente (la clave revocada conserva su fila → la etiqueta
+ * «Enviado por API · nombre» sobrevive a la revocación).
+ */
 export async function listMessages(
   organizationId: string,
   conversationId: string,
   since?: Date
-) {
+): Promise<{ message: typeof schema.message.$inferSelect; apiKeyName: string | null }[]> {
   const db = getDb();
   return db
-    .select()
+    .select({ message: schema.message, apiKeyName: schema.apiKey.name })
     .from(schema.message)
+    .leftJoin(schema.apiKey, eq(schema.apiKey.id, schema.message.apiKeyId))
     .where(
       scoped(
         schema.message.organizationId,

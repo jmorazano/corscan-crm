@@ -1,4 +1,4 @@
-import { JUDGE_MARKER } from "@/server/ai/prompts";
+import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -49,6 +49,16 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // rama cubre variantes que llegan al modelo).
   if (text.includes("humano") || text.includes("asesor")) {
     return JSON.stringify({ action: "handoff", reason: "cliente" });
+  }
+
+  // 014: tras una notificación por API, un modelo sensato calla si el
+  // cliente no pregunta ni pide nada (sin `?` ni vocabulario de pedido).
+  if (
+    system.includes(TRANSACTIONAL_MARKER) &&
+    !/[?¿]/.test(lastUser) &&
+    !/\b(necesito|quiero|quisiera|puedo|podr[ií]a|c[oó]mo|cu[aá]ndo|d[oó]nde|problema|ayuda|no (puedo|encuentro|me)|cambiar|cancelar)\b/.test(text)
+  ) {
+    return JSON.stringify({ action: "none" });
   }
 
   // Agenda de turnos (005, research D10): despacho determinista de las
