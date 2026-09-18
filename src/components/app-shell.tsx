@@ -132,9 +132,17 @@ export function AppShell({
 
   return (
     <MobileChromeContext.Provider value={ctx}>
+      {/*
+        Móvil: el shell se ancla al viewport con `fixed inset-0` en vez de
+        medir `100dvh`. En iOS Safari `100dvh` incluye el espacio de la barra
+        de botones (la tab bar quedaba escondida detrás) y en la app instalada
+        sobra el alto de la barra de estado (la tab bar se cortaba). Un
+        elemento fijo al fondo siempre queda sobre la toolbar del navegador y,
+        en modo instalado, sobre la zona segura. Escritorio: alto de viewport.
+      */}
       <div
         ref={shellRef}
-        className="flex h-screen h-dvh flex-col overflow-hidden bg-background md:flex-row"
+        className="fixed inset-0 flex flex-col overflow-hidden bg-background md:static md:h-screen md:h-dvh md:flex-row"
       >
         <AppNav
           branding={branding}

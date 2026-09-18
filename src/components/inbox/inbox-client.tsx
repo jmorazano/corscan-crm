@@ -715,7 +715,7 @@ export function InboxClient() {
         className={cn(
           "shrink-0 overflow-hidden bg-background",
           view === "details" ? "flex w-full flex-col" : "hidden",
-          "md:block md:border-l md:transition-[width] md:duration-[220ms]",
+          "md:block md:border-l md:transition-[width] md:duration-200",
           panelOpen && selected ? "md:w-[320px]" : "md:w-0 md:border-l-0"
         )}
         data-testid="inbox-details"
