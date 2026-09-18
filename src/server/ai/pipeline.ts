@@ -6,6 +6,7 @@ import { getEnv } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { getAiConfig } from "@/server/ai/credentials";
 import { publish } from "@/server/events/bus";
+import { notifyHandoff } from "@/server/push/events";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
 import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
@@ -504,6 +505,8 @@ export async function applyHandoff(
       conversation: { id: conversationId, handoffReason: reason },
     },
   });
+  // 013 (FR-006): avisar a todos los dispositivos que alguien necesita atención.
+  notifyHandoff({ organizationId, conversationId, reason });
 }
 
 /**

@@ -695,3 +695,49 @@ export const appointment = pgTable(
     index("appointment_org_starts_idx").on(t.organizationId, t.startsAt),
   ]
 );
+
+/* ============================================================
+ * Web Push (013): claves VAPID por empresa + suscripciones por dispositivo
+ * ============================================================ */
+
+/** Claves VAPID de la empresa (generadas al primer uso). La privada va
+ * cifrada con lib/crypto (AES-256-GCM) y jamás sale al cliente. */
+export const pushVapidKey = pgTable("push_vapid_key", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  privateKey: jsonb("private_key")
+    .$type<{ cipher: string; iv: string; tag: string }>()
+    .notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/** Un dispositivo (navegador) suscripto, ligado a la empresa activa al
+ * activarlo y al usuario. `endpoint` es único: re-activar re-liga. */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    /** `all`: todo entrante · `handoff`: solo atención humana (FR-005). */
+    mode: text("mode", { enum: ["all", "handoff"] })
+      .notNull()
+      .default("all"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at"),
+  },
+  (t) => [
+    uniqueIndex("push_subscription_endpoint_uq").on(t.endpoint),
+    index("push_subscription_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);

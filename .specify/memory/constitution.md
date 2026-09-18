@@ -1,7 +1,24 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.4.0 → 1.5.0
+Versión: 1.5.0 → 1.6.0
+
+Cambios (feature 013-push-notifications, 17-sep-2026):
+  - Principio II: se agrega una CUARTA categoría de dependencia externa en
+    runtime: **Web Push estándar** (RFC 8030/8291/8292). El servidor envía
+    notificaciones al push service que ELIGE EL NAVEGADOR DEL USUARIO
+    (Apple, Google, Mozilla…), firmadas con claves VAPID propias generadas
+    por la instancia y guardadas cifradas. Condiciones duras: sin cuenta,
+    contrato ni costo con terceros; el operador no configura nada; cada
+    usuario la activa (permiso del navegador) y la desactiva cuando quiere;
+    el producto funciona completo sin activarla; un fallo del push jamás
+    afecta la ingesta ni el envío de mensajes; el sandbox nunca notifica.
+  - Motivación escrita: pedido explícito del dueño (17-sep-2026) tras el
+    CRM móvil (012): «necesitamos que los usuarios puedan usarlo desde su
+    celular» exige enterarse de un mensaje sin la app abierta.
+  - Bump: MINOR (expansión material del alcance de II).
+
+Versión anterior: 1.4.0 → 1.5.0
 
 Cambios (feature 005-integrations-google-calendar, 5-sep-2026):
   - Principio II: se agrega una TERCERA categoría de dependencia externa en
@@ -121,9 +138,18 @@ dependencias externas en runtime es CERRADA:
      salen al cliente ni a logs; (e) se aísla tras un adaptador dedicado; (f)
      el instalador NO la necesita; (g) el sandbox del Laboratorio jamás la
      toca.
+  4. **Web Push estándar** (desde 1.6.0): notificaciones al push service que
+     ELIGE EL NAVEGADOR DE CADA USUARIO (RFC 8030/8291/8292), firmadas con
+     claves VAPID propias generadas por la instancia y guardadas cifradas.
+     Condiciones NO negociables: (a) sin cuenta, contrato ni costo con
+     terceros; (b) el operador y el instalador no configuran nada; (c) cada
+     usuario la activa con el permiso del navegador y la desactiva cuando
+     quiere; (d) el producto funciona completo sin activarla; (e) un fallo
+     del push jamás afecta la ingesta ni el envío de mensajes; (f) el
+     sandbox del Laboratorio nunca notifica.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
   email, Stripe u otro billing. Cualquier feature que los requiera queda fuera
-  del alcance de v1. Cualquier servicio externo que no encaje en las tres
+  del alcance de v1. Cualquier servicio externo que no encaje en las cuatro
   categorías anteriores también queda fuera.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta y (opcional) un token de OpenRouter. Nada más.
@@ -321,4 +347,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-05
+**Version**: 1.6.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-17

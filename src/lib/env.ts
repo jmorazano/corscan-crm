@@ -58,6 +58,8 @@ const envSchema = z.object({
   APP_TERMS_URL: z.string().url().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   SUPER_ADMIN_EMAILS: z.string().optional(),
+  /** 013: "subject" VAPID (mailto: o https:); default derivado de APP_BASE_URL. */
+  VAPID_SUBJECT: z.string().optional(),
   /** 011: espera desde el ÚLTIMO mensaje entrante antes de que el agente
    * responda (absorbe ráfagas de mensajes en una sola respuesta). */
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(20000),

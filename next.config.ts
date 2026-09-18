@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // symlinks que requieren permisos elevados, así que ahí se omite.
   output: process.platform === "win32" ? undefined : "standalone",
   // El paquete `postgres` usa APIs de Node que no deben empaquetarse en el bundle.
-  serverExternalPackages: ["postgres"],
+  serverExternalPackages: ["postgres", "web-push"],
   // Verificación de propiedad del dominio para Google (Search Console →
   // verificación de la app OAuth): Google pide servir `/google<token>.html`
   // en la raíz, sin redirecciones ni login. El rewrite es interno (el

@@ -49,6 +49,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Google Calendar: OAuth, tokens cifrados, reglas de turnos, huecos, reservas | `src/lib/google/` (adaptador OAuth + cliente REST de Calendar, única frontera con Google) · `src/server/calendar/` (`integration.ts` tokens/estado, `rules.ts` Zod, `slots.ts` cálculo puro, `availability.ts` reglas+freeBusy, `booking.ts` reserva idempotente, `agent-tools.ts` puente con el agente) · `/api/integrations/google-calendar/*` · env de instancia `GOOGLE_CLIENT_ID/SECRET` (guía: `docs/integraciones/google-calendar-gcp.md`) |
 | Etiquetas (contactos y conversaciones), filtros en la URL, bulk y paginación | `src/lib/tags.ts` (saneo + `applyTagOps`) · `src/lib/pagination.ts` (page/limit + cursor keyset) · `src/server/tags.ts` (`tagsWhere`, catálogo, bulk scoped) · `/api/tags` · `/api/contacts` (`tags`,`mode`,`page`) + `/api/contacts/bulk-tags` · `/api/conversations` (`tags`,`mode`,`q`,`filter`,`cursor`) + `/api/conversations/bulk-tags` + `GET /api/conversations/[id]` · hook `src/components/use-query-filters.ts` (estado en query params vía `history.replaceState`) · `src/components/tags/*` (chip, filtro, picker, barra bulk, editor) · evento SSE `conversations.updated` |
 | Acciones-herramienta del agente (agenda) | `check_availability` / `book_appointment` en `src/server/ai/actions.ts`; loop acotado (2 vueltas) en `pipeline.ts`; sección "AGENDA DE TURNOS" en `prompts.ts` (solo con calendario conectado); sandbox `is_test` jamás toca Google |
+| Notificaciones push (013) | Web Push estándar (constitución II, cat. 4): claves VAPID POR EMPRESA generadas al primer uso (`src/server/push/keys.ts`, privada cifrada) · suscripciones por dispositivo (`subscriptions.ts`, `organization_id`+`user_id`, `endpoint` único, modo `all`/`handoff`) · envío con `web-push` para firmar/cifrar y `fetch` propio (`notify.ts`, transporte inyectable, poda 404/410) · eventos de dominio en `events.ts` (`notifyInboundMessage` desde `ingest.ts`, `notifyHandoff` desde `pipeline.ts`, siempre en segundo plano; `is_test` nunca) · `/api/push/{vapid,subscriptions,test}` · SW mínimo `public/sw.js` (sin caché) + `src/lib/push-client.ts` + `usePush` + Ajustes → Notificaciones · `AppShell` registra el SW, re-sincroniza y pone el badge · push-mock `/api/dev/push-mock` (`?status=410`) |
 | Móvil / PWA / gestos (012) | Mobile-first: base = móvil, `md:` = escritorio (768). Shell `src/components/app-shell.tsx` (tab bar inferior + hoja «Más» + `useHideTabBar`, alto real con teclado iOS) · `Dialog`/`ActionSheet` en `src/components/ui/` (hoja inferior en móvil, modal en escritorio, atrás cierra) · gestos puros en `src/lib/gestures.ts` + hooks/`SwipeRow` en `src/components/gestures.tsx` · bandeja apilada por URL (`?c=` hilo, `d=1` ficha; push en móvil, replace en escritorio) + atajos (⌘K, Alt+↑/↓, Esc, ⌘⇧U) + `/` respuestas rápidas + `markUnread` en `PATCH /api/conversations/[id]` · pipeline `MouseSensor`+`TouchSensor` con «Mover a…» · PWA: `src/app/manifest.ts` + `/api/pwa/icon/[size]` (ImageResponse) + `generateViewport` en `src/app/layout.tsx` · reglas globales móviles en `globals.css` (16px en campos, safe-area) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
@@ -144,9 +145,9 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **012-mobile-responsive** (CRM usable desde el celular
-con usabilidad estilo WhatsApp: shell con tab bar + PWA, bandeja apilada con
-gestos y atajos, pipeline táctil, diálogos como hojas inferiores) — spec,
-plan y tasks en [specs/012-mobile-responsive/](specs/012-mobile-responsive/spec.md).
-Anterior: 011-patient-agent-optout (en producción, 5e1363e).
+Feature en curso: **013-push-notifications** (Web Push estándar con VAPID
+por empresa: aviso de cada entrante o solo atención humana, toca y abre la
+conversación; Ajustes → Notificaciones) — spec, plan y tasks en
+[specs/013-push-notifications/](specs/013-push-notifications/spec.md).
+Anterior: 012-mobile-responsive (en producción, 304299a + fix 1053ac3).
 <!-- SPECKIT END -->

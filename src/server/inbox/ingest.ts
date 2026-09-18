@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
+import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookValue } from "@/server/inbox/webhook";
 import { applyStatusUpdate } from "@/server/inbox/status";
@@ -214,6 +215,20 @@ export async function ingestInboundMessage(input: {
   publish(organizationId, {
     type: "conversation.updated",
     data: { conversation: { id: conversation.id } },
+  });
+
+  // 013 (FR-005): push a los dispositivos de la empresa, en segundo plano;
+  // un fallo del push jamás afecta la ingesta.
+  notifyInboundMessage({
+    organizationId,
+    conversation: {
+      id: conversation.id,
+      isTest: conversation.isTest,
+      aiEnabled: conversation.aiEnabled,
+      handoffAt: conversation.handoffAt,
+    },
+    contactName: contact.name,
+    message: { type: message.type, text: message.text },
   });
 
   // 011 (FR-007): el mensaje de baja no merece respuesta del agente — el

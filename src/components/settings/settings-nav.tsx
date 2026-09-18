@@ -13,6 +13,8 @@ const TABS = [
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
   { href: "/settings/team", label: "Equipo" },
+  // 013: push por dispositivo.
+  { href: "/settings/notifications", label: "Notificaciones" },
   // Cambio de contraseña propio (FR-017): disponible siempre, no solo en el
   // primer login forzado. Vive en el grupo (auth), fuera del shell.
   { href: "/change-password", label: "Mi contraseña" },

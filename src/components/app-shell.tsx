@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Bell,
   Ellipsis,
   FlaskConical,
   Inbox,
@@ -29,6 +30,12 @@ import {
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
+import {
+  getCurrentSubscription,
+  getRegistration,
+  isPushSupported,
+  serializeSubscription,
+} from "@/lib/push-client";
 import { AppNav } from "@/components/app-nav";
 import { Dialog } from "@/components/ui/dialog";
 import { useUnreadBadge } from "@/components/use-unread-badge";
@@ -98,8 +105,69 @@ const MORE: ReadonlyArray<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
   { href: "/integrations", label: "Integraciones", icon: Plug },
+  // 013: acceso directo a las push desde el celular.
+  { href: "/settings/notifications", label: "Notificaciones", icon: Bell },
   { href: "/settings", label: "Ajustes", icon: Settings },
 ];
+
+/**
+ * Web Push (013, FR-010): registra el service worker, re-sincroniza en
+ * silencio la suscripción cuando el permiso ya está concedido (BD nueva,
+ * cambio de empresa), atiende el «abrir esta conversación» que manda el SW
+ * al tocar una notificación y refleja los no leídos en el badge del ícono.
+ */
+function usePushRuntime(unread: number, navigate: (url: string) => void) {
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  useEffect(() => {
+    if (!isPushSupported()) return;
+    let cancelled = false;
+    const onMessage = (ev: MessageEvent) => {
+      const data = ev.data as { type?: string; url?: string } | null;
+      if (data?.type === "push-navigate" && typeof data.url === "string") {
+        try {
+          const u = new URL(data.url, window.location.origin);
+          if (u.origin === window.location.origin)
+            navigateRef.current(u.pathname + u.search);
+        } catch {
+          // URL inválida: ignorar
+        }
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    void (async () => {
+      try {
+        await getRegistration();
+        if (cancelled || Notification.permission !== "granted") return;
+        const sub = await getCurrentSubscription();
+        if (!sub || cancelled) return;
+        await fetch("/api/push/subscriptions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(serializeSubscription(sub)),
+        });
+      } catch {
+        // sin SW o sin red: la página de Ajustes lo muestra
+      }
+    })();
+    return () => {
+      cancelled = true;
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nav = navigator as Navigator & {
+      setAppBadge?: (n?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    if (!nav.setAppBadge) return;
+    void (unread > 0 ? nav.setAppBadge(unread) : nav.clearAppBadge?.()).catch(
+      () => undefined
+    );
+  }, [unread]);
+}
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -129,6 +197,8 @@ export function AppShell({
   const unread = useUnreadBadge();
   const shellRef = useRef<HTMLDivElement>(null);
   useKeyboardAwareHeight(shellRef);
+  const router = useRouter();
+  usePushRuntime(unread, (url) => router.push(url));
 
   return (
     <MobileChromeContext.Provider value={ctx}>
