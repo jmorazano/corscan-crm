@@ -52,7 +52,7 @@ export function Dropdown({
         <div
           role="dialog"
           className={cn(
-            "absolute z-40 mt-1 w-64 rounded-md border bg-background p-2 shadow-pop",
+            "absolute z-40 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border bg-background p-2 shadow-pop",
             align === "right" ? "right-0" : "left-0",
             panelClassName
           )}

@@ -97,8 +97,9 @@ export function BrandingClient() {
                       : "hover:bg-accent"
                   )}
                 >
+                  {/* 012: muestra ≥ 32 px en móvil para el dedo. */}
                   <span
-                    className="h-4 w-4 rounded-full"
+                    className="h-8 w-8 rounded-full md:h-4 md:w-4"
                     style={{ background: hex }}
                   />
                   {preset.label}
@@ -112,9 +113,10 @@ export function BrandingClient() {
               >
                 <input
                   type="color"
+                  aria-label="Color personalizado"
                   value={isValidHex(accent) ? accent : "#3f5972"}
                   onChange={(e) => setAccent(e.target.value)}
-                  className="h-4 w-4 cursor-pointer appearance-none border-0 bg-transparent p-0"
+                  className="h-8 w-8 cursor-pointer appearance-none border-0 bg-transparent p-0 md:h-4 md:w-4"
                 />
                 Personalizado
               </label>

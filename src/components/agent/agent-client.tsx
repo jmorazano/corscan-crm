@@ -73,7 +73,7 @@ export function AgentClient() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="flex items-center justify-between border-b px-6 py-4">
+      <header className="flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
         <h2 className="font-semibold">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
@@ -100,7 +100,7 @@ export function AgentClient() {
       </header>
 
       {!aiConfigured && (
-        <div className="mx-6 mt-6 rounded-lg border border-brand-soft bg-brand-tint p-6 text-center">
+        <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-4 text-center md:mx-6 md:mt-6 md:p-6">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">Configura la IA de tu empresa para activar el agente</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -117,7 +117,7 @@ export function AgentClient() {
         </div>
       )}
 
-      <div className="grid gap-6 p-6 lg:grid-cols-2">
+      <div className="grid gap-6 p-4 md:p-6 lg:grid-cols-2">
         <ProfileSection profile={profile} onSave={saveProfile} />
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>

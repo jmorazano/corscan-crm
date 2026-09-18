@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -176,14 +176,24 @@ export function ContactPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="sticky top-0 flex items-center justify-between border-b bg-background px-4 py-3">
+      <header className="sticky top-0 flex items-center gap-2 border-b bg-background px-2 py-2 md:justify-between md:px-4 md:py-3">
+        {/* 012: en móvil la ficha es una pantalla; se vuelve con «←». */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Volver al chat"
+          data-testid="details-back"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-text-2 hover:bg-accent md:hidden"
+        >
+          <ChevronLeft className="h-6 w-6" strokeWidth={1.8} />
+        </button>
         <h3 className="text-[13px] font-[650] uppercase tracking-wide text-text-2">
           Detalles
         </h3>
         <button
           onClick={onClose}
           aria-label="Ocultar panel"
-          className="rounded p-1 text-text-3 hover:bg-accent hover:text-foreground"
+          className="hidden rounded p-1 text-text-3 hover:bg-accent hover:text-foreground md:block"
         >
           <ChevronRight className="h-4 w-4" strokeWidth={1.7} />
         </button>

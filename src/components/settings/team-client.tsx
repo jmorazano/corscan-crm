@@ -151,7 +151,7 @@ export function TeamClient() {
             <ContactAvatar name={m.name} seed={m.id} size="sm" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{m.name}</p>
-              <p className="text-xs text-muted-foreground">{m.email}</p>
+              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
             </div>
             <Badge variant={m.role === "owner" ? "default" : "secondary"}>
               {m.role === "owner" ? "Propietario" : "Miembro"}

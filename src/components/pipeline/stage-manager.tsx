@@ -5,14 +5,17 @@ import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import type { StageDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
+  open,
   stages,
   onClose,
   onChanged,
 }: {
+  open: boolean;
   stages: StageDto[];
   onClose: () => void;
   onChanged: () => void;
@@ -89,23 +92,27 @@ export function StageManager({
   const sorted = [...stages].sort((a, b) => a.position - b.position);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Etapas del pipeline"
+      size="lg"
+      testId="stage-manager"
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Cerrar
+        </Button>
+      }
     >
-      <div
-        className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Etapas del pipeline</h3>
-        <ul className="space-y-2">
-          {sorted.map((s, i) => (
-            <li key={s.id} className="flex items-center gap-2">
-              <Input
-                defaultValue={s.name}
-                onBlur={(e) => void rename(s, e.target.value)}
-                className="flex-1"
-              />
+      <ul className="space-y-2">
+        {sorted.map((s, i) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-2">
+            <Input
+              defaultValue={s.name}
+              onBlur={(e) => void rename(s, e.target.value)}
+              className="min-w-0 flex-1 basis-40"
+            />
+            <div className="flex shrink-0 items-center gap-1">
               {s.kind !== "open" ? (
                 <Badge variant={s.kind === "won" ? "success" : "secondary"}>
                   {s.kind === "won" ? "ganado" : "perdido"}
@@ -138,64 +145,58 @@ export function StageManager({
               >
                 <ArrowDown className="h-4 w-4" />
               </Button>
-            </li>
-          ))}
-        </ul>
-
-        {deleting && (
-          <div className="mt-4 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
-            <p className="text-sm text-[#8a6d3b]">
-              &quot;{deleting.name}&quot; tiene tarjetas. Elige a dónde moverlas:
-            </p>
-            <div className="mt-2 flex gap-2">
-              <select
-                value={moveTo}
-                onChange={(e) => setMoveTo(e.target.value)}
-                className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm"
-              >
-                <option value="">Etapa destino…</option>
-                {sorted
-                  .filter((s) => s.id !== deleting.id)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={!moveTo}
-                onClick={() => void remove(deleting, moveTo)}
-              >
-                Mover y eliminar
-              </Button>
             </div>
+          </li>
+        ))}
+      </ul>
+
+      {deleting && (
+        <div className="mt-4 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
+          <p className="text-sm text-[#8a6d3b]">
+            &quot;{deleting.name}&quot; tiene tarjetas. Elige a dónde moverlas:
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <select
+              value={moveTo}
+              onChange={(e) => setMoveTo(e.target.value)}
+              className="h-11 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm md:h-9"
+            >
+              <option value="">Etapa destino…</option>
+              {sorted
+                .filter((s) => s.id !== deleting.id)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={!moveTo}
+              onClick={() => void remove(deleting, moveTo)}
+            >
+              Mover y eliminar
+            </Button>
           </div>
-        )}
-
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-
-        <div className="mt-4 flex gap-2 border-t pt-4">
-          <Input
-            placeholder="Nueva etapa…"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void add();
-            }}
-          />
-          <Button onClick={() => void add()} disabled={!newName.trim()}>
-            Agregar
-          </Button>
         </div>
+      )}
 
-        <div className="mt-4 flex justify-end">
-          <Button variant="ghost" onClick={onClose}>
-            Cerrar
-          </Button>
-        </div>
+      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+
+      <div className="mt-4 flex gap-2 border-t pt-4">
+        <Input
+          placeholder="Nueva etapa…"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void add();
+          }}
+        />
+        <Button onClick={() => void add()} disabled={!newName.trim()}>
+          Agregar
+        </Button>
       </div>
-    </div>
+    </Dialog>
   );
 }

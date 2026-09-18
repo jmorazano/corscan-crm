@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -18,7 +17,6 @@ import {
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
-import { useEvents } from "@/components/use-events";
 
 const NAV = [
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
@@ -31,43 +29,29 @@ const NAV = [
   { href: "/integrations", label: "Integraciones", icon: Plug },
 ] as const;
 
+/**
+ * Sidebar de escritorio. Bajo 768 px no se renderiza: el shell muestra la
+ * barra de pestañas inferior (012). El badge de no leídos llega por prop
+ * (una sola suscripción SSE en AppShell).
+ */
 export function AppNav({
   branding,
   userName,
   role,
   isSuperAdmin = false,
+  unread = 0,
 }: {
   branding: Branding;
   userName: string;
   role: string;
   isSuperAdmin?: boolean;
+  unread?: number;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [unread, setUnread] = useState(0);
-
-  async function refetchUnread() {
-    // 006: la lista está paginada; el agregado del servidor cubre TODAS las
-    // conversaciones de la empresa, no solo la primera página.
-    const res = await fetch("/api/conversations?limit=1").catch(() => null);
-    if (!res?.ok) return;
-    const data = (await res.json()) as { unreadMessages?: number };
-    setUnread(data.unreadMessages ?? 0);
-  }
-
-  useEffect(() => {
-    void refetchUnread();
-  }, []);
-
-  useEvents({
-    onMessageNew: () => void refetchUnread(),
-    onConversationUpdated: () => void refetchUnread(),
-    // Borrar una conversación con no leídos debe descontarlos del badge.
-    onConversationDeleted: () => void refetchUnread(),
-  });
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
+    <aside className="hidden w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4 md:flex">
       {/* Brand white-label */}
       <div className="mb-4 flex items-center gap-2.5 px-2">
         <span

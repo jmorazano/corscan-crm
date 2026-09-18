@@ -14,6 +14,8 @@ const patchSchema = z.object({
   aiEnabled: z.boolean().optional(),
   reactivate: z.boolean().optional(),
   markRead: z.boolean().optional(),
+  /** 012: «marcar como no leída» desde la fila (gesto o atajo). */
+  markUnread: z.boolean().optional(),
   /** 006: reemplaza las etiquetas de la conversación (saneadas). */
   tags: z.array(z.string().max(80)).max(30).optional(),
 });

@@ -61,7 +61,9 @@ export function SendingSettingsClient() {
   }
 
   return (
-    <div className="max-w-xl space-y-5 p-6">
+    // 012: en móvil el padding lo pone el layout de Ajustes; en escritorio
+    // se conserva el propio.
+    <div className="max-w-xl space-y-5 md:p-6">
       <div>
         <h2 className="font-semibold">Envíos y campañas</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -72,7 +74,7 @@ export function SendingSettingsClient() {
       </div>
 
       {usage && (
-        <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
           <Stat label="Límite" value={usage.dailyInitiatedLimit} />
           <Stat label="Usado (24h)" value={usage.usedLast24h} />
           <Stat label="Disponible" value={usage.available} />

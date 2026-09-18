@@ -205,7 +205,7 @@ function ConnectionCard({
               </Button>
             )}
             {integration && confirming && (
-              <span className="flex items-center gap-2 text-sm">
+              <span className="flex flex-wrap items-center gap-2 text-sm md:flex-nowrap">
                 ¿Desconectar? El CRM olvida las credenciales y el agente deja de ofrecer turnos.
                 <Button variant="destructive" size="sm" disabled={busy} onClick={disconnect} data-testid="gc-disconnect-confirm">
                   Sí, desconectar
@@ -365,8 +365,8 @@ function RulesCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5 px-5 pb-5">
-        <fieldset disabled={!canManage} className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <fieldset disabled={!canManage} className="min-w-0 space-y-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="gc-calendar">Calendario destino</Label>
@@ -382,7 +382,7 @@ function RulesCard({
               </div>
               <select
                 id="gc-calendar"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                className="flex h-11 w-full min-w-0 max-w-full rounded-md border border-input bg-transparent px-3 text-sm md:h-9"
                 value={calendarId}
                 onChange={(e) => setCalendarId(e.target.value)}
               >
@@ -409,7 +409,7 @@ function RulesCard({
               <Label htmlFor="gc-tz">Zona horaria del negocio</Label>
               <select
                 id="gc-tz"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                className="flex h-11 w-full min-w-0 max-w-full rounded-md border border-input bg-transparent px-3 text-sm md:h-9"
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
               >
@@ -426,16 +426,18 @@ function RulesCard({
             <Label>Horarios de atención</Label>
             <div className="space-y-2 rounded-md border p-3">
               {DAYS.map((d) => (
+                // 012: en móvil el día y «+ franja» comparten la primera línea y
+                // cada franja (desde – hasta – quitar) ocupa una línea completa.
                 <div key={d.key} className="flex flex-wrap items-center gap-2 text-sm" data-testid={`gc-day-${d.key}`}>
                   <span className="w-20 shrink-0 font-medium">{d.label}</span>
                   {weeklyHours[d.key].length === 0 && (
                     <span className="text-xs text-muted-foreground">cerrado</span>
                   )}
                   {weeklyHours[d.key].map((r, i) => (
-                    <span key={i} className="flex items-center gap-1">
+                    <span key={i} className="order-last flex w-full items-center gap-1 md:order-none md:w-auto">
                       <Input
                         type="time"
-                        className="h-8 w-28"
+                        className="h-10 w-full min-w-0 md:h-8 md:w-28"
                         value={r[0]}
                         aria-label={`${d.label} desde`}
                         onChange={(e) => updateRange(d.key, i, 0, e.target.value)}
@@ -443,7 +445,7 @@ function RulesCard({
                       <span>–</span>
                       <Input
                         type="time"
-                        className="h-8 w-28"
+                        className="h-10 w-full min-w-0 md:h-8 md:w-28"
                         value={r[1]}
                         aria-label={`${d.label} hasta`}
                         onChange={(e) => updateRange(d.key, i, 1, e.target.value)}
@@ -451,7 +453,7 @@ function RulesCard({
                       {canManage && (
                         <button
                           type="button"
-                          className="rounded p-1 text-text-3 hover:text-foreground"
+                          className="shrink-0 rounded p-2.5 text-text-3 hover:text-foreground md:p-1"
                           aria-label={`Quitar franja de ${d.label}`}
                           onClick={() => removeRange(d.key, i)}
                         >
@@ -672,22 +674,25 @@ function AppointmentsCard() {
         )}
         <ul className="divide-y">
           {(items ?? []).map((a) => (
-            <li key={a.id} className="flex items-center gap-3 py-2 text-sm" data-testid={`gc-appointment-${a.id}`}>
-              <span className="w-44 shrink-0 tabular-nums">{fmt(a)}</span>
-              <span className="min-w-0 flex-1 truncate">
+            // 012: en móvil fecha, contacto y estado/acciones se apilan.
+            <li key={a.id} className="flex flex-col items-start gap-1 py-2 text-sm sm:flex-row sm:items-center sm:gap-3" data-testid={`gc-appointment-${a.id}`}>
+              <span className="shrink-0 tabular-nums sm:w-44">{fmt(a)}</span>
+              <span className="w-full min-w-0 truncate sm:w-auto sm:flex-1">
                 <span className="font-medium">{a.contactName}</span>{" "}
                 <span className="text-muted-foreground">+{a.contactPhone}</span>
                 {a.note && <span className="text-muted-foreground"> · {a.note}</span>}
               </span>
-              <Badge variant={a.status === "confirmed" ? "success" : "secondary"}>
-                {a.status === "confirmed" ? "Confirmado" : "Cancelado"}
-              </Badge>
-              <span className="text-xs text-muted-foreground">{a.createdBy === "agent" ? "Agente" : "Equipo"}</span>
-              {a.status === "confirmed" && (
-                <Button variant="ghost" size="sm" disabled={busyId === a.id} onClick={() => cancel(a.id)}>
-                  Cancelar
-                </Button>
-              )}
+              <span className="flex items-center gap-3">
+                <Badge variant={a.status === "confirmed" ? "success" : "secondary"}>
+                  {a.status === "confirmed" ? "Confirmado" : "Cancelado"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{a.createdBy === "agent" ? "Agente" : "Equipo"}</span>
+                {a.status === "confirmed" && (
+                  <Button variant="ghost" size="sm" disabled={busyId === a.id} onClick={() => cancel(a.id)}>
+                    Cancelar
+                  </Button>
+                )}
+              </span>
             </li>
           ))}
         </ul>

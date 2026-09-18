@@ -202,7 +202,7 @@ export function AiCard() {
             </div>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               disabled={saving || !token.trim()}
               onClick={() => void save()}

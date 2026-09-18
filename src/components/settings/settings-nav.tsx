@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/components/use-media";
 
 const TABS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
@@ -16,28 +18,46 @@ const TABS = [
   { href: "/change-password", label: "Mi contraseña" },
 ] as const;
 
-/** La pestaña Datos solo existe con DEMO_TOOLS_ENABLED (lo resuelve el layout). */
+/**
+ * La pestaña Datos solo existe con DEMO_TOOLS_ENABLED (lo resuelve el layout).
+ * 012 (FR-015): bajo 768 px la columna se vuelve una tira horizontal
+ * desplazable; en escritorio sigue siendo la columna de siempre.
+ */
 export function SettingsNav({ demoTools = false }: { demoTools?: boolean }) {
   const pathname = usePathname();
+  const isMobile = useIsMobile();
+  const activeRef = useRef<HTMLAnchorElement>(null);
   const tabs = demoTools
     ? [...TABS, { href: "/settings/datos", label: "Datos" } as const]
     : TABS;
+
+  // En la tira, la pestaña activa entra en vista al montar y al cambiar de
+  // ruta (solo móvil: en escritorio la columna se ve entera).
+  useEffect(() => {
+    if (!isMobile) return;
+    activeRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [isMobile, pathname]);
+
   return (
-    <nav className="w-44 shrink-0 space-y-1 border-r p-3">
-      {tabs.map((t) => (
-        <Link
-          key={t.href}
-          href={t.href}
-          className={cn(
-            "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith(t.href)
-              ? "bg-brand-tint text-brand-text"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground"
-          )}
-        >
-          {t.label}
-        </Link>
-      ))}
+    <nav className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 scrollbar-none md:w-44 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:p-3">
+      {tabs.map((t) => {
+        const active = pathname.startsWith(t.href);
+        return (
+          <Link
+            key={t.href}
+            href={t.href}
+            ref={active ? activeRef : undefined}
+            className={cn(
+              "block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              active
+                ? "bg-brand-tint text-brand-text"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

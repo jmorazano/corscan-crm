@@ -30,6 +30,7 @@ import { TemplatePreview } from "@/components/templates/template-preview";
 import { useTagFacets } from "@/components/tags/use-tag-facets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 /**
@@ -242,7 +243,7 @@ export function CampaignsClient() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b px-4 py-3 md:px-6 md:py-4">
         <h2 className="font-semibold">Campañas</h2>
         <Button size="sm" onClick={() => setCreating(true)} data-testid="new-campaign">
           <Plus className="mr-1.5 h-4 w-4" />
@@ -250,7 +251,7 @@ export function CampaignsClient() {
         </Button>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
         <HowItWorks settings={settings} />
 
         <div className="mb-4 flex flex-wrap items-center gap-2" data-testid="campaign-filters">
@@ -263,7 +264,7 @@ export function CampaignsClient() {
                 data-testid={`status-filter-${f.value || "all"}`}
                 aria-pressed={statusFilter === f.value}
                 className={cn(
-                  "rounded-full border px-3 py-1 text-xs transition-colors",
+                  "rounded-full border px-3 py-1.5 text-xs transition-colors md:py-1",
                   statusFilter === f.value
                     ? "border-brand bg-brand text-white"
                     : "bg-card text-muted-foreground hover:border-brand/50"
@@ -279,7 +280,7 @@ export function CampaignsClient() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nombre…"
-              className="h-8 pl-8 text-xs"
+              className="h-10 pl-8 text-sm md:h-8 md:text-xs"
               data-testid="campaign-search"
               aria-label="Buscar campañas por nombre"
             />
@@ -318,7 +319,8 @@ export function CampaignsClient() {
                 data-status={c.status}
                 className="rounded-lg border bg-card px-4 py-3 hover:border-brand/50"
               >
-                <div className="flex items-start justify-between gap-3">
+                {/* 012: en móvil las acciones caen debajo del título. */}
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-3">
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-left"
@@ -375,7 +377,7 @@ function RowActions({
   onAction: (action: Action) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1" data-testid="row-actions">
+    <div className="flex flex-wrap items-center gap-1 md:shrink-0" data-testid="row-actions">
       {c.status === "draft" && (
         <Button
           size="sm"
@@ -723,20 +725,13 @@ function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      data-testid="confirm-dialog"
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="font-semibold">{state.title}</h3>
-        <p className="mt-2 text-sm text-muted-foreground">{state.body}</p>
-        <div className="mt-4 flex justify-end gap-2">
+    <Dialog
+      open
+      onClose={onClose}
+      title={state.title}
+      testId="confirm-dialog"
+      footer={
+        <>
           <Button variant="ghost" onClick={onClose} disabled={busy} data-testid="confirm-no">
             Volver
           </Button>
@@ -753,9 +748,11 @@ function ConfirmDialog({
           >
             {busy ? "Un momento…" : state.confirmLabel}
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">{state.body}</p>
+    </Dialog>
   );
 }
 
@@ -862,178 +859,15 @@ function NewCampaignDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-        data-testid="new-campaign-dialog"
-      >
-        <h3 className="font-semibold">Nueva campaña</h3>
-        <p className="mb-4 mt-1 text-xs text-muted-foreground">
-          Se guarda como borrador: no envía nada hasta que la lances.
-        </p>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="cmp-name">
-              Nombre
-            </label>
-            <Input
-              id="cmp-name"
-              placeholder="Promo primavera"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="cmp-template">
-              Plantilla aprobada
-            </label>
-            <select
-              id="cmp-template"
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="">Elige una plantilla…</option>
-              {(templates ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.language})
-                </option>
-              ))}
-            </select>
-            {templates !== null && templates.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No hay plantillas aprobadas todavía (Ajustes → Plantillas).
-              </p>
-            )}
-          </div>
-          {selected && (
-            <TemplatePreview
-              body={selected.body}
-              headerImageUrl={selected.headerImageUrl}
-              variableValues={
-                selected.variableBindings
-                  ? sampleValuesFor(selected.variableBindings)
-                  : undefined
-              }
-              compact
-            />
-          )}
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Segmento por etiquetas</span>
-            <div className="flex flex-wrap items-center gap-1.5" data-testid="cmp-tags">
-              {tags.map((t) => (
-                <TagChip
-                  key={t}
-                  tag={t}
-                  onRemove={() => setTags(tags.filter((x) => x !== t))}
-                />
-              ))}
-              <TagPicker
-                options={options}
-                allowCreate={false}
-                emptyText="No hay etiquetas en tus contactos"
-                placeholder="Buscar etiqueta…"
-                onPick={(tag) => setTags(sanitizeTags([...tags, tag]))}
-                trigger={() => (
-                  <span className="inline-flex h-7 items-center gap-1 rounded-full border border-dashed px-2.5 text-xs text-muted-foreground hover:border-brand/60 hover:text-foreground">
-                    <Tag className="h-3 w-3" />
-                    {tags.length ? "Agregar" : "Elegir etiquetas"}
-                  </span>
-                )}
-              />
-            </div>
-            <p
-              className={cn(
-                "text-xs",
-                eligible === 0 ? "text-destructive" : "text-muted-foreground"
-              )}
-              data-testid="cmp-eligible"
-            >
-              {tags.length === 0 ? "Sin etiquetas = todos los elegibles. " : "Con AL MENOS una de esas etiquetas. "}
-              {eligible !== null &&
-                `${eligible} contacto(s) elegible(s) hoy (con consentimiento, sin baja).`}
-            </p>
-          </div>
-          {bindings !== null && bindings.length > 0 && (
-            <div className="space-y-1.5" data-testid="cmp-variables">
-              <span className="text-sm font-medium">Variables de la plantilla</span>
-              <ul className="space-y-1 text-sm">
-                {bindings.map((b, i) =>
-                  b === "free_text" ? null : (
-                    <li key={i} className="flex items-center gap-2 text-muted-foreground">
-                      <code className="rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
-                        {`{{${i + 1}}}`}
-                      </code>
-                      {originByKey(b)?.label ?? b} — se completa solo
-                    </li>
-                  )
-                )}
-              </ul>
-              {freeTextSlots.map((s) => (
-                <div key={s.index} className="flex items-center gap-2">
-                  <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
-                    {`{{${s.index}}}`}
-                  </code>
-                  <Input
-                    placeholder="texto para todos los destinatarios"
-                    aria-label={`Texto libre para la variable ${s.index}`}
-                    value={freeTexts[s.index] ?? ""}
-                    onChange={(e) =>
-                      setFreeTexts((prev) => ({
-                        ...prev,
-                        [s.index]: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-          {needsVariable && (
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium">
-                La plantilla tiene {"{{1}}"} — completar con:
-              </span>
-              <div className="flex items-center gap-4 text-sm">
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={variableMode === "contact_name"}
-                    onChange={() => setVariableMode("contact_name")}
-                    className="accent-brand"
-                  />
-                  el nombre del contacto
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={variableMode === "fixed"}
-                    onChange={() => setVariableMode("fixed")}
-                    className="accent-brand"
-                  />
-                  un texto fijo
-                </label>
-              </div>
-              {variableMode === "fixed" && (
-                <Input
-                  placeholder="texto para {{1}}"
-                  value={variableText}
-                  onChange={(e) => setVariableText(e.target.value)}
-                />
-              )}
-            </div>
-          )}
-        </div>
-        {error && (
-          <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <div className="mt-4 flex justify-end gap-2">
+    <Dialog
+      open
+      onClose={onClose}
+      size="lg"
+      title="Nueva campaña"
+      description="Se guarda como borrador: no envía nada hasta que la lances."
+      testId="new-campaign-dialog"
+      footer={
+        <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
@@ -1050,9 +884,168 @@ function NewCampaignDialog({
           >
             {saving ? "Creando…" : "Crear borrador"}
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="cmp-name">
+            Nombre
+          </label>
+          <Input
+            id="cmp-name"
+            placeholder="Promo primavera"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="cmp-template">
+            Plantilla aprobada
+          </label>
+          <select
+            id="cmp-template"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+            className="flex h-11 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:h-9"
+          >
+            <option value="">Elige una plantilla…</option>
+            {(templates ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.language})
+              </option>
+            ))}
+          </select>
+          {templates !== null && templates.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No hay plantillas aprobadas todavía (Ajustes → Plantillas).
+            </p>
+          )}
+        </div>
+        {selected && (
+          <TemplatePreview
+            body={selected.body}
+            headerImageUrl={selected.headerImageUrl}
+            variableValues={
+              selected.variableBindings
+                ? sampleValuesFor(selected.variableBindings)
+                : undefined
+            }
+            compact
+          />
+        )}
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium">Segmento por etiquetas</span>
+          <div className="flex flex-wrap items-center gap-1.5" data-testid="cmp-tags">
+            {tags.map((t) => (
+              <TagChip
+                key={t}
+                tag={t}
+                onRemove={() => setTags(tags.filter((x) => x !== t))}
+              />
+            ))}
+            <TagPicker
+              options={options}
+              allowCreate={false}
+              emptyText="No hay etiquetas en tus contactos"
+              placeholder="Buscar etiqueta…"
+              onPick={(tag) => setTags(sanitizeTags([...tags, tag]))}
+              trigger={() => (
+                <span className="inline-flex h-7 items-center gap-1 rounded-full border border-dashed px-2.5 text-xs text-muted-foreground hover:border-brand/60 hover:text-foreground">
+                  <Tag className="h-3 w-3" />
+                  {tags.length ? "Agregar" : "Elegir etiquetas"}
+                </span>
+              )}
+            />
+          </div>
+          <p
+            className={cn(
+              "text-xs",
+              eligible === 0 ? "text-destructive" : "text-muted-foreground"
+            )}
+            data-testid="cmp-eligible"
+          >
+            {tags.length === 0 ? "Sin etiquetas = todos los elegibles. " : "Con AL MENOS una de esas etiquetas. "}
+            {eligible !== null &&
+              `${eligible} contacto(s) elegible(s) hoy (con consentimiento, sin baja).`}
+          </p>
+        </div>
+        {bindings !== null && bindings.length > 0 && (
+          <div className="space-y-1.5" data-testid="cmp-variables">
+            <span className="text-sm font-medium">Variables de la plantilla</span>
+            <ul className="space-y-1 text-sm">
+              {bindings.map((b, i) =>
+                b === "free_text" ? null : (
+                  <li key={i} className="flex items-center gap-2 text-muted-foreground">
+                    <code className="rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                      {`{{${i + 1}}}`}
+                    </code>
+                    {originByKey(b)?.label ?? b} — se completa solo
+                  </li>
+                )
+              )}
+            </ul>
+            {freeTextSlots.map((s) => (
+              <div key={s.index} className="flex items-center gap-2">
+                <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                  {`{{${s.index}}}`}
+                </code>
+                <Input
+                  placeholder="texto para todos los destinatarios"
+                  aria-label={`Texto libre para la variable ${s.index}`}
+                  value={freeTexts[s.index] ?? ""}
+                  onChange={(e) =>
+                    setFreeTexts((prev) => ({
+                      ...prev,
+                      [s.index]: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {needsVariable && (
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium">
+              La plantilla tiene {"{{1}}"} — completar con:
+            </span>
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  checked={variableMode === "contact_name"}
+                  onChange={() => setVariableMode("contact_name")}
+                  className="accent-brand"
+                />
+                el nombre del contacto
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  checked={variableMode === "fixed"}
+                  onChange={() => setVariableMode("fixed")}
+                  className="accent-brand"
+                />
+                un texto fijo
+              </label>
+            </div>
+            {variableMode === "fixed" && (
+              <Input
+                placeholder="texto para {{1}}"
+                value={variableText}
+                onChange={(e) => setVariableText(e.target.value)}
+              />
+            )}
+          </div>
+        )}
       </div>
-    </div>
+      {error && (
+        <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -1131,7 +1124,7 @@ function CampaignDetail({
 
   if (missing) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="mr-1.5 h-4 w-4" />
           Volver a campañas
@@ -1143,7 +1136,7 @@ function CampaignDetail({
     );
   }
   if (!data) {
-    return <div className="p-6 text-sm text-muted-foreground">Cargando campaña…</div>;
+    return <div className="p-4 text-sm text-muted-foreground md:p-6">Cargando campaña…</div>;
   }
   const { campaign, counts, settings } = data;
   const c = { ...campaign, counts };
@@ -1152,15 +1145,16 @@ function CampaignDetail({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
-        <div className="flex min-w-0 items-center gap-3">
+      {/* 012: en móvil las acciones del detalle se apilan bajo el título. */}
+      <header className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 md:flex-nowrap">
           <Button variant="ghost" size="icon" onClick={onBack} aria-label="Volver">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h2 className="truncate font-semibold">{campaign.name}</h2>
           <StatusBadge status={campaign.status} pausedReason={campaign.pausedReason} />
         </div>
-        <div className="flex shrink-0 items-center gap-2" data-testid="detail-actions">
+        <div className="flex flex-wrap items-center gap-2 md:shrink-0" data-testid="detail-actions">
           {campaign.status === "draft" && (
             <Button
               size="sm"
@@ -1224,7 +1218,7 @@ function CampaignDetail({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
         {error && (
           <p
             className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -1256,7 +1250,7 @@ function CampaignDetail({
 
         {data.recipients.length > 0 && (
           <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[520px] text-xs">
               <thead className="bg-card text-left text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-normal">Contacto</th>

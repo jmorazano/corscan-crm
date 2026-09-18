@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default function GoogleCalendarIntegrationPage() {
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b px-6 py-4">
+      <header className="border-b px-4 py-3 md:px-6 md:py-4">
         <p className="text-xs text-muted-foreground">
           <Link href="/integrations" className="hover:underline">
             Integraciones
@@ -19,7 +19,7 @@ export default function GoogleCalendarIntegrationPage() {
           negocio, según las reglas que definas acá.
         </p>
       </header>
-      <div className="min-w-0 flex-1 overflow-y-auto p-6">
+      <div className="min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
         <GoogleCalendarClient />
       </div>
     </div>

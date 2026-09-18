@@ -7,7 +7,10 @@ import {
   Archive,
   ArchiveRestore,
   FileSpreadsheet,
+  LayoutTemplate,
   MessageSquareText,
+  MoreHorizontal,
+  Pencil,
   Search,
   Trash2,
   UserPlus,
@@ -19,6 +22,8 @@ import { parsePage } from "@/lib/pagination";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { ActionSheet, type SheetAction } from "@/components/ui/action-sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportWizard } from "@/components/contacts/import-wizard";
@@ -35,6 +40,7 @@ import { TagFilter } from "@/components/tags/tag-filter";
 import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
 
 export function ContactsClient() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   const [total, setTotal] = useState(0);
   // 006: los filtros viven en la URL (FR-003): compartibles y persistentes.
@@ -66,6 +72,10 @@ export function ContactsClient() {
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 012 (FR-014): en móvil las acciones por fila viven en una hoja «⋯»; el
+  // borrado desde la hoja confirma en un diálogo (el clúster inline está oculto).
+  const [sheetContact, setSheetContact] = useState<ContactDto | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ContactDto | null>(null);
 
   const refetch = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -227,16 +237,60 @@ export function ContactsClient() {
     void refetch();
   }
 
+  // Mismas acciones que el clúster de escritorio (la hoja ya espera a que
+  // su entrada del historial se retire antes de ejecutar la acción).
+  function sheetActionsFor(c: ContactDto): SheetAction[] {
+    const actions: SheetAction[] = [
+      {
+        key: "edit",
+        label: "Editar",
+        icon: Pencil,
+        onSelect: () => setEditing(c),
+      },
+      {
+        key: "open",
+        label: "Abrir conversación",
+        icon: MessageSquareText,
+        onSelect: () => router.push(`/inbox?contact=${c.id}`),
+      },
+    ];
+    if (!c.optedOutAt && !c.isTest && !c.archivedAt) {
+      actions.push({
+        key: "template",
+        label: "Enviar plantilla",
+        icon: LayoutTemplate,
+        onSelect: () => setStartingTemplate(c),
+      });
+    }
+    actions.push(
+      {
+        key: "archive",
+        label: c.archivedAt ? "Desarchivar" : "Archivar",
+        icon: c.archivedAt ? ArchiveRestore : Archive,
+        onSelect: () => void patch(c.id, { archived: !c.archivedAt }),
+      },
+      {
+        key: "delete",
+        label: "Eliminar",
+        hint: "Borra el contacto y sus conversaciones",
+        icon: Trash2,
+        destructive: true,
+        onSelect: () => setDeleteTarget(c),
+      }
+    );
+    return actions;
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+      <header className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-4">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold">Contactos</h2>
           <span className="text-xs text-muted-foreground" data-testid="contacts-count">
             {total}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -248,28 +302,30 @@ export function ContactsClient() {
             />
             Ver archivados
           </label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative order-first w-full md:order-none md:w-auto">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por nombre o teléfono…"
               value={query}
               onChange={(e) => setParams({ q: e.target.value || null })}
-              className="w-72 pl-8"
+              className="w-full pl-8 md:w-72"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
-            <FileSpreadsheet className="mr-1.5 h-4 w-4" />
-            Importar
-          </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <UserPlus className="mr-1.5 h-4 w-4" />
-            Nuevo contacto
-          </Button>
+          <div className="ml-auto flex items-center gap-3 md:ml-0">
+            <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+              Importar
+            </Button>
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <UserPlus className="mr-1.5 h-4 w-4" />
+              Nuevo contacto
+            </Button>
+          </div>
         </div>
       </header>
 
       {/* Filtros (006): etiquetas + seleccionar todos los visibles */}
-      <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 md:px-6">
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             ref={selectAllRef}
@@ -303,11 +359,11 @@ export function ContactsClient() {
           }}
           busy={bulkBusy}
           error={bulkError}
-          className="px-6"
+          className="px-4 md:px-6"
         />
       )}
 
-      <div ref={listRef} className="flex-1 overflow-y-auto p-6">
+      <div ref={listRef} className="flex-1 overflow-y-auto p-4 md:p-6">
         {deleteError && (
           <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {deleteError}
@@ -346,7 +402,7 @@ export function ContactsClient() {
               <li
                 key={c.id}
                 data-contact-id={c.id}
-                className={`flex items-center gap-4 rounded-lg border bg-card px-4 py-3 ${
+                className={`flex items-center gap-3 rounded-lg border bg-card px-4 py-3 md:gap-4 ${
                   selected.has(c.id) ? "border-brand/60 bg-brand-tint/40" : ""
                 }`}
               >
@@ -369,9 +425,18 @@ export function ContactsClient() {
                     {c.optedOutAt && (
                       <Badge
                         variant="destructive"
-                        className="cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        className="min-h-8 cursor-pointer md:min-h-0"
                         title="Revertir la baja (pide confirmación)"
+                        aria-label="Dado de baja. Tocá para revertir la baja (pide confirmación)"
                         onClick={() => setRevertingOptOut(c)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setRevertingOptOut(c);
+                          }
+                        }}
                       >
                         Dado de baja
                       </Badge>
@@ -395,7 +460,18 @@ export function ContactsClient() {
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                {/* 012: «⋯» solo en móvil; el clúster completo solo en escritorio. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-mr-2 shrink-0 md:hidden"
+                  aria-label="Más acciones"
+                  data-testid="contact-more"
+                  onClick={() => setSheetContact(c)}
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+                <div className="hidden shrink-0 items-center gap-1.5 md:flex">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -548,7 +624,72 @@ export function ContactsClient() {
           }}
         />
       )}
+
+      {sheetContact && (
+        <ActionSheet
+          open
+          onClose={() => setSheetContact(null)}
+          title={sheetContact.name}
+          description={formatPhone(sheetContact.phone)}
+          actions={sheetActionsFor(sheetContact)}
+          testId="contact-actions-sheet"
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteContactDialog
+          contact={deleteTarget}
+          deleting={deleting}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            await remove(deleteTarget.id);
+            setDeleteTarget(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Confirmación de borrado desde la hoja «⋯» (012): mismo `remove` que el clúster. */
+function DeleteContactDialog({
+  contact,
+  deleting,
+  onClose,
+  onConfirm,
+}: {
+  contact: ContactDto;
+  deleting: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Eliminar contacto"
+      size="sm"
+      testId="delete-contact-dialog"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={deleting}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleting}
+            onClick={() => void onConfirm()}
+          >
+            {deleting ? "Borrando…" : "Borrar todo"}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        Se borra a {contact.name} ({formatPhone(contact.phone)}) y sus
+        conversaciones del CRM. WhatsApp no cambia. No se puede deshacer.
+      </p>
+    </Dialog>
   );
 }
 
@@ -583,29 +724,12 @@ function RevertOptOutDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-2 font-semibold">Revertir la baja</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
-          {contact.name} pidió no recibir más mensajes
-          {contact.optedOutAt
-            ? ` el ${new Date(contact.optedOutAt).toLocaleDateString()}`
-            : ""}
-          . Revertí la baja SOLO si te lo pidió explícitamente (p. ej. quiere
-          volver a recibir novedades). Volverá a ser elegible para campañas.
-        </p>
-        {error && (
-          <p className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
+    <Dialog
+      open
+      onClose={onClose}
+      title="Revertir la baja"
+      footer={
+        <>
           <Button variant="ghost" onClick={onClose} disabled={working}>
             Cancelar
           </Button>
@@ -616,9 +740,23 @@ function RevertOptOutDialog({
           >
             {working ? "Revirtiendo…" : "Sí, revertir la baja"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        {contact.name} pidió no recibir más mensajes
+        {contact.optedOutAt
+          ? ` el ${new Date(contact.optedOutAt).toLocaleDateString()}`
+          : ""}
+        . Revertí la baja SOLO si te lo pidió explícitamente (p. ej. quiere
+        volver a recibir novedades). Volverá a ser elegible para campañas.
+      </p>
+      {error && (
+        <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -636,48 +774,40 @@ function StartTemplateDialog({
   const router = useRouter();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <Dialog
+      open
+      onClose={onClose}
+      title="Enviar plantilla"
+      description={`A ${contact.name} (${formatPhone(contact.phone)}). Abre la conversación en la bandeja al enviarse.`}
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Cerrar
+        </Button>
+      }
     >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-1 font-semibold">Enviar plantilla</h3>
-        <p className="mb-4 text-xs text-muted-foreground">
-          A {contact.name} ({formatPhone(contact.phone)}). Abre la conversación
-          en la bandeja al enviarse.
-        </p>
-        <TemplateSender
-          onSent={() => router.push(`/inbox?contact=${contact.id}`)}
-          submit={async (templateId, values) => {
-            const res = await fetch("/api/conversations", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                contactId: contact.id,
-                templateId,
-                ...values,
-              }),
-            }).catch(() => null);
-            if (!res) return "Sin conexión con el servidor";
-            if (!res.ok) {
-              const data = (await res.json().catch(() => null)) as {
-                error?: { message?: string };
-              } | null;
-              return data?.error?.message ?? "No se pudo enviar la plantilla";
-            }
-            return null;
-          }}
-        />
-        <div className="mt-4 flex justify-end">
-          <Button variant="ghost" onClick={onClose}>
-            Cerrar
-          </Button>
-        </div>
-      </div>
-    </div>
+      <TemplateSender
+        onSent={() => router.push(`/inbox?contact=${contact.id}`)}
+        submit={async (templateId, values) => {
+          const res = await fetch("/api/conversations", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              contactId: contact.id,
+              templateId,
+              ...values,
+            }),
+          }).catch(() => null);
+          if (!res) return "Sin conexión con el servidor";
+          if (!res.ok) {
+            const data = (await res.json().catch(() => null)) as {
+              error?: { message?: string };
+            } | null;
+            return data?.error?.message ?? "No se pudo enviar la plantilla";
+          }
+          return null;
+        }}
+      />
+    </Dialog>
   );
 }
 
@@ -724,75 +854,12 @@ function NewContactDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Nuevo contacto</h3>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="new-name">
-              Nombre
-            </label>
-            <Input
-              id="new-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="new-phone">
-              Teléfono (con código de país)
-            </label>
-            <Input
-              id="new-phone"
-              placeholder="+54 9 351 688 2234"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Etiquetas</span>
-            <TagEditor
-              tags={tags}
-              suggestions={facets}
-              onChange={setTags}
-              ariaLabel="Etiquetas del contacto nuevo"
-              placeholder="Escribí y Enter (ej. clientes-2025)"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="new-notes">
-              Notas
-            </label>
-            <Textarea
-              id="new-notes"
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-          <label className="flex items-start gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-              className="mt-0.5 accent-primary"
-            />
-            Este contacto dio su consentimiento para recibir mensajes (lo
-            habilita para campañas).
-          </label>
-        </div>
-        {error && (
-          <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <div className="mt-4 flex justify-end gap-2">
+    <Dialog
+      open
+      onClose={onClose}
+      title="Nuevo contacto"
+      footer={
+        <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
@@ -802,9 +869,69 @@ function NewContactDialog({
           >
             {saving ? "Creando…" : "Crear"}
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="new-name">
+            Nombre
+          </label>
+          <Input
+            id="new-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="new-phone">
+            Teléfono (con código de país)
+          </label>
+          <Input
+            id="new-phone"
+            placeholder="+54 9 351 688 2234"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium">Etiquetas</span>
+          <TagEditor
+            tags={tags}
+            suggestions={facets}
+            onChange={setTags}
+            ariaLabel="Etiquetas del contacto nuevo"
+            placeholder="Escribí y Enter (ej. clientes-2025)"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="new-notes">
+            Notas
+          </label>
+          <Textarea
+            id="new-notes"
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-0.5 accent-primary"
+          />
+          Este contacto dio su consentimiento para recibir mensajes (lo
+          habilita para campañas).
+        </label>
       </div>
-    </div>
+      {error && (
+        <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -828,49 +955,12 @@ function EditDialog({
   const [tags, setTags] = useState<string[]>(contact.tags);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Editar contacto</h3>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="edit-name">
-              Nombre
-            </label>
-            <Input
-              id="edit-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Etiquetas</span>
-            <TagEditor
-              tags={tags}
-              suggestions={facets}
-              onChange={setTags}
-              ariaLabel="Etiquetas del contacto"
-              placeholder="Escribí y Enter (ej. clientes-2025)"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="edit-notes">
-              Notas
-            </label>
-            <Textarea
-              id="edit-notes"
-              rows={4}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
+    <Dialog
+      open
+      onClose={onClose}
+      title="Editar contacto"
+      footer={
+        <>
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
@@ -886,8 +976,42 @@ function EditDialog({
           >
             Guardar
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="edit-name">
+            Nombre
+          </label>
+          <Input
+            id="edit-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium">Etiquetas</span>
+          <TagEditor
+            tags={tags}
+            suggestions={facets}
+            onChange={setTags}
+            ariaLabel="Etiquetas del contacto"
+            placeholder="Escribí y Enter (ej. clientes-2025)"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="edit-notes">
+            Notas
+          </label>
+          <Textarea
+            id="edit-notes"
+            rows={4}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

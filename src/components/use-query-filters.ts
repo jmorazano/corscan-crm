@@ -39,7 +39,12 @@ export function useQueryFilters() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const set = useCallback((patch: QueryPatch) => {
+  /**
+   * `push: true` crea una entrada en el historial (012): en móvil, abrir un
+   * hilo o la ficha debe poder deshacerse con «atrás». Por defecto,
+   * replace (filtros, escritorio).
+   */
+  const set = useCallback((patch: QueryPatch, opts?: { push?: boolean }) => {
     const next = new URLSearchParams(ref.current.toString());
     for (const [key, value] of Object.entries(patch)) {
       if (value === null || value === undefined || value === "") {
@@ -52,7 +57,8 @@ export function useQueryFilters() {
     const url = qs
       ? `${window.location.pathname}?${qs}`
       : window.location.pathname;
-    window.history.replaceState(null, "", url);
+    if (opts?.push) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
     ref.current = next;
     setParams(next);
   }, []);

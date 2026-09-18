@@ -197,11 +197,11 @@ export function AdminClient() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="border-b px-6 py-4">
+      <header className="border-b px-4 py-3 md:px-6 md:py-4">
         <h2 className="font-semibold">Administración</h2>
       </header>
 
-      <div className="max-w-3xl space-y-6 p-6">
+      <div className="max-w-3xl space-y-6 p-4 md:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Crear empresa</CardTitle>
@@ -420,7 +420,7 @@ export function AdminClient() {
                         onChange={(e) =>
                           setUserRole(e.target.value as "owner" | "member")
                         }
-                        className="flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm"
+                        className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
                       >
                         <option value="member">Miembro</option>
                         <option value="owner">Propietario</option>

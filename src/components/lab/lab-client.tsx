@@ -152,10 +152,10 @@ export function LabClient() {
         onLaunch={() => void launch()}
         disabled={false}
       />
-      {error && <p className="px-6 pt-3 text-sm text-destructive">{error}</p>}
+      {error && <p className="px-4 pt-3 text-sm text-destructive md:px-6">{error}</p>}
 
       {running && progress && (
-        <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
+        <div className="mx-4 mt-4 rounded-lg border bg-card p-4 md:mx-6">
           <div className="mb-2 flex items-center justify-between text-sm">
             <span className="font-medium">Evaluando personas…</span>
             <span className="text-muted-foreground">
@@ -171,7 +171,7 @@ export function LabClient() {
         </div>
       )}
 
-      <div className="grid gap-6 p-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 p-4 md:p-6 lg:grid-cols-[280px_1fr]">
         <HistoryList
           runs={runs}
           selectedRunId={selectedRunId}
@@ -203,7 +203,7 @@ function Header({
   disabled: boolean;
 }) {
   return (
-    <header className="flex items-center justify-between border-b px-6 py-4">
+    <header className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6 md:py-4">
       <div>
         <h2 className="flex items-center gap-2 font-semibold">
           <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
@@ -212,7 +212,11 @@ function Header({
           Sandbox interno — no envía mensajes reales
         </p>
       </div>
-      <Button onClick={onLaunch} disabled={disabled || running || launching}>
+      <Button
+        className="self-start md:self-auto"
+        onClick={onLaunch}
+        disabled={disabled || running || launching}
+      >
         <Play className="h-4 w-4" />
         {running ? "Corrida en curso…" : "Correr evaluación"}
       </Button>
@@ -313,7 +317,7 @@ function Report({
             <div className="grid grid-cols-3 gap-3 text-center text-sm">
               {(["verde", "amarillo", "rojo"] as const).map((v) => (
                 <div key={v} className="rounded-md border p-3">
-                  <p className="text-2xl font-bold">
+                  <p className="text-xl font-bold md:text-2xl">
                     {cases.filter((c) => c.veredicto === v).length}
                   </p>
                   <p className="capitalize text-muted-foreground">{v}s</p>

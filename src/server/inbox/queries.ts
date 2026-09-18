@@ -269,6 +269,8 @@ export async function updateConversation(
     aiEnabled?: boolean;
     reactivate?: boolean;
     markRead?: boolean;
+    /** 012: «marcar como no leída» (deja el contador en ≥ 1; idempotente). */
+    markUnread?: boolean;
     tags?: string[];
   }
 ) {
@@ -282,6 +284,9 @@ export async function updateConversation(
     set.aiEnabled = patch.aiEnabled ?? true;
   }
   if (patch.markRead) set.unreadCount = 0;
+  else if (patch.markUnread) {
+    set.unreadCount = sql`greatest(${schema.conversation.unreadCount}, 1)`;
+  }
 
   const updated = await db
     .update(schema.conversation)

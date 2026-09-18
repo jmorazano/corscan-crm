@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRight } from "lucide-react";
+import { ChevronLeft, PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { serializeTagsParam, type TagOps } from "@/lib/tags";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
+import { inboxShortcut, neighborIndex } from "@/lib/gestures";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
@@ -14,7 +15,14 @@ import {
   useQueryFilters,
 } from "@/components/use-query-filters";
 import { useTagFacets } from "@/components/tags/use-tag-facets";
-import { ConversationList, type ListFilter } from "./conversation-list";
+import { useIsMobile } from "@/components/use-media";
+import { useHideTabBar } from "@/components/app-shell";
+import { useSwipeBack } from "@/components/gestures";
+import {
+  ConversationList,
+  type ListFilter,
+  type RowActions,
+} from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
@@ -26,7 +34,10 @@ type ConversationPage = {
   nextCursor: string | null;
 };
 
+const JSON_HEADERS = { "content-type": "application/json" };
+
 export function InboxClient() {
+  const isMobile = useIsMobile();
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
@@ -49,12 +60,16 @@ export function InboxClient() {
 
   // 006: búsqueda, "No leídas" y etiquetas persistidos en la URL (FR-003) y
   // resueltos en el servidor junto con la paginación por cursor (FR-009).
+  // 012: la conversación abierta (`c`) y la ficha en móvil (`d`) también
+  // viven en la URL: refrescar conserva el hilo y «atrás» deshace.
   const { params, set: setParams } = useQueryFilters();
   const tagFilter = useMemo(() => readTagFilter(params), [params]);
   const tagsKey = serializeTagsParam(tagFilter.tags);
   const listQuery = params.get("q") ?? "";
   const listFilter: ListFilter =
     params.get("filter") === "unread" ? "unread" : "all";
+  const urlConversationId = params.get("c");
+  const detailsOpen = params.get("d") === "1";
   const filterRef = useRef({
     tagsKey,
     mode: tagFilter.mode,
@@ -69,6 +84,11 @@ export function InboxClient() {
   };
   const [facetsRev, setFacetsRev] = useState(0);
   const { facets } = useTagFacets("conversations", facetsRev);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Entradas de historial creadas por nosotros (móvil): al cerrar desde la
+  // UI se retiran con `history.back()`; si «atrás» ya las sacó, no.
+  const pushedThreadRef = useRef(false);
+  const pushedDetailsRef = useRef(false);
 
   useEffect(() => {
     setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false");
@@ -151,6 +171,17 @@ export function InboxClient() {
     if (selectedIdRef.current === conversationId) setMessages(data.messages);
   }, []);
 
+  const patchById = useCallback(
+    async (id: string, body: Record<string, unknown>) => {
+      await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+      }).catch(() => null);
+    },
+    []
+  );
+
   // Cambio de filtros: la búsqueda se debounce-a; el resto va al instante.
   useEffect(() => {
     const t = setTimeout(
@@ -160,19 +191,90 @@ export function InboxClient() {
     return () => clearTimeout(t);
   }, [refetchConversations, tagsKey, tagFilter.mode, listFilter, listQuery]);
 
-  const select = useCallback(
-    (id: string) => {
-      setSelectedId(id);
-      setMessages([]);
-      void refetchMessages(id);
-      void fetch(`/api/conversations/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ markRead: true }),
-      });
+  // ---- Navegación por URL (012, FR-005) -----------------------------------
+
+  const openThread = useCallback(
+    (id: string, opts?: { push?: boolean }) => {
+      if (id === selectedIdRef.current) {
+        // Re-tocar el hilo abierto (escritorio): refresca y marca leído.
+        void refetchMessages(id);
+        void patchById(id, { markRead: true });
+        return;
+      }
+      const push = opts?.push ?? isMobile;
+      setParams({ c: id, contact: null, d: null }, { push });
+      pushedThreadRef.current = push;
     },
-    [refetchMessages]
+    [isMobile, setParams, refetchMessages, patchById]
   );
+
+  /** Vuelve a la lista retirando las entradas de historial que creamos. */
+  const goToList = useCallback(() => {
+    const steps =
+      (pushedDetailsRef.current ? 1 : 0) + (pushedThreadRef.current ? 1 : 0);
+    pushedDetailsRef.current = false;
+    pushedThreadRef.current = false;
+    if (steps > 0) {
+      window.history.go(-steps);
+      return;
+    }
+    setParams({ c: null, d: null });
+  }, [setParams]);
+
+  const closeThread = useCallback(() => {
+    if (pushedThreadRef.current && !pushedDetailsRef.current) {
+      pushedThreadRef.current = false;
+      window.history.back();
+      return;
+    }
+    goToList();
+  }, [goToList]);
+
+  const openDetails = useCallback(() => {
+    if (!isMobile) {
+      togglePanel(true);
+      return;
+    }
+    if (detailsOpen) return;
+    setParams({ d: "1" }, { push: true });
+    pushedDetailsRef.current = true;
+  }, [isMobile, detailsOpen, setParams, togglePanel]);
+
+  const closeDetails = useCallback(() => {
+    if (!isMobile) {
+      togglePanel(false);
+      return;
+    }
+    if (pushedDetailsRef.current) {
+      pushedDetailsRef.current = false;
+      window.history.back();
+      return;
+    }
+    setParams({ d: null });
+  }, [isMobile, setParams, togglePanel]);
+
+  // «Atrás» del navegador ya sacó la entrada: no volver a retirarla.
+  useEffect(() => {
+    if (!detailsOpen) pushedDetailsRef.current = false;
+  }, [detailsOpen]);
+  useEffect(() => {
+    if (!urlConversationId) pushedThreadRef.current = false;
+  }, [urlConversationId]);
+
+  // La URL manda: `?c=` abre (carga mensajes y marca leído) o cierra el hilo.
+  useEffect(() => {
+    const c = urlConversationId;
+    if (c === selectedIdRef.current) return;
+    if (c) {
+      setSelectedId(c);
+      setMessages([]);
+      void refetchMessages(c);
+      void patchById(c, { markRead: true });
+    } else {
+      setSelectedId(null);
+      setMessages([]);
+    }
+  }, [urlConversationId, refetchMessages, patchById]);
 
   const inList = conversations?.find((c) => c.id === selectedId) ?? null;
   const needsFallback = selectedId !== null && conversations !== null && !inList;
@@ -185,13 +287,17 @@ export function InboxClient() {
     void fetch(`/api/conversations/${selectedId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { conversation?: ConversationDto } | null) => {
-        if (!cancelled && data?.conversation) setSelectedFallback(data.conversation);
+        if (cancelled) return;
+        if (data?.conversation) setSelectedFallback(data.conversation);
+        // Enlace a una conversación que ya no existe: volver a la lista sin
+        // colgarse (borde de la spec).
+        else if (data !== null && !data.conversation) goToList();
       })
       .catch(() => null);
     return () => {
       cancelled = true;
     };
-  }, [needsFallback, selectedId, detailRev]);
+  }, [needsFallback, selectedId, detailRev, goToList]);
 
   const selected =
     inList ?? (selectedFallback?.id === selectedId ? selectedFallback : null);
@@ -205,7 +311,7 @@ export function InboxClient() {
     if (!contactParam || selectedIdRef.current || conversations === null) return;
     const match = conversations.find((c) => c.contact.id === contactParam);
     if (match) {
-      select(match.id);
+      openThread(match.id, { push: false });
       return;
     }
     let cancelled = false;
@@ -215,13 +321,14 @@ export function InboxClient() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data: ConversationPage | null) => {
         const found = data?.conversations[0];
-        if (!cancelled && found && !selectedIdRef.current) select(found.id);
+        if (!cancelled && found && !selectedIdRef.current)
+          openThread(found.id, { push: false });
       })
       .catch(() => null);
     return () => {
       cancelled = true;
     };
-  }, [contactParam, conversations, select]);
+  }, [contactParam, conversations, openThread]);
 
   useEvents({
     onMessageNew: ({ conversationId, message }) => {
@@ -230,11 +337,7 @@ export function InboxClient() {
         setMessages((prev) =>
           prev.some((x) => x.id === m.id) ? prev : [...prev, m]
         );
-        void fetch(`/api/conversations/${conversationId}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ markRead: true }),
-        });
+        void patchById(conversationId, { markRead: true });
       }
       void refetchConversations();
       // Un entrante nuevo puede crear/mover el lead: refresca el panel.
@@ -263,10 +366,7 @@ export function InboxClient() {
     onConversationDeleted: ({ conversationId }) => {
       // Si otro operador (u otra pestaña) la borró, soltar la selección para
       // no dejar un hilo fantasma en pantalla.
-      if (selectedIdRef.current === conversationId) {
-        setSelectedId(null);
-        setMessages([]);
-      }
+      if (selectedIdRef.current === conversationId) goToList();
       void refetchConversations();
     },
     onReconnect: () => {
@@ -284,7 +384,7 @@ export function InboxClient() {
         `/api/conversations/${selectedIdRef.current}/messages`,
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: JSON_HEADERS,
           body: JSON.stringify({ text }),
         }
       ).catch(() => null);
@@ -309,16 +409,12 @@ export function InboxClient() {
       tags?: string[];
     }) => {
       if (!selectedIdRef.current) return;
-      await fetch(`/api/conversations/${selectedIdRef.current}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
-      }).catch(() => null);
+      await patchById(selectedIdRef.current, patch);
       if (patch.tags) setFacetsRev((v) => v + 1);
       setDetailRev((v) => v + 1);
       void refetchConversations();
     },
-    [refetchConversations]
+    [patchById, refetchConversations]
   );
 
   // Etiquetado en bloque (006, FR-004): un request; devuelve el error o null.
@@ -326,7 +422,7 @@ export function InboxClient() {
     async (ids: string[], ops: TagOps): Promise<string | null> => {
       const res = await fetch("/api/conversations/bulk-tags", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ ids, ...ops }),
       }).catch(() => null);
       if (!res) return "Sin conexión con el servidor: no se aplicó el cambio.";
@@ -344,17 +440,11 @@ export function InboxClient() {
     [refetchConversations]
   );
 
-  // Borrado local al CRM (la Cloud API no tiene noción de borrar chats).
-  const deleteSelected = useCallback(
-    async (target: "conversation" | "contact"): Promise<string | null> => {
-      const conversationId = selectedIdRef.current;
-      const contactId = selectedRef.current?.contact.id;
-      if (!conversationId) return "Sin conversación seleccionada";
-      const url =
-        target === "contact" && contactId
-          ? `/api/contacts/${contactId}`
-          : `/api/conversations/${conversationId}`;
-      const res = await fetch(url, { method: "DELETE" }).catch(() => null);
+  const deleteConversationById = useCallback(
+    async (conversationId: string): Promise<string | null> => {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "DELETE",
+      }).catch(() => null);
       if (!res) return "Sin conexión con el servidor";
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {
@@ -362,21 +452,160 @@ export function InboxClient() {
         } | null;
         return data?.error?.message ?? "No se pudo borrar";
       }
-      setSelectedId(null);
-      setMessages([]);
+      if (selectedIdRef.current === conversationId) goToList();
       void refetchConversations();
       return null;
     },
-    [refetchConversations]
+    [goToList, refetchConversations]
   );
 
+  // Borrado local al CRM (la Cloud API no tiene noción de borrar chats).
+  const deleteSelected = useCallback(
+    async (target: "conversation" | "contact"): Promise<string | null> => {
+      const conversationId = selectedIdRef.current;
+      const contactId = selectedRef.current?.contact.id;
+      if (!conversationId) return "Sin conversación seleccionada";
+      if (target === "conversation" || !contactId)
+        return deleteConversationById(conversationId);
+      const res = await fetch(`/api/contacts/${contactId}`, {
+        method: "DELETE",
+      }).catch(() => null);
+      if (!res) return "Sin conexión con el servidor";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo borrar";
+      }
+      goToList();
+      void refetchConversations();
+      return null;
+    },
+    [deleteConversationById, goToList, refetchConversations]
+  );
+
+  const markUnread = useCallback(
+    async (id: string) => {
+      await patchById(id, { markUnread: true });
+      void refetchConversations();
+    },
+    [patchById, refetchConversations]
+  );
+
+  // Acciones por fila (012): gesto de deslizar y hoja «Más».
+  const rowActions = useMemo<RowActions>(
+    () => ({
+      markRead: (id) => {
+        void patchById(id, { markRead: true }).then(() => refetchConversations());
+      },
+      markUnread: (id) => void markUnread(id),
+      toggleAi: (c) => {
+        void patchById(c.id, { aiEnabled: !c.aiEnabled }).then(() =>
+          refetchConversations()
+        );
+      },
+      openDetails: (id) => {
+        openThread(id);
+        openDetails();
+      },
+      deleteConversation: deleteConversationById,
+    }),
+    [
+      patchById,
+      refetchConversations,
+      markUnread,
+      openThread,
+      openDetails,
+      deleteConversationById,
+    ]
+  );
+
+  // ---- Vista móvil apilada + gestos + atajos ------------------------------
+
+  const view: "list" | "thread" | "details" = !selectedId
+    ? "list"
+    : detailsOpen
+      ? "details"
+      : "thread";
+  useHideTabBar(selectedId !== null);
+  const threadRef = useSwipeBack<HTMLElement>(closeThread, isMobile && view === "thread");
+  const detailsRef = useSwipeBack<HTMLElement>(
+    closeDetails,
+    isMobile && view === "details"
+  );
+
+  // Atajos de teclado (012, FR-011): ⌘K buscar · Alt+↓/↑ cambiar de chat ·
+  // Esc cerrar ficha/deseleccionar · ⌘⇧U marcar no leída.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const sc = inboxShortcut(e);
+      if (!sc) return;
+      // Un diálogo abierto se maneja solo (Escape lo cierra a él).
+      if (document.querySelector('[aria-modal="true"]')) return;
+      switch (sc) {
+        case "search":
+          e.preventDefault();
+          searchRef.current?.focus();
+          searchRef.current?.select();
+          break;
+        case "escape": {
+          if (e.target === searchRef.current) {
+            searchRef.current?.blur();
+            break;
+          }
+          if (isMobile) {
+            if (view === "details") closeDetails();
+            else if (view === "thread") closeThread();
+          } else if (selectedIdRef.current && panelOpen) {
+            togglePanel(false);
+          } else if (selectedIdRef.current) {
+            closeThread();
+          }
+          break;
+        }
+        case "next":
+        case "prev": {
+          e.preventDefault();
+          const ids = (conversations ?? []).map((c) => c.id);
+          const idx = neighborIndex(ids, selectedIdRef.current, sc === "next" ? 1 : -1);
+          const id = ids[idx];
+          if (id) openThread(id);
+          break;
+        }
+        case "markUnread": {
+          e.preventDefault();
+          if (selectedIdRef.current) void markUnread(selectedIdRef.current);
+          break;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    conversations,
+    isMobile,
+    view,
+    panelOpen,
+    closeDetails,
+    closeThread,
+    openThread,
+    togglePanel,
+    markUnread,
+  ]);
+
   return (
-    <div className="flex h-full">
-      <section className="w-[360px] shrink-0 overflow-hidden border-r">
+    <div className="flex h-full" data-view={view}>
+      <section
+        className={cn(
+          "w-full shrink-0 overflow-hidden md:w-[360px] md:border-r",
+          view !== "list" && "hidden md:block"
+        )}
+        data-testid="inbox-list"
+      >
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
-          onSelect={select}
+          onSelect={openThread}
           onSeeded={() => void refetchConversations()}
           query={listQuery}
           onQueryChange={(q) => setParams({ q: q || null })}
@@ -391,50 +620,73 @@ export function InboxClient() {
           hasMore={pageMeta.nextCursor !== null}
           loadingMore={loadingMore}
           onLoadMore={() => void loadMore()}
+          rowActions={rowActions}
+          searchRef={searchRef}
         />
       </section>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section
+        ref={threadRef}
+        className={cn(
+          "min-w-0 flex-1 flex-col bg-background",
+          view === "thread" ? "flex" : "hidden md:flex"
+        )}
+        data-testid="inbox-thread"
+      >
         {selected ? (
           <>
-            <header className="flex items-center justify-between border-b bg-background px-4 py-2.5">
-              <div className="flex items-center gap-3">
+            <header className="flex items-center gap-1 border-b bg-background px-2 py-1.5 md:gap-2 md:px-4 md:py-2.5">
+              <button
+                type="button"
+                onClick={closeThread}
+                aria-label="Volver a la bandeja"
+                data-testid="thread-back"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-2 hover:bg-accent md:hidden"
+              >
+                <ChevronLeft className="h-6 w-6" strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                onClick={openDetails}
+                aria-label={`Ver ficha de ${selected.contact.name}`}
+                data-testid="thread-contact"
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 pr-2 text-left transition-colors hover:bg-accent/60 md:px-1"
+              >
                 <ContactAvatar
                   name={selected.contact.name}
                   seed={selected.contact.id}
                   size="md"
                 />
-                <div>
-                  <p className="flex items-center gap-2 text-[15px] font-[650] leading-tight">
-                    {selected.contact.name}
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-[15px] font-[650] leading-tight">
+                    <span className="truncate">{selected.contact.name}</span>
                     {selected.contact.optedOut && (
                       <span
                         data-testid="optout-badge"
                         title="Respondió BAJA/STOP: no recibe más envíos iniciados por el negocio (se puede revertir desde su ficha)."
-                        className="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive"
+                        className="shrink-0 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive"
                       >
                         Dado de baja
                       </span>
                     )}
-                  </p>
-                  <p
-                    className={
-                      selected.windowOpen
-                        ? "text-xs font-medium text-success"
-                        : "text-xs text-text-3"
-                    }
+                  </span>
+                  <span
+                    className={cn(
+                      "block truncate text-xs",
+                      selected.windowOpen ? "font-medium text-success" : "text-text-3"
+                    )}
                   >
                     {selected.windowOpen
                       ? "ventana abierta"
                       : `+${selected.contact.phone}`}
-                  </p>
-                </div>
-              </div>
+                  </span>
+                </span>
+              </button>
               {!panelOpen && (
                 <button
                   onClick={() => togglePanel(true)}
                   aria-label="Mostrar detalles"
-                  className="rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  className="hidden rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground md:inline-flex"
                 >
                   <PanelRight className="h-4 w-4" strokeWidth={1.7} />
                 </button>
@@ -453,26 +705,30 @@ export function InboxClient() {
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center bg-chat text-sm text-text-3">
-            Elige una conversación para ver el hilo
+            {selectedId ? "Cargando conversación…" : "Elige una conversación para ver el hilo"}
           </div>
         )}
       </section>
 
       <section
+        ref={detailsRef}
         className={cn(
-          "shrink-0 overflow-hidden border-l transition-[width] duration-[220ms]",
-          panelOpen && selected ? "w-[320px]" : "w-0 border-l-0"
+          "shrink-0 overflow-hidden bg-background",
+          view === "details" ? "flex w-full flex-col" : "hidden",
+          "md:block md:border-l md:transition-[width] md:duration-[220ms]",
+          panelOpen && selected ? "md:w-[320px]" : "md:w-0 md:border-l-0"
         )}
+        data-testid="inbox-details"
       >
         {selected && (
-          <div className="h-full w-[320px]">
+          <div className="h-full w-full md:w-[320px]">
             <ContactPanel
               conversation={selected}
               refreshKey={detailRev}
               conversationFacets={facets}
               onPatchConversation={patchConversation}
               onDelete={deleteSelected}
-              onClose={() => togglePanel(false)}
+              onClose={closeDetails}
             />
           </div>
         )}

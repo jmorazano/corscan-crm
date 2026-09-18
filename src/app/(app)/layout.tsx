@@ -6,7 +6,7 @@ import { getSessionOrNull } from "@/lib/auth/session";
 import { getDb, schema } from "@/lib/db";
 import { getBranding } from "@/server/branding";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
-import { AppNav } from "@/components/app-nav";
+import { AppShell } from "@/components/app-shell";
 
 export default async function AppLayout({
   children,
@@ -25,17 +25,18 @@ export default async function AppLayout({
     headers: await headers(),
   });
 
+  // 012: el shell (sidebar en escritorio / barra inferior en móvil) es
+  // cliente; el layout solo resuelve sesión y marca.
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <AppNav
-        branding={branding}
-        userName={authSession?.user.name ?? "Usuario"}
-        role={session.role}
-        // El link solo se muestra al super admin; la protección real vive
-        // server-side en /admin (FR-004).
-        isSuperAdmin={isSuperAdminEmail(session.email)}
-      />
-      <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
-    </div>
+    <AppShell
+      branding={branding}
+      userName={authSession?.user.name ?? "Usuario"}
+      role={session.role}
+      // El link solo se muestra al super admin; la protección real vive
+      // server-side en /admin (FR-004).
+      isSuperAdmin={isSuperAdminEmail(session.email)}
+    >
+      {children}
+    </AppShell>
   );
 }

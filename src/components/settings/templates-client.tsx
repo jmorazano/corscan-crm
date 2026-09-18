@@ -83,14 +83,20 @@ export function TemplatesClient() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
         <p className="max-w-3xl text-sm text-muted-foreground">
           Las plantillas permiten reabrir conversaciones con la ventana de 24 h
           cerrada. Meta las aprueba en horas o días; el estado se actualiza por
           webhook y con el botón Sincronizar (imprescindible en modo agencia,
           donde los eventos de plantillas no llegan al webhook de la instancia).
         </p>
-        <Button variant="outline" size="sm" disabled={syncing} onClick={() => void sync()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start md:self-auto"
+          disabled={syncing}
+          onClick={() => void sync()}
+        >
           <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
           Sincronizar
         </Button>
@@ -349,7 +355,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
@@ -367,7 +373,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                   id="tpl-lang"
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm"
+                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
                 >
                   <option value="es_MX">es_MX</option>
                   <option value="es">es</option>
@@ -383,7 +389,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                   onChange={(e) =>
                     setCategory(e.target.value as "UTILITY" | "MARKETING")
                   }
-                  className="flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm"
+                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
                 >
                   <option value="UTILITY">UTILITY (seguimiento)</option>
                   <option value="MARKETING">MARKETING</option>
@@ -404,7 +410,8 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                 <Label>Origen de cada variable</Label>
                 <div className="space-y-1.5">
                   {bindings.map((binding, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    // 012: en móvil la descripción del origen baja a su propia línea.
+                    <div key={i} className="flex flex-wrap items-center gap-2 md:flex-nowrap">
                       <code className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 font-mono text-xs text-brand-text">
                         {`{{${i + 1}}}`}
                       </code>
@@ -416,7 +423,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                             prev.map((b, j) => (j === i ? e.target.value : b))
                           )
                         }
-                        className="flex h-8 w-full max-w-xs rounded-md border border-input bg-card px-2 text-sm"
+                        className="flex h-10 min-w-0 max-w-xs flex-1 rounded-md border border-input bg-card px-2 text-sm md:h-8 md:w-full md:flex-initial"
                       >
                         {VARIABLE_ORIGINS.map((o) => (
                           <option key={o.key} value={o.key}>
@@ -424,7 +431,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                           </option>
                         ))}
                       </select>
-                      <span className="hidden truncate text-xs text-text-3 md:block">
+                      <span className="w-full text-xs text-text-3 md:w-auto md:truncate">
                         {originByKey(binding)?.description}
                       </span>
                     </div>
@@ -446,7 +453,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
                   type="file"
                   accept="image/jpeg,image/png"
                   onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
-                  className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-accent"
+                  className="w-full max-w-full min-w-0 text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-accent"
                 />
                 {headerImage && (
                   <Button

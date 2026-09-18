@@ -73,6 +73,54 @@
   }
 }
 
+/*
+  012 — móvil. La app no scrollea como documento: el shell mide 100dvh (o
+  la altura real del visual viewport cuando el teclado está abierto, ver
+  AppShell) y cada pantalla scrollea adentro. Sin rebote/pull-to-refresh
+  del navegador, sin resaltado gris al tocar, sin retraso de doble toque.
+*/
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overscroll-behavior-y: contain;
+  }
+  body {
+    touch-action: manipulation;
+  }
+  button,
+  [role="button"],
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (max-width: 767px) {
+    /* iOS hace zoom al enfocar campos con menos de 16px. */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea {
+      font-size: max(16px, 1em) !important;
+    }
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: 18px;
+      height: 18px;
+    }
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.no-callout {
+  -webkit-touch-callout: none;
+}
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
