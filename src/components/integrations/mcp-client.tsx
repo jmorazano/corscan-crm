@@ -10,6 +10,7 @@ import {
   Plug,
   Search,
   ServerCog,
+  SlidersHorizontal,
   Unplug,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -305,6 +306,12 @@ export function McpClient() {
           onError={setError}
         />
       )}
+      <SettingsCard
+        integration={integration}
+        canManage={data.canManage}
+        onChanged={refetch}
+        onError={setError}
+      />
       <AgentCard
         integration={integration}
         canManage={data.canManage}
@@ -434,7 +441,6 @@ function ConnectionCard({
             </span>
           </Row>
           <Row label="Perfil">{integration.profileName}</Row>
-          <Row label="Zona horaria">{integration.timezone}</Row>
           <Row label="Credencial">
             {hasCredential ? (
               <span data-testid="mcp-credential-last4">
@@ -569,6 +575,184 @@ function ConnectionCard({
         ) : (
           <p className="text-xs text-muted-foreground">
             Solo el propietario puede conectar o desconectar el servidor.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Zonas horarias ofrecidas. Lista corta y pertinente (Argentina y los países
+ * vecinos donde opera el producto) en vez de las ~600 de la IANA: el selector
+ * tiene que ser usable en un teléfono. Si la fila tiene una que no está en la
+ * lista, se agrega como primera opción para no perderla.
+ */
+const TIMEZONES = [
+  "America/Argentina/Buenos_Aires",
+  "America/Argentina/Cordoba",
+  "America/Argentina/Mendoza",
+  "America/Argentina/Salta",
+  "America/Argentina/Tucuman",
+  "America/Argentina/Ushuaia",
+  "America/Montevideo",
+  "America/Santiago",
+  "America/Asuncion",
+  "America/Sao_Paulo",
+  "America/La_Paz",
+  "America/Lima",
+  "America/Bogota",
+  "America/Mexico_City",
+  "UTC",
+];
+
+
+/**
+ * Ajustes editables por la EMPRESA. La dirección del servidor, el perfil y el
+ * esquema de autenticación son del super admin (FR-002) y no están acá; lo que
+ * sí es de la empresa es cómo se llama el conector en su panel y qué día es
+ * «hoy» para su agente.
+ *
+ * La zona horaria se mostraba como dato de solo lectura aunque la API ya
+ * aceptaba cambiarla: en UTC, después de las 21 h de Córdoba, «mañana»
+ * resuelve un día de más — justo el horario en que la gente consulta por
+ * WhatsApp. Ahora se puede corregir sin pedírselo al operador de la instancia.
+ */
+function SettingsCard({
+  integration,
+  canManage,
+  onChanged,
+  onError,
+}: {
+  integration: IntegrationView;
+  canManage: boolean;
+  onChanged: () => Promise<void>;
+  onError: (m: string | null) => void;
+}) {
+  const [label, setLabel] = useState(integration.label);
+  const [timezone, setTimezone] = useState(integration.timezone);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Si la fila cambia desde otra acción (verificar, rotar credencial), los
+  // campos se re-sincronizan: el formulario no se queda con datos viejos.
+  useEffect(() => {
+    setLabel(integration.label);
+    setTimezone(integration.timezone);
+  }, [integration.label, integration.timezone]);
+
+  const dirty =
+    label.trim() !== integration.label || timezone !== integration.timezone;
+  const labelValido = label.trim().length >= 2 && label.trim().length <= 80;
+
+  async function save() {
+    if (!dirty || !labelValido) return;
+    setSaving(true);
+    setSaved(false);
+    onError(null);
+    const res = await fetch("/api/integrations/mcp", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: label.trim(), timezone }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      onError(messageFromError(await readApiError(res)));
+      return;
+    }
+    setSaved(true);
+    await onChanged();
+  }
+
+  return (
+    <Card data-testid="mcp-settings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SlidersHorizontal className="h-4 w-4 text-brand" strokeWidth={1.7} />
+          Ajustes
+        </CardTitle>
+        <CardDescription>
+          Cómo se llama este conector en tu panel y con qué día trabaja el
+          agente. La dirección del servidor y el perfil los define el
+          administrador de la instancia.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4 pb-4 md:px-5 md:pb-5">
+        <div className="space-y-2">
+          <Label htmlFor="mcp-label">Nombre del conector</Label>
+          <Input
+            id="mcp-label"
+            data-testid="mcp-label"
+            value={label}
+            maxLength={80}
+            disabled={!canManage || saving}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Es el nombre que ves en Integraciones y el que el agente usa para
+            referirse a este sistema. Entre 2 y 80 caracteres.
+          </p>
+          {!labelValido && (
+            <p className="text-xs text-destructive">
+              El nombre tiene que tener al menos 2 caracteres.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="mcp-timezone">Zona horaria del negocio</Label>
+          <select
+            id="mcp-timezone"
+            data-testid="mcp-timezone"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm md:max-w-sm"
+            value={timezone}
+            disabled={!canManage || saving}
+            onChange={(e) => {
+              setTimezone(e.target.value);
+              setSaved(false);
+            }}
+          >
+            {TIMEZONES.includes(timezone) ? null : (
+              <option value={timezone}>{timezone}</option>
+            )}
+            {TIMEZONES.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Define qué día es «hoy» para el agente cuando el cliente dice
+            «mañana» o «este finde». Ahora son{" "}
+            {new Intl.DateTimeFormat("es-AR", {
+              timeZone: timezone,
+              dateStyle: "full",
+              timeStyle: "short",
+            }).format(new Date())}
+            .
+          </p>
+        </div>
+
+        {canManage ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              data-testid="mcp-settings-save"
+              disabled={!dirty || !labelValido || saving}
+              onClick={save}
+            >
+              {saving ? "Guardando…" : "Guardar cambios"}
+            </Button>
+            {saved && !dirty && (
+              <span className="text-xs text-brand">Guardado ✓</span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Solo el propietario de la empresa puede cambiar estos ajustes.
           </p>
         )}
       </CardContent>

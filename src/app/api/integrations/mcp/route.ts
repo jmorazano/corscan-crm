@@ -48,6 +48,14 @@ const putSchema = z
     credential: z.string().trim().min(8).max(4096).optional(),
     agentToolsEnabled: z.boolean().optional(),
     useServerInstructions: z.boolean().optional(),
+    /**
+     * Nombre visible del conector en el panel de esta empresa y en la sección
+     * del prompt del agente. Lo propone el super admin al habilitar, pero es
+     * texto de presentación de la propia empresa: que lo pueda corregir acá
+     * evita tener que pedirle al operador de la instancia que le cambie un
+     * rótulo. NO toca la dirección ni el perfil, que siguen siendo del admin.
+     */
+    label: z.string().trim().min(2).max(80).optional(),
     // Corrección #45: qué día es «hoy» para el agente y para el validador.
     // En UTC, después de las 21 hs de Córdoba, "mañana" da un día de más.
     timezone: z

@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   disconnected: [] as string[],
   /** 016: null = el super admin NO habilitó el conector para esta empresa. */
   mcpView: null as Record<string, unknown> | null,
+  mcpSettings: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/auth/session", () => {
@@ -36,6 +37,11 @@ vi.mock("@/server/mcp/integration", () => ({
     expect(org).toBe("org_1");
     return Promise.resolve(state.mcpView);
   },
+  updateMcpSettings: (org: string, patch: Record<string, unknown>) => {
+    state.mcpSettings.push({ org, ...patch });
+    return Promise.resolve(state.mcpView !== null);
+  },
+  setMcpCredential: () => Promise.resolve({ ok: state.mcpView !== null }),
 }));
 
 vi.mock("@/server/calendar/integration", () => ({
@@ -70,6 +76,7 @@ beforeEach(() => {
   state.updated.length = 0;
   state.disconnected.length = 0;
   state.mcpView = null;
+  state.mcpSettings.length = 0;
 });
 
 function put(body: unknown): Promise<Response> {
@@ -85,6 +92,49 @@ function put(body: unknown): Promise<Response> {
 }
 
 describe("GET /api/integrations", () => {
+  it("016: el dueño puede renombrar el conector y cambiar su zona horaria", async () => {
+    state.mcpView = { label: "Viejo", status: "connected", endpointHost: "pms.example.com" };
+    const { PUT } = await import("@/app/api/integrations/mcp/route");
+    const res = await PUT(
+      new Request("http://localhost/api/integrations/mcp", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "Reservas del hotel",
+          timezone: "America/Montevideo",
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(state.mcpSettings[0]).toMatchObject({
+      org: "org_1",
+      label: "Reservas del hotel",
+      timezone: "America/Montevideo",
+    });
+  });
+
+  it("016: el PUT de empresa NO puede tocar la dirección ni el perfil (FR-002)", async () => {
+    state.mcpView = { label: "X", status: "connected", endpointHost: "pms.example.com" };
+    const { PUT } = await import("@/app/api/integrations/mcp/route");
+    const res = await PUT(
+      new Request("http://localhost/api/integrations/mcp", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "Y",
+          endpointUrl: "https://atacante.example.com/mcp",
+          profile: "generic",
+        }),
+      })
+    );
+    // El esquema es estricto: no ignora los campos de más en silencio, rechaza
+    // el request entero. Es la garantía fuerte — un intento de reapuntar el
+    // servidor desde la empresa no escribe NADA, ni siquiera lo que sí era
+    // legítimo en ese mismo cuerpo.
+    expect(res.status).toBe(422);
+    expect(state.mcpSettings).toHaveLength(0);
+  });
+
   it("016: sin habilitación del super admin, el conector MCP NO figura en el índice", async () => {
     state.mcpView = null;
     const { GET } = await import("@/app/api/integrations/route");

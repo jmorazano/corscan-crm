@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * Índice de integraciones (FR-001): una tarjeta por integración soportada
- * con su estado. Hoy: Google Calendar.
+ * con su estado. Hoy: Google Calendar y el conector MCP (016).
  */
 
 type IntegrationItem = {
@@ -17,11 +17,36 @@ type IntegrationItem = {
   name: string;
   available: boolean;
   connected: boolean;
-  status: "connected" | "reconnect_required" | null;
+  status: "connected" | "reconnect_required" | string | null;
   accountEmail: string | null;
+  /** 016: host del servidor MCP (la URL completa jamás llega al cliente). */
+  endpointHost?: string | null;
 };
 
-const HREF: Record<string, string> = { google_calendar: "/integrations/google-calendar" };
+/**
+ * Presentación por integración. Antes esto eran tres condicionales sueltos
+ * —un `HREF` con una sola clave, el ícono de calendario cableado y una
+ * descripción con `key === "google_calendar" ? … : ""`— y sumar la segunda
+ * integración dejó el botón «Administrar» apuntando a `/integrations`, o sea
+ * a la página en la que ya estabas. Una entrada acá y la tarjeta queda bien.
+ */
+const META: Record<
+  string,
+  { href: string; icon: typeof CalendarDays; description: string }
+> = {
+  google_calendar: {
+    href: "/integrations/google-calendar",
+    icon: CalendarDays,
+    description:
+      "El agente consulta disponibilidad y agenda turnos en el calendario del negocio.",
+  },
+  mcp: {
+    href: "/integrations/mcp",
+    icon: Plug,
+    description:
+      "El agente consulta el sistema del negocio y responde con datos reales: disponibilidad, precios y enlaces.",
+  },
+};
 
 export function IntegrationsIndex() {
   const [items, setItems] = useState<IntegrationItem[] | null>(null);
@@ -39,38 +64,41 @@ export function IntegrationsIndex() {
 
   return (
     <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
-      {items.map((it) => (
+      {items.map((it) => {
+        const meta = META[it.key];
+        const Icon = meta?.icon ?? Plug;
+        return (
         <Card key={it.key} data-testid={`integration-${it.key}`}>
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-brand" strokeWidth={1.7} />
+                <Icon className="h-4 w-4 shrink-0 text-brand" strokeWidth={1.7} />
                 {it.name}
               </CardTitle>
               <StatusBadge item={it} />
             </div>
-            <CardDescription>
-              {it.key === "google_calendar"
-                ? "El agente consulta disponibilidad y agenda turnos en el calendario del negocio."
-                : ""}
-            </CardDescription>
+            <CardDescription>{meta?.description ?? ""}</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-3 px-5 pb-5">
             <span className="truncate text-xs text-muted-foreground">
               {it.connected
-                ? it.accountEmail ?? "Cuenta conectada"
+                ? /* cuenta de Google, o host del servidor MCP: cada
+                     integración se identifica con lo suyo, no con un texto
+                     genérico. */
+                  it.accountEmail ?? it.endpointHost ?? "Conectada"
                 : it.available
                   ? "No conectada"
                   : "No habilitada por el operador de la instancia"}
             </span>
-            <Link href={HREF[it.key] ?? "/integrations"}>
+            <Link href={meta?.href ?? "/integrations"}>
               <Button size="sm" variant={it.connected ? "outline" : "default"}>
                 {it.connected ? "Administrar" : "Abrir"}
               </Button>
             </Link>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

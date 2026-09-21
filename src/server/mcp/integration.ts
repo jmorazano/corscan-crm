@@ -650,6 +650,8 @@ export async function updateMcpSettings(
     agentToolsEnabled?: boolean;
     useServerInstructions?: boolean;
     timezone?: string;
+    /** Rótulo visible de la empresa. No toca dirección ni perfil (FR-002). */
+    label?: string;
   }
 ): Promise<boolean> {
   const set: Partial<typeof schema.mcpIntegration.$inferInsert> = { updatedAt: new Date() };
@@ -658,6 +660,7 @@ export async function updateMcpSettings(
     set.useServerInstructions = patch.useServerInstructions;
   }
   if (patch.timezone !== undefined) set.timezone = patch.timezone;
+  if (patch.label !== undefined) set.label = patch.label;
   const db = getDb();
   const updated = await db
     .update(schema.mcpIntegration)
