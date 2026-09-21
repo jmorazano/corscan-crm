@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   view: null as Record<string, unknown> | null,
   updated: [] as Record<string, unknown>[],
   disconnected: [] as string[],
+  /** 016: null = el super admin NO habilitó el conector para esta empresa. */
+  mcpView: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/auth/session", () => {
@@ -28,6 +30,13 @@ vi.mock("@/lib/auth/session", () => {
     getSessionOrNull: () => Promise.resolve(null),
   };
 });
+
+vi.mock("@/server/mcp/integration", () => ({
+  getMcpIntegrationView: (org: string) => {
+    expect(org).toBe("org_1");
+    return Promise.resolve(state.mcpView);
+  },
+}));
 
 vi.mock("@/server/calendar/integration", () => ({
   getCalendarIntegrationView: (org: string) => {
@@ -60,6 +69,7 @@ beforeEach(() => {
   state.view = null;
   state.updated.length = 0;
   state.disconnected.length = 0;
+  state.mcpView = null;
 });
 
 function put(body: unknown): Promise<Response> {
@@ -75,6 +85,33 @@ function put(body: unknown): Promise<Response> {
 }
 
 describe("GET /api/integrations", () => {
+  it("016: sin habilitación del super admin, el conector MCP NO figura en el índice", async () => {
+    state.mcpView = null;
+    const { GET } = await import("@/app/api/integrations/route");
+    const res = await GET();
+    const json = (await res.json()) as { integrations: { key: string }[] };
+    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar"]);
+  });
+
+  it("016: habilitado, aparece con su etiqueta y su host — jamás la URL completa", async () => {
+    state.mcpView = {
+      label: "Altos de Calamuchita",
+      status: "connected",
+      endpointHost: "altosdecalamuchita.com",
+    };
+    const { GET } = await import("@/app/api/integrations/route");
+    const res = await GET();
+    const json = (await res.json()) as { integrations: Record<string, unknown>[] };
+    const card = json.integrations.find((i) => i.key === "mcp");
+    expect(card).toMatchObject({
+      key: "mcp",
+      name: "Altos de Calamuchita",
+      connected: true,
+      endpointHost: "altosdecalamuchita.com",
+    });
+    expect(JSON.stringify(json)).not.toContain("/mcp/assistant");
+  });
+
   it("instancia sin credenciales de Google → available=false, no conectada", async () => {
     const { GET } = await import("@/app/api/integrations/route");
     const res = await GET();

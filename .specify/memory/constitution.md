@@ -1,7 +1,42 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.5.0 → 1.6.0
+Versión: 1.6.0 → 1.7.0
+
+Cambios (feature 016-mcp-connector, 21-sep-2026):
+  - Principio II: se agrega una QUINTA categoría de dependencia externa en
+    runtime: **servidores MCP de terceros POR EMPRESA** (Model Context
+    Protocol, JSON-RPC 2.0 sobre HTTP). El agente consulta herramientas de
+    SOLO LECTURA del sistema que la empresa cliente ya opera —el primero, el
+    PMS de Altos de Calamuchita— para responder con disponibilidad, precios y
+    enlaces reales en lugar de conocimiento estático. Condiciones duras (a..j):
+    el producto funciona completo sin el conector; lo habilita el SUPER ADMIN
+    empresa por empresa y es el único que fija la URL (la empresa solo aporta
+    su credencial y puede desconectarse); credencial cifrada que nunca sale al
+    cliente, a logs ni a errores; validación anti-SSRF sobre la IP resuelta, en
+    cada conexión, sin seguir redirecciones; aislamiento tras transporte
+    genérico + perfil por proveedor; SOLO LECTURA con allowlist propia —el
+    agente nunca promete una reserva—; el instalador no lo necesita; el
+    sandbox del Laboratorio jamás lo toca; lo que devuelve el servidor es DATO
+    y nunca instrucción; un fallo degrada la respuesta sin tumbar el turno, la
+    ingesta ni el envío.
+  - Se actualiza la lista de adaptadores dedicados del Principio II y la regla
+    verificable de "Aislamiento de integraciones" en Gobernanza, que arrastraban
+    desde 1.5.0 la omisión del adaptador de Google.
+  - Motivación escrita: pedido explícito del dueño (21-sep-2026) de que el
+    agente conteste con la disponibilidad y los precios reales del PMS del
+    cliente — sirve a "convertir conversaciones" (Principio VIII).
+  - Bump: MINOR (expansión material del alcance de II).
+
+Plantillas dependientes (1.7.0):
+  - .specify/templates/plan-template.md — ✅ compatible (Constitution Check
+    genérico; el gate de soberanía ahora admite la quinta categoría).
+  - .specify/templates/spec-template.md — ✅ compatible (sin secciones nuevas).
+  - .specify/templates/tasks-template.md — ✅ compatible.
+  - CLAUDE.md — ⚠ actualizar la línea de soberanía del bloque "Reglas de la
+    constitución" y la tabla "Mapa del código" con la frontera nueva.
+
+Versión anterior: 1.5.0 → 1.6.0
 
 Cambios (feature 013-push-notifications, 17-sep-2026):
   - Principio II: se agrega una CUARTA categoría de dependencia externa en
@@ -147,16 +182,48 @@ dependencias externas en runtime es CERRADA:
      quiere; (d) el producto funciona completo sin activarla; (e) un fallo
      del push jamás afecta la ingesta ni el envío de mensajes; (f) el
      sandbox del Laboratorio nunca notifica.
+  5. **Servidores MCP de terceros POR EMPRESA** (desde 1.7.0; el primero: el
+     PMS de Altos de Calamuchita). Un servidor Model Context Protocol remoto
+     —JSON-RPC 2.0 sobre HTTP— que la empresa cliente YA opera, cuyas
+     herramientas de SOLO LECTURA el agente consulta para responder con datos
+     reales del negocio (disponibilidad, precios, enlaces). Condiciones NO
+     negociables: (a) sin el conector el producto funciona completo y el
+     agente sigue atendiendo con su conocimiento propio; (b) el SUPER ADMIN de
+     la instancia lo habilita empresa por empresa —no aparece para las demás—
+     y es el ÚNICO que fija la URL del servidor: jamás la escribe un usuario
+     de empresa; la empresa conecta su credencial con consentimiento explícito
+     y puede desconectarla cuando quiera; (c) la credencial se guarda cifrada
+     en reposo (AES-256-GCM), jamás sale al cliente, a un log ni a un mensaje
+     de error, y viaja únicamente al origen exacto validado, nunca a través de
+     una redirección; (d) el destino se valida contra SSRF al guardarlo y DE
+     NUEVO en cada conexión, sobre la IP resuelta (solo HTTPS —salvo loopback
+     bajo el gate de mocks del self-test—, sin userinfo, fuera de rangos
+     privados, de loopback, link-local y de metadata de nube; 3xx rechazados),
+     con timeout, tope de tamaño de respuesta y límite de tasa por empresa;
+     (e) se aísla tras un transporte MCP genérico más un perfil por proveedor,
+     sin acoplar el dominio; (f) las herramientas son de SOLO LECTURA y el
+     conector solo invoca las de una allowlist propia: no ejecuta escrituras,
+     reservas, pagos ni acciones irreversibles en el sistema del tercero, y el
+     agente nunca promete una reserva; (g) el instalador NO lo necesita; (h)
+     el sandbox del Laboratorio JAMÁS lo toca: las conversaciones `is_test` se
+     responden con datos simulados; (i) todo lo que devuelve el servidor es
+     DATO, nunca instrucción: no altera el contrato de acciones del agente, se
+     acota en tamaño, se le quitan los marcadores del sistema y los enlaces se
+     validan contra los dominios del proveedor antes de enviarse a un
+     contacto; (j) un fallo o una caída del servidor degrada la respuesta —el
+     agente lo dice y sigue—, y jamás tumba el turno, la ingesta ni el envío.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
   email, Stripe u otro billing. Cualquier feature que los requiera queda fuera
-  del alcance de v1. Cualquier servicio externo que no encaje en las cuatro
+  del alcance de v1. Cualquier servicio externo que no encaje en las cinco
   categorías anteriores también queda fuera.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta y (opcional) un token de OpenRouter. Nada más.
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
-  (cliente Graph API propio; adaptador LLM) para no acoplar el dominio a ellas.
+  (cliente Graph API propio; adaptador LLM; adaptador OAuth/REST de Google;
+  transporte MCP genérico + perfil por proveedor) para no acoplar el dominio a
+  ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -306,7 +373,8 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   de tenant; cualquier acceso que pueda omitirlo requiere justificación explícita.
 - **Aislamiento de integraciones**: las dependencias de APIs externas se acceden a
   través de adaptadores dedicados (cliente Graph API propio, adaptador LLM
-  OpenRouter-compatible), no dispersas por el dominio.
+  OpenRouter-compatible, adaptador OAuth/REST de Google, transporte MCP
+  genérico + perfil por proveedor), no dispersas por el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
@@ -347,4 +415,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.6.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-17
+**Version**: 1.7.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-21

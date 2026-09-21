@@ -40,7 +40,57 @@ export const AgentAction = z.discriminatedUnion("action", [
     note: z.string().trim().max(500).optional(),
     reply: z.string().optional(),
   }),
+  /**
+   * Acciones-herramienta del CONECTOR MCP (016): el servidor las ejecuta
+   * contra el sistema del cliente —de SOLO LECTURA— y vuelve a llamar al
+   * modelo con el resultado condensado. Solo se ofrecen en el prompt cuando
+   * la empresa tiene un conector habilitado con un perfil que las declara
+   * (`profile.agentActions`); un perfil `generic` no ofrece ninguna.
+   *
+   * check_in / check_out / guests son OPCIONALES en el esquema a propósito
+   * (research D14): si el modelo omite uno, el perfil responde con un texto
+   * educativo que le dice qué preguntarle al cliente — mucho mejor que
+   * gastar tres llamadas al proveedor y terminar en handoff.
+   */
+  z.object({
+    action: z.literal("search_stays"),
+    check_in: z.string().trim().optional(),
+    check_out: z.string().trim().optional(),
+    guests: z.coerce.number().int().optional(),
+    property_type: z.string().trim().optional(),
+    city: z.string().trim().optional(),
+    bedrooms: z.coerce.number().int().optional(),
+    bathrooms: z.coerce.number().int().optional(),
+    /** Todas obligatorias (AND). */
+    facilities: z.array(z.string().trim()).max(20).optional(),
+    /** Al menos una (OR): la forma de preguntar por "cochera" o "pileta". */
+    facilities_any: z.array(z.string().trim()).max(20).optional(),
+  }),
+  z.object({
+    action: z.literal("show_stay"),
+    /** Código (AC-003), slug o enlace de la ficha. */
+    property: z.string().trim().min(1),
+  }),
 ]);
+
+/** Acciones-herramienta del conector MCP (016): las despacha el pipeline. */
+export function isMcpAction(
+  action: AgentActionType
+): action is Extract<AgentActionType, { action: "search_stays" | "show_stay" }> {
+  return action.action === "search_stays" || action.action === "show_stay";
+}
+
+/** Acciones-herramienta de la agenda (005). */
+export function isCalendarAction(
+  action: AgentActionType
+): action is Extract<
+  AgentActionType,
+  { action: "check_availability" | "book_appointment" }
+> {
+  return (
+    action.action === "check_availability" || action.action === "book_appointment"
+  );
+}
 
 export type AgentActionType = z.infer<typeof AgentAction>;
 

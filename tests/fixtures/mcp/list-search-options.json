@@ -1,0 +1,531 @@
+{
+  "success": true,
+  "property_types": [
+    "Cabaña",
+    "Casa",
+    "Casa con viñedo",
+    "Departamento",
+    "Suite de Montaña"
+  ],
+  "cities": [
+    "Potrero de Garay",
+    "San Clemente"
+  ],
+  "facilities": [
+    {
+      "id": 1,
+      "name": "Aire Acondicionado / Calefacción",
+      "description": "Aire Acondicionado / Calefacción",
+      "in_site_filter": false
+    },
+    {
+      "id": 23,
+      "name": "Anafe",
+      "description": "Anafe",
+      "in_site_filter": false
+    },
+    {
+      "id": 83,
+      "name": "Arroyo en el barrio",
+      "description": "Arroyo en el barrio",
+      "in_site_filter": false
+    },
+    {
+      "id": 39,
+      "name": "Asador",
+      "description": "Asador",
+      "in_site_filter": false
+    },
+    {
+      "id": 10,
+      "name": "Balcón",
+      "description": "Balcón",
+      "in_site_filter": false
+    },
+    {
+      "id": 11,
+      "name": "Balcón con asador",
+      "description": "Balcón con asador",
+      "in_site_filter": false
+    },
+    {
+      "id": 54,
+      "name": "Balcón con vista panorámica",
+      "description": "Balcon",
+      "in_site_filter": false
+    },
+    {
+      "id": 42,
+      "name": "Balcón Panorámico",
+      "description": "Balcón Panorámico",
+      "in_site_filter": false
+    },
+    {
+      "id": 57,
+      "name": "Baño",
+      "description": "Baño",
+      "in_site_filter": false
+    },
+    {
+      "id": 15,
+      "name": "Baño completo",
+      "description": "Baño completo",
+      "in_site_filter": false
+    },
+    {
+      "id": 56,
+      "name": "Baño en suite",
+      "description": "Baño en suite",
+      "in_site_filter": false
+    },
+    {
+      "id": 58,
+      "name": "Baño social",
+      "description": "Baño social",
+      "in_site_filter": false
+    },
+    {
+      "id": 22,
+      "name": "Cafetera eléctrica",
+      "description": "Cafetera eléctrica",
+      "in_site_filter": false
+    },
+    {
+      "id": 67,
+      "name": "Cama Cucheta",
+      "description": "Cama Cucheta",
+      "in_site_filter": false
+    },
+    {
+      "id": 45,
+      "name": "Cama marinera para 2 personas",
+      "description": "Cama marinera para 2 personas",
+      "in_site_filter": false
+    },
+    {
+      "id": 77,
+      "name": "Campo de lavandas",
+      "description": "Campo de lavandas",
+      "in_site_filter": false
+    },
+    {
+      "id": 81,
+      "name": "Cancha de Basquet",
+      "description": "Cancha de Basquet",
+      "in_site_filter": false
+    },
+    {
+      "id": 82,
+      "name": "Cancha de Bochas",
+      "description": "Cancha de Bochas",
+      "in_site_filter": false
+    },
+    {
+      "id": 79,
+      "name": "Cancha de Futbol",
+      "description": "Cancha de Futbol",
+      "in_site_filter": false
+    },
+    {
+      "id": 80,
+      "name": "Cancha de Tenis",
+      "description": "Cancha de Tenis",
+      "in_site_filter": false
+    },
+    {
+      "id": 68,
+      "name": "Cava de vinos",
+      "description": "Cava de vinos",
+      "in_site_filter": false
+    },
+    {
+      "id": 38,
+      "name": "Cochera",
+      "description": "Cochera",
+      "in_site_filter": false
+    },
+    {
+      "id": 41,
+      "name": "Cochera (no apta para camionetas)",
+      "description": "Cochera (no apta para camionetas)",
+      "in_site_filter": false
+    },
+    {
+      "id": 25,
+      "name": "Cochera con descuento",
+      "description": "Cochera con descuento",
+      "in_site_filter": false
+    },
+    {
+      "id": 62,
+      "name": "Cochera Cubierta",
+      "description": "Cochera Cubierta",
+      "in_site_filter": true
+    },
+    {
+      "id": 47,
+      "name": "Cochera Opcional ( No apta Camionetas )",
+      "description": "Cochera Opcional ( No apta Camionetas )",
+      "in_site_filter": false
+    },
+    {
+      "id": 30,
+      "name": "Cochera opcional (no apta camionetas)",
+      "description": "Cochera opcional (no apta camionetas)",
+      "in_site_filter": false
+    },
+    {
+      "id": 8,
+      "name": "Cocina 4 hornallas",
+      "description": "Cocina 4 hornallas",
+      "in_site_filter": false
+    },
+    {
+      "id": 32,
+      "name": "Cocina eléctrica",
+      "description": "Cocina eléctrica",
+      "in_site_filter": false
+    },
+    {
+      "id": 36,
+      "name": "Exprimidora",
+      "description": "Exprimidora",
+      "in_site_filter": false
+    },
+    {
+      "id": 72,
+      "name": "Fogonero",
+      "description": "Fogonero",
+      "in_site_filter": false
+    },
+    {
+      "id": 34,
+      "name": "Gimnasio",
+      "description": "Gimnasio",
+      "in_site_filter": false
+    },
+    {
+      "id": 9,
+      "name": "Heladera",
+      "description": "Heladera",
+      "in_site_filter": false
+    },
+    {
+      "id": 74,
+      "name": "Horno Chileno",
+      "description": "Horno Chileno",
+      "in_site_filter": false
+    },
+    {
+      "id": 40,
+      "name": "Horno eléctrico",
+      "description": "Horno eléctrico",
+      "in_site_filter": false
+    },
+    {
+      "id": 65,
+      "name": "Jacuzzi Exterior Climatizado a 40°C",
+      "description": "Jacuzzi Climatizado",
+      "in_site_filter": false
+    },
+    {
+      "id": 29,
+      "name": "Juguera",
+      "description": "Juguera",
+      "in_site_filter": false
+    },
+    {
+      "id": 7,
+      "name": "Lavarropas",
+      "description": "Lavarropas",
+      "in_site_filter": false
+    },
+    {
+      "id": 71,
+      "name": "Lavavajillas",
+      "description": "Lavavajillas",
+      "in_site_filter": false
+    },
+    {
+      "id": 33,
+      "name": "Lcd de 32´",
+      "description": "Lcd de 32´",
+      "in_site_filter": false
+    },
+    {
+      "id": 18,
+      "name": "Led 32´ con cable",
+      "description": "Led 32´ con cable",
+      "in_site_filter": false
+    },
+    {
+      "id": 46,
+      "name": "Led 43 pugaldas",
+      "description": "Led 43 pugaldas",
+      "in_site_filter": false
+    },
+    {
+      "id": 26,
+      "name": "Led 48' con cable",
+      "description": "Led 48' con cable",
+      "in_site_filter": false
+    },
+    {
+      "id": 48,
+      "name": "Led de 24´ con cable",
+      "description": "Led de 24´ con cable",
+      "in_site_filter": false
+    },
+    {
+      "id": 13,
+      "name": "Microondas",
+      "description": "Microondas",
+      "in_site_filter": false
+    },
+    {
+      "id": 69,
+      "name": "Minipiscina",
+      "description": "Minipiscina",
+      "in_site_filter": false
+    },
+    {
+      "id": 60,
+      "name": "Parrilla para asado",
+      "description": "Parrilla",
+      "in_site_filter": true
+    },
+    {
+      "id": 35,
+      "name": "Patio propio",
+      "description": "Patio propio",
+      "in_site_filter": false
+    },
+    {
+      "id": 53,
+      "name": "Patio propio con asador",
+      "description": "Patio propio con asador",
+      "in_site_filter": false
+    },
+    {
+      "id": 24,
+      "name": "Pava",
+      "description": "Pava",
+      "in_site_filter": false
+    },
+    {
+      "id": 4,
+      "name": "Pava Eléctrica",
+      "description": "Pava Eléctrica",
+      "in_site_filter": false
+    },
+    {
+      "id": 31,
+      "name": "Piscina",
+      "description": "Piscina",
+      "in_site_filter": false
+    },
+    {
+      "id": 20,
+      "name": "Plancha",
+      "description": "Plancha",
+      "in_site_filter": false
+    },
+    {
+      "id": 64,
+      "name": "Producción de Vino Propio ( Juana Urbana )",
+      "description": "Producción de Vino Propio ( Juana Urbana )",
+      "in_site_filter": false
+    },
+    {
+      "id": 75,
+      "name": "Proyector de Cine",
+      "description": "Proyector de Cine",
+      "in_site_filter": false
+    },
+    {
+      "id": 73,
+      "name": "Quincho con asador",
+      "description": "Quincho con asador",
+      "in_site_filter": false
+    },
+    {
+      "id": 84,
+      "name": "Rio en el barrio",
+      "description": "Rio en el barrio",
+      "in_site_filter": false
+    },
+    {
+      "id": 63,
+      "name": "Ropa Blanca",
+      "description": "Ropa Blanca",
+      "in_site_filter": false
+    },
+    {
+      "id": 59,
+      "name": "Salamandra a Leña",
+      "description": "Salamandra a leña en living",
+      "in_site_filter": true
+    },
+    {
+      "id": 76,
+      "name": "Salamandra digital",
+      "description": "Salamandra digital",
+      "in_site_filter": false
+    },
+    {
+      "id": 78,
+      "name": "Sauna",
+      "description": "Sauna",
+      "in_site_filter": false
+    },
+    {
+      "id": 17,
+      "name": "Secador de cabello",
+      "description": "Secador de cabello",
+      "in_site_filter": false
+    },
+    {
+      "id": 3,
+      "name": "Servicio de Ropa Blanca ( Opcional )",
+      "description": "Servicio de Ropa Blanca ( Opcional )",
+      "in_site_filter": false
+    },
+    {
+      "id": 50,
+      "name": "Smart tv 32 pulgadas",
+      "description": "Smart",
+      "in_site_filter": false
+    },
+    {
+      "id": 51,
+      "name": "Smart tv 43 pulgadas",
+      "description": "Smatr 43",
+      "in_site_filter": false
+    },
+    {
+      "id": 44,
+      "name": "Smart TV 49 Pulgadas",
+      "description": "Smart TV 49 Pulgadas",
+      "in_site_filter": false
+    },
+    {
+      "id": 43,
+      "name": "Sofá cama para 1 persona",
+      "description": "Sofá cama para 1 persona",
+      "in_site_filter": false
+    },
+    {
+      "id": 21,
+      "name": "Sofá cama para 2 personas",
+      "description": "Sofá cama para 2 personas",
+      "in_site_filter": false
+    },
+    {
+      "id": 19,
+      "name": "Sommier 1 plaza",
+      "description": "Sommier 1 plaza",
+      "in_site_filter": false
+    },
+    {
+      "id": 12,
+      "name": "Sommier 2 Plazas",
+      "description": "Sommier 2 Plazas",
+      "in_site_filter": false
+    },
+    {
+      "id": 55,
+      "name": "Sommier 2 plazas y media",
+      "description": "2 plazas y media",
+      "in_site_filter": false
+    },
+    {
+      "id": 70,
+      "name": "Terraza Panorámica",
+      "description": "Terraza Panorámica",
+      "in_site_filter": false
+    },
+    {
+      "id": 37,
+      "name": "Terraza propia",
+      "description": "Terraza propia",
+      "in_site_filter": false
+    },
+    {
+      "id": 6,
+      "name": "Terraza Propia con Asador",
+      "description": "Terraza Propia con Asador",
+      "in_site_filter": false
+    },
+    {
+      "id": 52,
+      "name": "Terraza Propia Panorámica",
+      "description": "Terraza Propia Panorámica",
+      "in_site_filter": false
+    },
+    {
+      "id": 16,
+      "name": "Toilette",
+      "description": "Toilette",
+      "in_site_filter": false
+    },
+    {
+      "id": 2,
+      "name": "Tostadora Eléctrica",
+      "description": "Tostadora Eléctrica",
+      "in_site_filter": false
+    },
+    {
+      "id": 49,
+      "name": "Tv Led con cable",
+      "description": "Tv Led con cable",
+      "in_site_filter": false
+    },
+    {
+      "id": 14,
+      "name": "Vajilla",
+      "description": "Vajilla",
+      "in_site_filter": false
+    },
+    {
+      "id": 66,
+      "name": "Viñedo Privado",
+      "description": "Viñedo Privado",
+      "in_site_filter": false
+    },
+    {
+      "id": 5,
+      "name": "Wifi / Smart tv",
+      "description": "Wifi / Smart tv",
+      "in_site_filter": false
+    },
+    {
+      "id": 61,
+      "name": "Wifi Starlink",
+      "description": "Wifi Starlink",
+      "in_site_filter": true
+    }
+  ],
+  "availability_window": {
+    "from": "2026-09-21",
+    "to": "2027-04-19",
+    "days": 210
+  },
+  "search_link": {
+    "base": "https://altosdecalamuchita.com/buscar",
+    "example": "https://altosdecalamuchita.com/buscar?in=2026-09-25&out=2026-09-27&c=2&s[0]=60",
+    "params": {
+      "in": "Fecha de ingreso (AAAA-MM-DD). Obligatoria: sin ella el sitio redirige a la portada.",
+      "out": "Fecha de salida (AAAA-MM-DD). Obligatoria.",
+      "c": "Cantidad de huéspedes (mínimo requerido).",
+      "g": "Cochera del complejo: 1 muestra solo propiedades con cochera disponible para las fechas; 0 u omitido no filtra.",
+      "pt": "Id del tipo de alojamiento.",
+      "ct": "Nombre de la localidad.",
+      "r": "Cantidad de habitaciones EXACTA (no es mínimo: r=2 no muestra las de 3).",
+      "s[]": "Ids de características de este catálogo, uno por índice (s[0]=60&s[1]=62). El sitio exige TODAS a la vez."
+    },
+    "notes": "Preferir el search_url que devuelve check-availability, que ya viene armado y verificado. Al armar un enlace a mano: s[] exige todas las características juntas, así que una palabra que corresponde a varias entradas del catálogo (cochera, asador, pileta) no se traduce a varios s[] — en ese caso enviar el enlace individual de cada propiedad. El buscador no tiene filtro de baños, y su filtro de habitaciones (r) es exacto, no mínimo."
+  },
+  "currency": "ARS",
+  "notes": "Los tipos, localidades y características no distinguen mayúsculas, plurales ni acentos. Las consultas fuera de la ventana se rechazan.",
+  "criteria_notes": "bedrooms y bathrooms son el mínimo requerido: pedir 2 también devuelve las de 3 o más. Las características se piden con facilities (la propiedad debe tenerlas todas) o con facilities_any (le alcanza con una de la lista). Una palabra del interesado suele corresponder a varias entradas de este catálogo —\"cochera\", \"asador\", \"pileta\", \"hoguera\"—: en ese caso van todas juntas en facilities_any, porque exigirlas todas a la vez no devolvería ninguna propiedad."
+}

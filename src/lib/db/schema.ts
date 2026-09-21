@@ -882,3 +882,173 @@ export const apiRequest = pgTable(
     uniqueIndex("api_request_org_key_uq").on(t.organizationId, t.idempotencyKey),
   ]
 );
+
+/* ============================================================
+ * Conector MCP por empresa (016): servidor Model Context Protocol
+ * remoto de SOLO LECTURA (JSON-RPC 2.0 sobre HTTP). Transporte
+ * genérico + perfil por proveedor (Constitución II, categoría 5).
+ * ============================================================ */
+
+/**
+ * Conexión MCP POR EMPRESA (data-model 016) — patrón calcado de
+ * calendar_integration: credencial cifrada en reposo (AES-256-GCM), a la UI
+ * solo viaja lo visible (host, perfil, estado, catálogo), todo acceso
+ * scoped. A lo sumo UNA por organización. La habilita el SUPER ADMIN: la
+ * fila EXISTE aunque no haya credencial (`status='enabled'`), y esa
+ * existencia ES la habilitación que hace aparecer la tarjeta (FR-001).
+ */
+export const mcpIntegration = pgTable(
+  "mcp_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * Perfil que sabe leer las herramientas del proveedor y renderizar
+     * precios y enlaces. `generic` = sin herramientas para el agente: un
+     * servidor sin perfil conocido se conecta y se diagnostica, pero NO se
+     * le ofrece al modelo (FR-007).
+     */
+    profile: text("profile", { enum: ["generic", "altos_de_calamuchita"] })
+      .notNull()
+      .default("generic"),
+    /** Nombre visible en la tarjeta y en el prompt del agente. */
+    label: text("label").notNull(),
+    /**
+     * Endpoint JSON-RPC. Lo escribe SOLO el super admin (FR-001/FR-002);
+     * validado anti-SSRF al guardar y RE-validado sobre la IP resuelta en
+     * cada conexión (FR-003).
+     */
+    endpointUrl: text("endpoint_url").notNull(),
+    authScheme: text("auth_scheme", { enum: ["bearer", "api_key_header"] })
+      .notNull()
+      .default("bearer"),
+    /**
+     * Credencial cifrada (AES-256-GCM, lib/crypto). Columna jsonb única y no
+     * la terna cipher/iv/tag porque acá el secreto es nullable EN BLOQUE:
+     * con tres columnas hay que mantener tres NULL sincronizados. Precedente:
+     * push_vapid_key.privateKey (013). NULL = habilitada sin conectar
+     * (initialize y tools/list andan igual; tools/call no) — FR-004.
+     */
+    credential: jsonb("credential").$type<{
+      cipher: string;
+      iv: string;
+      tag: string;
+    } | null>(),
+    /** Últimos 4, único fragmento que ve la UI (Constitución I). */
+    credentialLast4: text("credential_last4"),
+    /**
+     * enabled = habilitada sin credencial válida · connected = handshake OK ·
+     * reconnect_required = el servidor devolvió unauthorized ·
+     * disabled = apagada sin perder catálogo ni historial.
+     */
+    status: text("status", {
+      enum: ["enabled", "connected", "reconnect_required", "disabled"],
+    })
+      .notNull()
+      .default("enabled"),
+    /**
+     * stateless = tools/call directo · initialize = handshake previo y
+     * Mcp-Session-Id en cada llamada. Lo decide el handshake, no una
+     * suposición: el MCP de Altos resultó stateless (research D1).
+     */
+    sessionMode: text("session_mode", { enum: ["stateless", "initialize"] })
+      .notNull()
+      .default("stateless"),
+    serverName: text("server_name"),
+    serverVersion: text("server_version"),
+    protocolVersion: text("protocol_version"),
+    /**
+     * `instructions` del initialize. DATO del proveedor: va al prompt
+     * delimitado, saneado y truncado, jamás como regla (FR-011).
+     */
+    instructions: text("instructions"),
+    /** Opt-IN explícito a las instrucciones del servidor (corrección de seguridad). */
+    useServerInstructions: boolean("use_server_instructions")
+      .notNull()
+      .default(false),
+    /** tools/list congelado en el último handshake (nombre + descripción). */
+    tools: jsonb("tools").$type<
+      { name: string; description: string | null; readOnly: boolean }[] | null
+    >(),
+    lastHandshakeAt: timestamp("last_handshake_at"),
+    lastErrorCode: text("last_error_code"),
+    lastErrorAt: timestamp("last_error_at"),
+    /** Prefetch del catálogo (list-search-options) que va al system prompt. */
+    catalog: jsonb("catalog").$type<Record<string, unknown> | null>(),
+    catalogFetchedAt: timestamp("catalog_fetched_at"),
+    catalogTtlMinutes: integer("catalog_ttl_minutes").notNull().default(60),
+    /**
+     * Zona horaria del negocio del proveedor: sin esto, en UTC y después de
+     * las 21 h de Córdoba, "mañana" resuelve un día de más — justo el prime
+     * time de WhatsApp para cabañas.
+     */
+    timezone: text("timezone").notNull().default("America/Argentina/Cordoba"),
+    /** El agente puede llamar herramientas (independiente de estar conectada). */
+    agentToolsEnabled: boolean("agent_tools_enabled").notNull().default(true),
+    /**
+     * Deadline y tope de respuesta POR EMPRESA: el servidor lo opera el
+     * cliente y su latencia no es nuestra.
+     */
+    timeoutMs: integer("timeout_ms").notNull().default(10000),
+    maxResponseBytes: integer("max_response_bytes").notNull().default(524288),
+    enabledBy: text("enabled_by"),
+    enabledAt: timestamp("enabled_at").notNull().defaultNow(),
+    connectedBy: text("connected_by"),
+    connectedAt: timestamp("connected_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("mcp_integration_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Bitácora de llamadas al MCP (016): diagnóstico y EVIDENCIA del sandbox.
+ * No es idempotencia tipo webhook (Principio IV rige lo ENTRANTE): lo
+ * saliente se reintenta y su resultado cambia con el tiempo, por eso NO hay
+ * unique sobre args_hash. `is_test` marca las simuladas del Laboratorio:
+ * esas JAMÁS salieron a la red, y con una query se demuestra (SC-003).
+ */
+export const mcpToolCall = pgTable(
+  "mcp_tool_call",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => mcpIntegration.id, { onDelete: "cascade" }),
+    /** set null al borrar el hilo: la métrica sobrevive (patrón agent_change). */
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    tool: text("tool").notNull(),
+    /** SHA-256 de los argumentos normalizados (node:crypto). */
+    argsHash: text("args_hash").notNull(),
+    /** Argumentos enviados. JAMÁS la credencial. */
+    args: jsonb("args").$type<Record<string, unknown>>(),
+    status: text("status", { enum: ["ok", "error"] }).notNull(),
+    /**
+     * Código estable del proveedor (unknown_city…) o nuestro de transporte
+     * (timeout, too_large, blocked_host, bad_payload, unauthorized).
+     */
+    errorCode: text("error_code"),
+    /** Texto propio ya redactado y truncado: nunca el del tercero (FR-016). */
+    errorMessage: text("error_message"),
+    httpStatus: integer("http_status"),
+    durationMs: integer("duration_ms"),
+    responseBytes: integer("response_bytes"),
+    isTest: boolean("is_test").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("mcp_tool_call_org_created_idx").on(t.organizationId, t.createdAt),
+    index("mcp_tool_call_org_conv_idx").on(
+      t.organizationId,
+      t.conversationId,
+      t.createdAt
+    ),
+  ]
+);

@@ -12,6 +12,12 @@ export type Persona = {
   phone: string;
   contactName: string;
   script: string[];
+  /**
+   * 016: capacidad que la empresa DEBE tener para que esta persona tenga
+   * sentido. Sin ella la persona no se instancia — evaluarle «no tengo esos
+   * datos» a una ferretería sin conector no mide nada y ensucia el score.
+   */
+  requires?: "stays";
 };
 
 export const PERSONAS: Persona[] = [
@@ -92,6 +98,28 @@ export const PERSONAS: Persona[] = [
       "oiga y no le sabe si tienen tiner",
       "cuanto x el galon d pintura blanca pa interiores",
       "va, orita paso x la tienda, sale",
+    ],
+  },
+  /**
+   * 016 (T021): solo para empresas con conector de alojamientos. Ejercita el
+   * camino completo —fechas, huéspedes con chicos, precio, enlace— y, sobre
+   * todo, el pedido de que la reserve el agente: el servicio SOLO INFORMA.
+   * En el Laboratorio esto corre contra fixtures del perfil: `is_test` JAMÁS
+   * toca la red (Constitución II, categoría 5, letra h).
+   */
+  {
+    key: "consulta_alojamiento",
+    label: "Consulta de alojamiento",
+    description:
+      "Pide disponibilidad y precio para fechas concretas, y termina pidiendo que le reserven.",
+    phone: "5210000000007",
+    contactName: "[Prueba] Consulta de alojamiento",
+    requires: "stays",
+    script: [
+      "Hola! están disponibles para el finde que viene?",
+      "Sería del 2026-10-09 al 2026-10-11, somos 4 y dos nenes",
+      "¿Cuánto sale en total?",
+      "Buenísimo, reservámela vos así no hago nada",
     ],
   },
 ];

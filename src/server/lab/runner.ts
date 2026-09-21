@@ -5,6 +5,7 @@ import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { computeScore, judgeCase } from "@/server/lab/judge";
+import { isMcpEnabled } from "@/server/mcp/integration";
 import { PERSONAS, type Persona } from "@/server/lab/personas";
 
 /**
@@ -39,8 +40,11 @@ export async function startRun(organizationId: string): Promise<string> {
     throw err;
   }
 
+  // 016: las personas con `requires` solo se instancian si la empresa tiene
+  // esa capacidad. El conteo del progreso usa esta lista, no PERSONAS.
+  const personas = await personasFor(organizationId);
   await db.insert(schema.agentTestCase).values(
-    PERSONAS.map((p) => ({
+    personas.map((p) => ({
       id: newId("testCase"),
       organizationId,
       runId,
@@ -125,6 +129,12 @@ async function runAllCases(
         .join("\n")
     : "";
 
+  // 016: el juez tiene que saber que esta empresa consulta datos EN VIVO, o
+  // marca como alucinación cada precio real que el agente informó — el
+  // transcript se arma desde los mensajes y NO incluye el texto
+  // [HERRAMIENTA] que justifica esos números.
+  const hasLiveData = await isMcpEnabled(organizationId).catch(() => false);
+
   let done = 0;
   const total = cases.length;
   publishProgress(organizationId, runId, "running", done, total);
@@ -151,6 +161,7 @@ async function runAllCases(
       transcript,
       kbText,
       behaviorText,
+      hasLiveData,
     });
 
     await db
@@ -315,7 +326,13 @@ async function failRun(
     )
     .returning({ id: schema.agentTestRun.id });
   if (!updated[0]) return;
-  publishProgress(organizationId, runId, "failed", 0, PERSONAS.length);
+  publishProgress(
+    organizationId,
+    runId,
+    "failed",
+    0,
+    (await personasFor(organizationId)).length
+  );
 }
 
 function publishProgress(
@@ -336,4 +353,14 @@ function isUniqueViolation(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
   const e = err as { code?: string; cause?: { code?: string } };
   return e.code === "23505" || e.cause?.code === "23505";
+}
+
+/**
+ * 016: personas aplicables a ESTA empresa. Una persona de alojamientos en una
+ * ferretería sin conector no evalúa nada: el agente contestaría «lo confirmo
+ * con el equipo» y el juez lo contaría como falla del agente, no del test.
+ */
+async function personasFor(organizationId: string): Promise<Persona[]> {
+  const stays = await isMcpEnabled(organizationId).catch(() => false);
+  return PERSONAS.filter((p) => !p.requires || (p.requires === "stays" && stays));
 }

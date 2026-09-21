@@ -1,5 +1,6 @@
 import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
+import { MCP_MARKER } from "@/server/mcp/markers";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -94,6 +95,13 @@ export function aiMockCompletion(messages: InMessage[]): string {
   ) {
     return JSON.stringify({ action: "none" });
   }
+
+  // Conector MCP (016): VA ANTES QUE LA AGENDA a propósito. El regex de
+  // `mentionsCalendar` incluye "disponibilidad" y "reservar", así que una
+  // empresa con agenda Y conector le ofrecería un turno de 30 minutos a
+  // quien está preguntando por una cabaña. El orden es el desempate.
+  const stayTurn = dispatchStays(messages, system);
+  if (stayTurn) return stayTurn;
 
   // Agenda de turnos (005, research D10): despacho determinista de las
   // acciones-herramienta. Solo si el prompt trae la sección de agenda.
@@ -219,6 +227,160 @@ function dispatchTrainer(system: string, lastUser: string): string {
  * - Sin resultado de herramienta: cualquier mención de turno/horario o
  *   intención de reserva → check_availability (fecha YYYY-MM-DD si aparece).
  */
+/**
+ * Despacho determinista del CONECTOR MCP (016): emula lo que haría un modelo
+ * sensato con la sección de alojamientos en el prompt.
+ *
+ * Con esa sección presente, el negocio ES de alojamientos: el despacho
+ * atiende TODA la conversación y acumula el contexto (fechas y huéspedes
+ * pueden venir en mensajes distintos), igual que haría un modelo real. Por
+ * eso devuelve null solo cuando la empresa no tiene conector.
+ *
+ * El `toolText` del conector llega con `role:"user"` (corrección #7), no
+ * "system" como el de la agenda: se lo busca entre los mensajes de usuario.
+ */
+function dispatchStays(
+  messages: InMessage[],
+  system: string
+): string | null {
+  if (!system.includes(MCP_MARKER)) return null;
+
+  const last = messages[messages.length - 1];
+  const lastText = last ? textOf(last.content) : "";
+
+  if (last?.role === "user" && lastText.startsWith("[HERRAMIENTA]")) {
+    if (lastText.includes("FUERA DE LA VENTANA")) {
+      return JSON.stringify({
+        action: "update_lead",
+        note: "Consultó por fechas fuera de la ventana publicada.",
+        reply:
+          "Para esas fechas todavía no tenemos los valores publicados. ¿Querés que te avise cuando salgan, o vemos alguna fecha más cercana?",
+      });
+    }
+    if (/FALTAN DATOS|RECHAZAD|DESCONOCID/i.test(lastText)) {
+      return JSON.stringify({
+        action: "reply",
+        text: "¿Para qué fechas y cuántas personas serían? Así te paso las opciones con el precio.",
+      });
+    }
+    if (lastText.includes("NO DISPONIBLE")) {
+      return JSON.stringify({
+        action: "handoff",
+        reason: "modelo",
+        farewell: "Dejame consultarlo con el equipo y te confirmo enseguida.",
+      });
+    }
+    // Knob del guion E2E: fuerza una promesa de reserva para verificar que la
+    // guarda del pipeline la intercepta ANTES de que salga a WhatsApp (#42).
+    if (system.includes("[E2E_FORCE_PROMISE]")) {
+      return JSON.stringify({
+        action: "reply",
+        text: "¡Listo! Te la reservo para esas fechas y quedás confirmado.",
+      });
+    }
+    const lines = lastText.split("\n").filter((l) => l.startsWith("- ")).slice(0, 2);
+    const link = lastText.match(/https:\/\/\S+/)?.[0] ?? "";
+    if (lines.length === 0) {
+      return JSON.stringify({
+        action: "reply",
+        text: "Para esas fechas no me quedó nada libre. ¿Probamos corriendo las fechas o con menos personas?",
+      });
+    }
+    return JSON.stringify({
+      action: "reply",
+      text: `Tengo estas opciones:\n${lines.join("\n")}\nPodés ver fotos y reservar acá: ${link}`,
+    });
+  }
+
+  // --- contexto ACUMULADO de toda la conversación (como un modelo real) ---
+  const userTexts = messages
+    .filter((m) => m.role === "user")
+    .map((m) => textOf(m.content))
+    .filter((t) => !t.startsWith("[HERRAMIENTA]"));
+  const todo = userTexts.join(" \n ").toLowerCase();
+
+  const dates = [...todo.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]!);
+
+  const WORD_NUM: Record<string, number> = {
+    un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+    seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+  };
+  const num = (raw: string | undefined): number | null => {
+    if (!raw) return null;
+    return /^\d+$/.test(raw) ? Number(raw) : (WORD_NUM[raw] ?? null);
+  };
+  let guests =
+    num(todo.match(/\bsomos\s+(\d{1,2}|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/)?.[1]) ??
+    num(todo.match(/\b(\d{1,2})\s*(?:personas?|hu[eé]spedes?|adultos?|pax)\b/)?.[1]) ??
+    num(todo.match(/\bpara\s+(\d{1,2})\s*(?:personas?|$|\s)/)?.[1]);
+  // Los chicos CUENTAN (FR-008 / corrección #50): "somos 4 y dos nenes" = 6.
+  const kids = todo.match(
+    /\b(\d{1,2}|un|una|dos|tres|cuatro|cinco)\s*(?:nen[eo]s?|chic[oa]s?|ni[ñn][oa]s?|menores|peques?)\b/
+  );
+  if (guests !== null && kids) guests += num(kids[1]) ?? 0;
+
+  // Resultado de herramienta YA presente en el contexto: un modelo sensato
+  // responde con eso en vez de volver a consultar lo mismo cada turno.
+  const previo = [...messages]
+    .reverse()
+    .map((m) => textOf(m.content))
+    .find((t) => t.startsWith("[HERRAMIENTA]") && t.includes("ALOJAMIENTOS"));
+  const enlacePrevio = previo?.match(/https:\/\/\S+/)?.[0] ?? null;
+
+  // Pedido explícito de que reserve el agente. El servicio SOLO INFORMA
+  // (FR-009): la respuesta correcta explica el circuito y pasa el enlace,
+  // NUNCA promete. Es el caso que mide la persona `consulta_alojamiento`.
+  const pideQueReserve =
+    /\breserv(ámela|amela|ámelo|amelo|áme|ame|ala|alo)\b|me la reserv|me lo reserv|reserv(á|a)(me)?la vos|que la reserv/.test(
+      todo
+    );
+  if (pideQueReserve) {
+    return JSON.stringify({
+      action: "reply",
+      text: enlacePrevio
+        ? `La reserva la hacés vos desde el sitio, con la seña — nosotros no la tomamos por WhatsApp. Te dejo el enlace con tus fechas ya cargadas: ${enlacePrevio}`
+        : "La reserva se completa en nuestro sitio con la seña; por WhatsApp no la tomamos. Decime las fechas y cuántas personas son y te paso el enlace con todo cargado.",
+    });
+  }
+
+  // Ya hay resultados y el cliente pregunta por el precio: responder con eso.
+  if (previo && /cu[aá]nto|precio|sale|vale|total|cuesta/.test(todo)) {
+    const lineas = previo.split("\n").filter((l) => l.startsWith("- ")).slice(0, 2);
+    if (lineas.length > 0) {
+      return JSON.stringify({
+        action: "reply",
+        text: `Los totales por toda la estadía son:\n${lineas.join("\n")}\nPodés ver fotos y reservar acá: ${enlacePrevio ?? ""}`,
+      });
+    }
+  }
+
+  if (dates.length >= 2 && guests !== null) {
+    const args: Record<string, unknown> = {
+      action: "search_stays",
+      check_in: dates[dates.length - 2],
+      check_out: dates[dates.length - 1],
+      guests,
+    };
+    if (/pileta|piscina/.test(todo)) args.facilities_any = ["Piscina", "Minipiscina"];
+    else if (/cochera|garage|garaje/.test(todo)) {
+      args.facilities_any = ["Cochera", "Cochera Cubierta", "Cochera opcional (no apta camionetas)"];
+    }
+    return JSON.stringify(args);
+  }
+
+  // Falta algo: preguntar UNA cosa a la vez, sin gastar la llamada.
+  if (dates.length < 2) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¡Hola! ¿Para qué fechas lo estás buscando? Decime el día de entrada y el de salida.",
+    });
+  }
+  return JSON.stringify({
+    action: "reply",
+    text: "¿Cuántas personas se alojan? Contá también a los chicos, así te cotizo bien.",
+  });
+}
+
 function dispatchCalendar(
   messages: InMessage[],
   system: string,

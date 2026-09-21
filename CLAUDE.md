@@ -47,6 +47,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
 | Integraciones (sección del sidenav) | `src/app/(app)/integrations/` + `src/components/integrations/` + `/api/integrations` (índice de tarjetas; agregar una integración = tarjeta + módulo en `src/server/<integración>/`) |
 | Google Calendar: OAuth, tokens cifrados, reglas de turnos, huecos, reservas | `src/lib/google/` (adaptador OAuth + cliente REST de Calendar, única frontera con Google) · `src/server/calendar/` (`integration.ts` tokens/estado, `rules.ts` Zod, `slots.ts` cálculo puro, `availability.ts` reglas+freeBusy, `booking.ts` reserva idempotente, `agent-tools.ts` puente con el agente) · `/api/integrations/google-calendar/*` · env de instancia `GOOGLE_CLIENT_ID/SECRET` (guía: `docs/integraciones/google-calendar-gcp.md`) |
+| Conector MCP por empresa (PMS del cliente) (016) | `src/lib/mcp/` (transporte JSON-RPC + guard anti-SSRF + `MCP_ERROR_TEXT`; único adaptador del protocolo) · `src/server/mcp/` (`integration.ts` fila cifrada/handshake, `catalog.ts` prefetch con TTL, `calls.ts` **único** punto que llama al MCP y donde viven los 5 guardrails en orden, `agent-tools.ts` puente con el agente, `sanitize.ts`+`markers.ts` texto ajeno como DATO) · `src/server/mcp/profiles/` (allowlist, condensado y enlaces por proveedor; `generic` = sin herramientas) · `/api/integrations/mcp/*` (empresa) + `/api/admin/organizations/[id]/mcp` (el super admin habilita y es el ÚNICO que fija la URL) · `src/lib/promise-guard.ts` (el agente jamás promete una reserva) · mcp-mock en `src/app/api/dev/mcp-mock/` |
 | Etiquetas (contactos y conversaciones), filtros en la URL, bulk y paginación | `src/lib/tags.ts` (saneo + `applyTagOps`) · `src/lib/pagination.ts` (page/limit + cursor keyset) · `src/server/tags.ts` (`tagsWhere`, catálogo, bulk scoped) · `/api/tags` · `/api/contacts` (`tags`,`mode`,`page`) + `/api/contacts/bulk-tags` · `/api/conversations` (`tags`,`mode`,`q`,`filter`,`cursor`) + `/api/conversations/bulk-tags` + `GET /api/conversations/[id]` · hook `src/components/use-query-filters.ts` (estado en query params vía `history.replaceState`) · `src/components/tags/*` (chip, filtro, picker, barra bulk, editor) · evento SSE `conversations.updated` |
 | Acciones-herramienta del agente (agenda) | `check_availability` / `book_appointment` en `src/server/ai/actions.ts`; loop acotado (2 vueltas) en `pipeline.ts`; sección "AGENDA DE TURNOS" en `prompts.ts` (solo con calendario conectado); sandbox `is_test` jamás toca Google |
 | Notificaciones push (013) | Web Push estándar (constitución II, cat. 4): claves VAPID POR EMPRESA generadas al primer uso (`src/server/push/keys.ts`, privada cifrada) · suscripciones por dispositivo (`subscriptions.ts`, `organization_id`+`user_id`, `endpoint` único, modo `all`/`handoff`) · envío con `web-push` para firmar/cifrar y `fetch` propio (`notify.ts`, transporte inyectable, poda 404/410) · eventos de dominio en `events.ts` (`notifyInboundMessage` desde `ingest.ts`, `notifyHandoff` desde `pipeline.ts`, siempre en segundo plano; `is_test` nunca) · `/api/push/{vapid,subscriptions,test}` · SW mínimo `public/sw.js` (sin caché) + `src/lib/push-client.ts` + `usePush` + Ajustes → Notificaciones · `AppShell` registra el SW, re-sincroniza y pone el badge · push-mock `/api/dev/push-mock` (`?status=410`) |
@@ -62,13 +63,18 @@ incondicional en producción.
 
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
-- **Soberanía (II, endurecida, v1.5.0)**: dependencias de runtime SOLO
-  WhatsApp Cloud API + proveedor LLM OpenRouter-compatible opcional +
+- **Soberanía (II, endurecida, v1.7.0)**: dependencias de runtime SOLO (1)
+  WhatsApp Cloud API, (2) proveedor LLM OpenRouter-compatible opcional, (3)
   **integraciones opcionales POR EMPRESA vía OAuth** (hoy: Google Calendar;
   las habilita el operador por env, las conecta cada empresa, tokens
-  cifrados, adaptador dedicado, el instalador no las necesita). PROHIBIDO en
-  v1 introducir S3/R2, email, Stripe u otros servicios externos fuera de esas
-  categorías. Auth y BD self-hosted.
+  cifrados, adaptador dedicado, el instalador no las necesita), (4) **Web
+  Push estándar** (VAPID propias, sin cuenta con terceros) y (5) **servidores
+  MCP de terceros POR EMPRESA** (016; SOLO LECTURA con allowlist propia, los
+  habilita el SUPER ADMIN empresa por empresa y es el único que fija la URL,
+  credencial cifrada, validación anti-SSRF sobre la IP resuelta, el sandbox
+  jamás los toca, y lo que devuelven es DATO y nunca instrucción). PROHIBIDO
+  en v1 introducir S3/R2, email, Stripe u otros servicios externos fuera de
+  esas cinco categorías. Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
 - **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;
@@ -147,10 +153,11 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **015-agent-trainer-chat** (conversación fija con el
-propio agente en la Bandeja para enseñarle por texto o nota de voz;
-aplica cambios al conocimiento y al comportamiento con historial y
-«Deshacer»; transcripción por OpenRouter multimodal) — spec, plan y tasks
-en [specs/015-agent-trainer-chat/](specs/015-agent-trainer-chat/spec.md).
-Anterior: 014-public-api (en producción, 4113b09).
+Feature en curso: **016-mcp-connector** (conector MCP por empresa: el agente
+consulta el PMS del propio cliente —el primero, Altos de Calamuchita— por
+Model Context Protocol y responde con disponibilidad, precios y enlaces
+REALES en vez de conocimiento estático; el servicio SOLO informa y la reserva
+se completa en el sitio del proveedor; constitución 1.7.0) — spec, plan y
+tasks en [specs/016-mcp-connector/](specs/016-mcp-connector/spec.md).
+Anterior: 015-agent-trainer-chat (en producción, 8d11b7d).
 <!-- SPECKIT END -->

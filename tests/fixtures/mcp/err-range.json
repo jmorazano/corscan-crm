@@ -1,0 +1,7 @@
+{
+  "success": false,
+  "error": {
+    "code": "invalid_date_range",
+    "message": "La fecha de salida debe ser posterior a la fecha de ingreso."
+  }
+}

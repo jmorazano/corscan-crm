@@ -1,0 +1,8 @@
+{
+  "success": false,
+  "error": {
+    "code": "invalid_guests",
+    "message": "La cantidad de huéspedes debe ser de al menos 1.",
+    "max": 100
+  }
+}

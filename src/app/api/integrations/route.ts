@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/api";
 import { isGoogleIntegrationConfigured } from "@/lib/env";
 import { getCalendarIntegrationView } from "@/server/calendar/integration";
+import { getMcpIntegrationView } from "@/server/mcp/integration";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,10 @@ export const dynamic = "force-dynamic";
  * por integración soportada. Hoy: Google Calendar. Sin tokens, jamás.
  */
 export const GET = withAuth(async (session) => {
-  const gc = await getCalendarIntegrationView(session.organizationId);
+  const [gc, mcp] = await Promise.all([
+    getCalendarIntegrationView(session.organizationId),
+    getMcpIntegrationView(session.organizationId),
+  ]);
   return Response.json({
     integrations: [
       {
@@ -20,6 +24,23 @@ export const GET = withAuth(async (session) => {
         status: gc?.status ?? null,
         accountEmail: gc?.accountEmail ?? null,
       },
+      // 016 (FR-001): a diferencia de Google Calendar, esta tarjeta NO la ven
+      // todas las empresas. La habilita el super admin empresa por empresa, y
+      // la existencia de la fila ES la habilitación: sin fila, la tarjeta
+      // simplemente no está en la lista. La URL completa jamás sale de acá.
+      ...(mcp
+        ? [
+            {
+              key: "mcp",
+              name: mcp.label,
+              available: true,
+              connected: mcp.status === "connected",
+              status: mcp.status,
+              accountEmail: null,
+              endpointHost: mcp.endpointHost,
+            },
+          ]
+        : []),
     ],
   });
 });

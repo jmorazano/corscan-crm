@@ -1,0 +1,11 @@
+{
+  "success": false,
+  "error": {
+    "code": "date_out_of_window",
+    "message": "Solo se pueden consultar fechas dentro de la ventana de disponibilidad publicada.",
+    "window": {
+      "from": "2026-09-21",
+      "to": "2027-04-19"
+    }
+  }
+}

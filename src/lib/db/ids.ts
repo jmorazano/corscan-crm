@@ -28,6 +28,8 @@ const prefixes = {
   apiRequest: "areq",
   agentChange: "chg",
   messageMedia: "mm",
+  mcpIntegration: "mint",
+  mcpToolCall: "mcall",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

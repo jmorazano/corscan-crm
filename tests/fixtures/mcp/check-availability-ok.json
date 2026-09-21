@@ -1,0 +1,277 @@
+{
+  "success": true,
+  "query": {
+    "check_in": "2026-09-25",
+    "check_out": "2026-09-27",
+    "nights": 2,
+    "guests": 4,
+    "property_type": null,
+    "city": null,
+    "bedrooms": null,
+    "bathrooms": null,
+    "facilities": [],
+    "facilities_any": [],
+    "conversation_id": "cv_demo123"
+  },
+  "available_count": 5,
+  "message": "5 alojamientos disponibles para las fechas y la cantidad de huéspedes consultadas.",
+  "search_url": "https://altosdecalamuchita.com/buscar?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123",
+  "search_url_note": null,
+  "properties": [
+    {
+      "id": "467904236771c73cb4059bb022753471",
+      "name": "Alquiler Temporario Casa Camiare | Potrero de Garay",
+      "slug": "alquiler-temporario-casa-camiare-potrero-de-garay",
+      "code": "AC-004",
+      "slogan": "Camiare // Lavandas & Lago",
+      "description": "Descubrí a Camiare, una exclusiva casa premium de alquiler temporario en Potrero de Garay, ideal para quienes buscan contemplar, desconectar y vivir una experiencia inmersiva frente al Dique Los Molinos, en pleno Valle de Calamuchita. Con impactantes vistas panorámicas 360° al lago y las sierras de Córdoba, esta residencia combina confort, privacidad y paisajes inolvidables.\nSus hermosos campos de lavanda, la piscina con vistas abiertas, el fogonero exterior y una cálida salamandra interior crean el escenario perfecto para compartir momentos memorables en cualquier época del año. Desde su galería, cada amanecer y atardecer se transforma en una experiencia única frente al paisaje serrano.\nAdemás, dentro del mismo entorno privado, un hermoso arroyo serrano a solo 300 metros de la propiedad suma una experiencia única de conexión con la naturaleza.\n\nExperiencia y Servicios Exclusivos:\n• Vista panorámica 360° al Dique Los Molinos: Un escenario privilegiado para contemplar el lago, las sierras y los mejores atardeceres.\n• Campos de lavanda: Un entorno natural único que convierte cada estadía en una experiencia visual y sensorial inolvidable.\n• Piscina con vistas abiertas: Ideal para relajarse contemplando el paisaje serrano.\n• Fogonero exterior | Noches memorables: El espacio perfecto para compartir largas conversaciones bajo las estrellas.\n• Calidez interior todo el año: Salamandra diseñada para disfrutar momentos cálidos y acogedores frente al paisaje.\n• Arroyo serrano dentro del entorno: A solo 300 metros, disfrutá de un hermoso arroyo natural rodeado de tranquilidad.\n• Desconexión exclusiva: Ideal para escapadas de relax, naturaleza y experiencias memorables en las sierras de Córdoba.",
+      "types": [
+        "Casa"
+      ],
+      "capacity": 8,
+      "bedrooms": 3,
+      "bathrooms": 3,
+      "square_meters": 300,
+      "city": "Potrero de Garay",
+      "neighborhood": "Camiare",
+      "location_reference": "Potrero de Garay",
+      "facilities": [
+        "Quincho con asador",
+        "Wifi / Smart tv",
+        "Aire Acondicionado / Calefacción",
+        "Salamandra a Leña",
+        "Piscina",
+        "Baño social",
+        "Cochera Cubierta",
+        "Ropa Blanca",
+        "Terraza Panorámica",
+        "Lavavajillas",
+        "Fogonero",
+        "Baño en suite",
+        "Baño completo",
+        "Sommier 2 plazas y media",
+        "Sommier 1 plaza",
+        "Tostadora Eléctrica",
+        "Pava Eléctrica",
+        "Lavarropas",
+        "Cocina 4 hornallas",
+        "Heladera",
+        "Microondas",
+        "Vajilla",
+        "Secador de cabello",
+        "Cafetera eléctrica",
+        "Pava",
+        "Horno eléctrico",
+        "Smart tv 43 pulgadas",
+        "Campo de lavandas"
+      ],
+      "details": [
+        {
+          "name": "Arrollo a 300 metros",
+          "value": "Tiene un hermoso arrollo dentro del barrio"
+        },
+        {
+          "name": "Campo de lavandas",
+          "value": "Tiene en el mismo patio de la casa un campo precioso de lavandas"
+        }
+      ],
+      "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a0/cec/22e/6a0cec22ebd2d962964911.jpg",
+      "min_stay": null,
+      "pricing": {
+        "currency": "ARS",
+        "nights": 2,
+        "price_per_night": 300000,
+        "accommodation": 600000,
+        "services": 0,
+        "total": 600000,
+        "deposit": 60000
+      },
+      "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-casa-camiare-potrero-de-garay?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+    },
+    {
+      "id": "c3f57dc0f9379cbb8ede996df7e561c5",
+      "name": "Alquiler Temporario Casa del Arroyo | Potrero de Garay",
+      "slug": "alquiler-temporario-casa-del-arroyo-potrero-de-garay",
+      "code": "AC-014",
+      "slogan": "Casa del Arroyo // Naturaleza, Deporte & Encuentro",
+      "description": "Alquiler Temporario en Potrero de Garay: Casa del Arroyo para Grupos y Familias\nSi estás buscando el mejor alojamiento en Potrero de Garay para tus próximas vacaciones, la Casa del Arroyo es el refugio definitivo. Su mayor diferencial es la magia de su entorno: a escasos metros de la puerta de la casa fluye un hermoso arroyo de aguas cristalinas. Ubicada dentro del exclusivo barrio privado Villa del Cóndor, esta imponente casa de alquiler temporario en las Sierras de Córdoba te ofrece la experiencia inigualable de despertar cada mañana con el sonido del agua y la naturaleza en su máxima expresión.\nDiseñada como un verdadero complejo vacacional, esta casa para 10 personas en Potrero de Garay cuenta con 4 amplias y luminosas habitaciones, garantizando el máximo confort para múltiples familias o grupos de amigos que desean compartir su estadía sin perder independencia.\nUn Arroyo a tus Pies y Club Deportivo Privado A diferencia de cualquier otra cabaña o casa en Potrero de Garay, la Casa del Arroyo te invita a bajar con el mate y sentarte en la orilla a disfrutar la paz del bosque sin salir de la propiedad. Complementando esta conexión única con el agua, el predio ofrece un complejo deportivo privado de primer nivel, ideal para mantenerte activo durante tus días de descanso. Las instalaciones exclusivas incluyen:\nCancha multideportes (tenis, fútbol y básquet) totalmente perimetrada.\n\nTradicional cancha de bochas integrada al paisaje serrano.\n\nGran pileta con solárium y un inmenso deck panorámico de madera que funciona como mirador hacia el parque.\n\nQuincho, Asador y Entretenimiento Los grandes grupos necesitan grandes espacios de reunión. La propiedad ofrece un espectacular quincho cerrado y vidriado con asador, equipado con mesa de pool y heladera propia para disfrutar de los mejores asados sin importar el clima exterior. Además, la casa principal dispone de una cocina moderna totalmente equipada, un amplio living-comedor climatizado y conexión WiFi estable.\nSeguridad y Ubicación Estratégica Disfrutá de la tranquilidad absoluta de alquilar una casa en un country con seguridad 24 horas. Su ubicación privilegiada te permite vivir el aislamiento, la privacidad y la relajación del arroyo, estando a la vez a muy pocos minutos del lago y de los principales puntos turísticos del Valle de Paravachasca y Calamuchita.\nAsegurá tu estadía en uno de los mejores alquileres vacacionales de Potrero de Garay. ¡El sonido del agua, el deporte y el encuentro perfecto te esperan en la Casa del Arroyo!",
+      "types": [
+        "Casa"
+      ],
+      "capacity": 10,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "square_meters": 250,
+      "city": "Potrero de Garay",
+      "neighborhood": "Villa del Condor",
+      "location_reference": "Potrero de Garay",
+      "facilities": [
+        "Wifi Starlink",
+        "Piscina",
+        "Aire Acondicionado / Calefacción",
+        "Quincho con asador",
+        "Cancha de Futbol",
+        "Cancha de Tenis",
+        "Cancha de Basquet",
+        "Cancha de Bochas",
+        "Baño social",
+        "Salamandra a Leña",
+        "Parrilla para asado",
+        "Cochera Cubierta",
+        "Ropa Blanca",
+        "Terraza Panorámica",
+        "Baño en suite",
+        "Baño",
+        "Sofá cama para 2 personas",
+        "Cafetera eléctrica",
+        "Pava",
+        "Smart tv 43 pulgadas",
+        "Sommier 1 plaza",
+        "Tostadora Eléctrica",
+        "Pava Eléctrica",
+        "Lavarropas",
+        "Cocina 4 hornallas",
+        "Heladera",
+        "Sommier 2 Plazas",
+        "Microondas",
+        "Vajilla",
+        "Secador de cabello"
+      ],
+      "details": [
+        {
+          "name": "Cancha de Tennis",
+          "value": "No se incluyen las raquetas ni pelotas de tennis, cada uno debe llevar"
+        },
+        {
+          "name": "Cancha de Futbol",
+          "value": "Incluye la Pelota"
+        },
+        {
+          "name": "Cancha de Basquet",
+          "value": "Incluye la pelota"
+        },
+        {
+          "name": "Quincho con asador",
+          "value": "En el quincho esta el pool"
+        }
+      ],
+      "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a6/8bc/e29/6a68bce29059d497245030.jpg",
+      "min_stay": 2,
+      "pricing": {
+        "currency": "ARS",
+        "nights": 2,
+        "price_per_night": 246510,
+        "accommodation": 493020,
+        "services": 44880,
+        "total": 537900,
+        "deposit": 242088
+      },
+      "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-casa-del-arroyo-potrero-de-garay?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+    },
+    {
+      "id": "56c1d9797ef88e49953c882890fef759",
+      "name": "Alquiler Temporario Cabaña Fronda | San Clemente",
+      "slug": "alquiler-temporario-cabana-de-bosque-fronda-san-clemente",
+      "code": "AC-011",
+      "slogan": "Fronda // Vistas & Pinares",
+      "description": "Descubrí a Fronda, una exclusiva cabaña de bosque de alquiler temporario en San Clemente, ubicada dentro de Altitud 1100, un barrio privado inmerso en las sierras del Valle de Calamuchita. Rodeada de un imponente bosque de pinos y con una vista abierta al paisaje serrano, fue diseñada para quienes buscan desconectar del ritmo cotidiano y reconectar con la tranquilidad de la naturaleza.\nDistribuida en dos plantas y con capacidad para 4 personas, Fronda combina madera, paisaje y calma en una experiencia inmersiva difícil de encontrar. Su cálida salamandra a leña transforma cada noche en un momento especial, ideal para disfrutar del silencio, largas conversaciones y la paz de la montaña.\n\nExperiencia y Servicios Exclusivos:\n• Bosque de pinos inmersivo: Una experiencia única rodeada de naturaleza, silencio y vistas abiertas a las sierras.\n• Vista abierta al paisaje serrano: Un escenario privilegiado para contemplar amaneceres, atardeceres y la inmensidad de las montañas.\n• Salamandra a leña | Noches memorables: El espacio perfecto para compartir momentos cálidos en plena naturaleza.\n• Ideal para 4 personas: Distribución en dos plantas, perfecta para escapadas en pareja, familia o amigos.\n• Conectividad sin límites: WiFi Starlink de alta velocidad, ideal para streaming o trabajo remoto.\n• Desconexión exclusiva: Una auténtica experiencia de calma, bosque y naturaleza en las sierras de Córdoba.",
+      "types": [
+        "Casa",
+        "Cabaña"
+      ],
+      "capacity": 4,
+      "bedrooms": 2,
+      "bathrooms": 1,
+      "square_meters": 135,
+      "city": "San Clemente",
+      "neighborhood": "Altitud 1100",
+      "location_reference": "San Clemente",
+      "facilities": [
+        "Salamandra a Leña",
+        "Quincho con asador"
+      ],
+      "details": [],
+      "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a2/480/61d/6a248061dc80e358947092.jpg",
+      "min_stay": 2,
+      "pricing": {
+        "currency": "ARS",
+        "nights": 2,
+        "price_per_night": 286000,
+        "accommodation": 572000,
+        "services": 44880,
+        "total": 616880,
+        "deposit": 245080
+      },
+      "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-cabana-de-bosque-fronda-san-clemente?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+    },
+    {
+      "id": "6f3d825529f18e71f891d1275ecf4b27",
+      "name": "Alquiler Temporario Cabaña Cumbre | San Clemente",
+      "slug": "alquiler-temporario-cabana-cumbre-san-clemente",
+      "code": "AC-012",
+      "slogan": "CUMBRE // Vistas al río & Inmensidad",
+      "description": "Descubrí a Cumbre, una exclusiva cabaña premium de alquiler temporario en San Clemente, ubicada dentro de Altitud 1100, un barrio privado inmerso en las sierras del Valle de Calamuchita. Diseñada para quienes buscan desconectar y vivir una experiencia inmersiva en plena naturaleza, combina tranquilidad, arquitectura de montaña y una impactante vista panorámica al Río San Pedro y las sierras de Córdoba.\nDesarrollada en una sola planta, Cumbre invita a contemplar el paisaje desde una espectacular terraza con vistas abiertas al Río San Pedro, al valle y a las montañas, donde la inmensidad del entorno se convierte en protagonista. Sus dos salamandras interiores a leña crean una atmósfera cálida y memorable, ideal para compartir largas conversaciones y disfrutar momentos únicos en cualquier época del año.\n\nExperiencia y Servicios Exclusivos:\n• Vista panorámica al Río San Pedro y las sierras: Un escenario privilegiado para contemplar amaneceres, atardeceres y la inmensidad del paisaje serrano.\n• Terraza inmersiva | Vista & contemplación: El espacio perfecto para relajarse contemplando el Río San Pedro y disfrutar una de las mejores vistas de San Clemente.\n• Dos salamandras a leña | Calidez todo el año: Una experiencia única de montaña para disfrutar noches acogedoras.\n• Altitud 1100 | Barrio privado en San Clemente: Privacidad, tranquilidad y contacto genuino con la naturaleza.\n• Ideal para familias o amigos: Dos habitaciones pensadas para escapadas memorables en las sierras de Córdoba.\n• Conectividad sin límites: WiFi Starlink de alta velocidad, ideal para streaming o trabajo remoto desde la montaña.\n• Desconexión exclusiva: Una auténtica experiencia de calma, montaña y vistas inolvidables en el Valle de Calamuchita.",
+      "types": [
+        "Casa",
+        "Cabaña"
+      ],
+      "capacity": 4,
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "square_meters": 200,
+      "city": "San Clemente",
+      "neighborhood": "Altitud 1100",
+      "location_reference": "San Clemente",
+      "facilities": [],
+      "details": [],
+      "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a2/ffc/2d8/6a2ffc2d87d6e003880824.jpg",
+      "min_stay": 2,
+      "pricing": {
+        "currency": "ARS",
+        "nights": 2,
+        "price_per_night": 330000,
+        "accommodation": 660000,
+        "services": 44880,
+        "total": 704880,
+        "deposit": 275880
+      },
+      "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-cabana-cumbre-san-clemente?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+    },
+    {
+      "id": "000bd8fe7070e9200d5d652076c119e7",
+      "name": "Alquiler Temporario Suite La Mansa | San Clemente",
+      "slug": "alquiler-temporario-suite-de-montana-la-mansa-san-clemente",
+      "code": "AC-009",
+      "slogan": "La Mansa // Bajada Exclusiva al Río San Pedro",
+      "description": "Descubrí a La Mansa, una acogedora suite de montaña de alquiler temporario en San Clemente, ubicada dentro de un barrio privado en las sierras del Valle de Calamuchita. Diseñada para quienes buscan desconectar y vivir una experiencia inmersiva en plena naturaleza, combina tranquilidad, montaña y una ubicación privilegiada a pasos del Río San Pedro.\nUbicada a pocos metros del río, La Mansa invita a disfrutar del sonido del agua, el aire puro de montaña y la calma característica de San Clemente. Su cálida salamandra interior crea el ambiente perfecto para compartir momentos memorables luego de un día rodeado de naturaleza.\n\nExperiencia y Servicios Exclusivos:\n• A metros del Río San Pedro: Una ubicación privilegiada para disfrutar del río, relajarse y conectar con uno de los paisajes naturales más lindos de San Clemente.\n• Suite de montaña | Naturaleza & tranquilidad: Un entorno ideal para quienes buscan descanso, calma serrana y desconexión.\n• Salamandra interior | Calidez todo el año: El espacio perfecto para disfrutar noches acogedoras en plena montaña.\n• Barrio privado en San Clemente: Privacidad, tranquilidad y contacto genuino con la naturaleza.\n• Desconexión junto al río: Ideal para escapadas románticas y experiencias inmersivas en las sierras de Córdoba.",
+      "types": [
+        "Suite de Montaña"
+      ],
+      "capacity": 4,
+      "bedrooms": 1,
+      "bathrooms": 1,
+      "square_meters": 60,
+      "city": "San Clemente",
+      "neighborhood": "Altitud 1100",
+      "location_reference": "San Clemente",
+      "facilities": [],
+      "details": [],
+      "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a2/46e/0f5/6a246e0f54e0d344903633.jpg",
+      "min_stay": 2,
+      "pricing": {
+        "currency": "ARS",
+        "nights": 2,
+        "price_per_night": 146410,
+        "accommodation": 292820,
+        "services": 44880,
+        "total": 337700,
+        "deposit": 147367
+      },
+      "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-suite-de-montana-la-mansa-san-clemente?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+    }
+  ],
+  "excluded_by_min_stay": {
+    "count": 0,
+    "min_nights_required": null
+  }
+}

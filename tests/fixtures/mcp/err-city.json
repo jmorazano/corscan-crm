@@ -1,0 +1,11 @@
+{
+  "success": false,
+  "error": {
+    "code": "unknown_city",
+    "message": "La localidad indicada no existe.",
+    "accepted": [
+      "Potrero de Garay",
+      "San Clemente"
+    ]
+  }
+}

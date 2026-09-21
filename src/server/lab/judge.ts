@@ -36,6 +36,8 @@ export async function judgeCase(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  /** 016: la empresa tiene conector de datos en vivo (ver buildJudgePrompt). */
+  hasLiveData?: boolean;
 }): Promise<JudgeOutcome> {
   // La corrida arranca solo con config (gate del POST /api/lab/runs); si la
   // borraron a mitad de corrida, el caso degrada a judge_failed sin colgarse.
@@ -51,6 +53,7 @@ export async function judgeCase(input: {
     transcript: input.transcript,
     kbText: input.kbText,
     behaviorText: input.behaviorText,
+    hasLiveData: input.hasLiveData ?? false,
   });
   const result = await chatJson(
     aiConfig,

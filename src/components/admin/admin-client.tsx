@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building2, KeyRound, UserPlus } from "lucide-react";
 import { ContactAvatar } from "@/components/avatar";
+import {
+  McpAdminCard,
+  type McpAdminSummary,
+} from "@/components/admin/mcp-admin-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +26,8 @@ type AdminOrganization = {
   createdAt: string;
   whatsappConnected: boolean;
   aiConfigured: boolean;
+  /** 016: conector MCP de esta empresa; null/ausente = sin fila. */
+  mcp?: McpAdminSummary | null;
   members: { userId: string; name: string; email: string; role: string }[];
 };
 
@@ -372,6 +378,12 @@ export function AdminClient() {
                   </div>
                 ))}
               </div>
+              <McpAdminCard
+                organizationId={org.id}
+                organizationName={org.name}
+                mcp={org.mcp}
+                onChanged={refetch}
+              />
               {userCreated?.organizationId === org.id && (
                 <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
                   <p className="font-medium text-[#3f6b52]">Usuario creado ✓</p>

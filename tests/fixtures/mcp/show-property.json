@@ -1,0 +1,84 @@
+{
+  "success": true,
+  "query": {
+    "property": "AC-003",
+    "conversation_id": "cv_demo123"
+  },
+  "property": {
+    "id": "1ee320a7125d92685fc245400fc8a93a",
+    "name": "Alquiler Temporario Casa Perla Negra | Potrero de Garay",
+    "slug": "alquiler-temporario-casa-perla-negra-potrero-de-garay",
+    "code": "AC-003",
+    "slogan": "Perla Negra // Paisaje, Calma & Hogar",
+    "description": "Descubrí a Perla Negra, una exclusiva residencia de alquiler temporario inmersa en un country privado de las sierras de Calamuchita. Diseñada meticulosamente para quienes buscan vivir una experiencia de confort, privacidad y contacto con la naturaleza, sin resignar sofisticación.\nDespertá cada mañana con vistas panorámicas abiertas al valle. Su imponente terraza volada, la arquitectura contemporánea y una exclusiva mini piscina integrada a la galería con vistas abiertas a las sierras invitan a contemplar el paisaje desde una perspectiva única, creando el escenario perfecto para compartir momentos memorables en familia o con amigos. Además, dentro del mismo country privado contarás con un hermoso arroyo serrano rodeado de naturaleza autóctona ubicado a tan solo 300 metros de la residencia, suma una experiencia única de conexión con el entorno.\nExperiencia y Servicios Exclusivos:\n• Mini piscina volada con vista a las sierras: Un espacio exclusivo integrado a la galería, ideal para relajarse contemplando el paisaje serrano desde una perspectiva única.\n• Arroyo serrano dentro del country: A solo 300 metros de la residencia, disfrutá de un hermoso arroyo natural ideal para caminar, relajarse y conectar con la tranquilidad de la montaña.\n• Momentos memorables junto al fuego: Salamandra de diseño pensada para compartir noches cálidas, largas conversaciones y experiencias inolvidables.\n• Tranquilidad total: Predio con seguridad las 24 horas para un descanso sin preocupaciones.\n• Confort absoluto: Espacios amplios, equipamiento premium y ambientes climatizados durante todo el año.\n• Conectividad ininterrumpida: Internet satelital Starlink de alta velocidad, ideal para combinar relax y teletrabajo en la montaña.",
+    "types": [
+      "Casa"
+    ],
+    "capacity": 10,
+    "bedrooms": 5,
+    "bathrooms": 3,
+    "square_meters": 300,
+    "city": "Potrero de Garay",
+    "neighborhood": "Villa del Condor",
+    "location_reference": "Potrero de Garay",
+    "facilities": [
+      "Aire Acondicionado / Calefacción",
+      "Wifi Starlink",
+      "Cava de vinos",
+      "Terraza Panorámica",
+      "Salamandra a Leña",
+      "Minipiscina",
+      "Baño social",
+      "Parrilla para asado",
+      "Ropa Blanca",
+      "Lavavajillas",
+      "Baño en suite",
+      "Cochera Cubierta",
+      "Sommier 2 plazas y media",
+      "Smart tv 32 pulgadas",
+      "Smart tv 43 pulgadas",
+      "Cama marinera para 2 personas",
+      "Cafetera eléctrica",
+      "Anafe",
+      "Pava",
+      "Cocina eléctrica",
+      "Asador",
+      "Sommier 1 plaza",
+      "Tostadora Eléctrica",
+      "Pava Eléctrica",
+      "Cocina 4 hornallas",
+      "Heladera",
+      "Microondas",
+      "Vajilla",
+      "Secador de cabello",
+      "Plancha",
+      "Arroyo en el barrio",
+      "Rio en el barrio"
+    ],
+    "details": [
+      {
+        "name": "Salamandra Interior",
+        "value": "Si esta habilitada para el uso"
+      },
+      {
+        "name": "Minipiscina volada en la terrada",
+        "value": "Tiene 3 x 2 metros solo para verano"
+      },
+      {
+        "name": "Cochera Techada",
+        "value": "Si tiene la hicimos nueva"
+      },
+      {
+        "name": "Aire frio / calor",
+        "value": "En todos los ambientes"
+      },
+      {
+        "name": "Asador",
+        "value": "Se encuentra adentro, en la parte de la cocina"
+      }
+    ],
+    "image": "https://altosdecalamuchita.com/storage/app/uploads/public/6a2/5b8/41b/6a25b841b0644698797840.jpg",
+    "url": "https://altosdecalamuchita.com/alquiler/alquiler-temporario-casa-perla-negra-potrero-de-garay?cid=cv_demo123"
+  },
+  "pricing_note": "Esta consulta no cotiza ni informa disponibilidad: para precios y fechas libres usar check-availability, indicando fecha de ingreso, fecha de salida y cantidad de huéspedes."
+}

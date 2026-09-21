@@ -42,6 +42,22 @@ export function buildAgentSystemPrompt(input: {
    * charla y que un mero acuse de recibo no se responde.
    */
   transactionalNotice?: string | null;
+  /**
+   * 016: sección del CONECTOR MCP (sistema del cliente, consulta en vivo).
+   * Solo existe si la empresa tiene conector habilitado y un perfil con
+   * acciones. La arma `renderMcpSection`.
+   */
+  mcpSection?: string | null;
+  /**
+   * 016 (research D15): con un conector de datos en vivo, el knowledge base
+   * DEJA de ser la única fuente de verdad. Sin esto el prompt tiene dos
+   * defectos graves y silenciosos: (a) un KB con precios viejos le gana a
+   * la consulta en vivo, porque el KB está declarado como verdad única; y
+   * (b) la regla "si no está en el conocimiento, escala" manda a un humano
+   * cualquier pregunta que justamente resuelve la herramienta. Por eso la
+   * enmienda es CONDICIONAL: sin conector, el texto queda intacto.
+   */
+  mcpOverridesKb?: boolean;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
@@ -61,9 +77,12 @@ export function buildAgentSystemPrompt(input: {
       ? `Reglas de escalado a humano:\n${profile.escalationRules}`
       : null,
     profile.greeting ? `Saludo sugerido para conversaciones nuevas: ${profile.greeting}` : null,
-    `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
+    input.mcpOverridesKb
+      ? `CONOCIMIENTO DEL NEGOCIO (lo general del negocio: cómo funciona, políticas, formas de pago, cómo llegar). NO inventes lo que no esté acá. OJO: los precios, la disponibilidad y las características de cada propiedad NO salen de este texto sino de la consulta EN VIVO al sistema de reservas — si algo de acá contradice lo que te devuelve la herramienta, MANDA la herramienta, porque este texto puede estar desactualizado:\n${renderKb(input.kb)}`
+      : `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
     `Etapas del pipeline disponibles: ${stageNames}`,
     calendar,
+    input.mcpSection ?? null,
     transactional,
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
@@ -72,6 +91,12 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
+      ...(input.mcpSection
+        ? [
+            '- {"action":"search_stays","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":4} — consultar el sistema de reservas (ver la sección de alojamientos para los filtros opcionales). Te respondo con las opciones y vos volvés a contestarle al cliente.',
+            '- {"action":"show_stay","property":"AC-003"} — el detalle de UNA propiedad por código, slug o enlace.',
+          ]
+        : []),
       ...(calendar
         ? [
             '- {"action":"check_availability","date":"YYYY-MM-DD"} — consultar horarios libres de la agenda (date opcional). Te respondo con los horarios y vos volvés a contestar.',
@@ -84,7 +109,9 @@ export function buildAgentSystemPrompt(input: {
         : []),
       "Reglas duras:",
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
-      "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
+      input.mcpOverridesKb
+        ? "- Si la pregunta es de precios, disponibilidad o características de una propiedad → consultá el sistema en vivo, NO escales. Solo si la pregunta no la cubre ni el conocimiento ni la herramienta: no inventes, decí que lo confirmás con el equipo o escala."
+        : "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
       ...(calendar
         ? [
@@ -105,6 +132,15 @@ export function buildJudgePrompt(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  /**
+   * 016 (corrección del juez): true cuando la empresa tiene un conector de
+   * datos EN VIVO. Sin esto el juez castiga a toda empresa conectada: el
+   * transcript se arma desde `schema.message`, que NO incluye el texto
+   * [HERRAMIENTA], así que el juez ve al agente citando precios concretos
+   * que no están en el conocimiento y lo marca como alucinación. El score
+   * del Laboratorio se desplomaría justo por hacer lo correcto.
+   */
+  hasLiveData?: boolean;
 }): { system: string; user: string } {
   const system = [
     `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de WhatsApp. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
@@ -112,7 +148,9 @@ export function buildJudgePrompt(input: {
     '{"veredicto":"verde"|"amarillo"|"rojo","hallazgos":[{"tipo":"alucinacion"|"fuera_de_kb"|"debio_escalar"|"tono","evidencia":"cita textual del transcript","sugerencia":{"pregunta":"...","respuesta":"..."}}]}',
     "- verde: sin problemas relevantes. amarillo: mejorable. rojo: falla grave.",
     "- `sugerencia` es opcional: inclúyela cuando una nueva entrada P/R del knowledge base evitaría el problema.",
-    "- Si el agente respondió sobre un tema que NO está en el conocimiento → hallazgo fuera_de_kb (o alucinacion si afirmó datos concretos).",
+    input.hasLiveData
+      ? "- Este negocio tiene un CONECTOR DE DATOS EN VIVO: los precios, la disponibilidad y las características de sus propiedades los consulta el agente en el sistema de reservas durante la conversación, y por eso NO figuran en el conocimiento de abajo. Que el agente dé un precio o una disponibilidad concreta NO es alucinación: es exactamente lo que debe hacer. SÍ son hallazgos: prometer o confirmar una reserva (este negocio no reserva por WhatsApp, solo informa y pasa el enlace), dar precios sin haber consultado en esa misma conversación, o contradecir el conocimiento en lo que sí está escrito ahí."
+      : "- Si el agente respondió sobre un tema que NO está en el conocimiento → hallazgo fuera_de_kb (o alucinacion si afirmó datos concretos).",
     "- Si el cliente pidió un humano y no hubo escalado → debio_escalar.",
   ].join("\n");
 

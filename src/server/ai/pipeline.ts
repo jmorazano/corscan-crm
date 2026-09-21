@@ -9,7 +9,15 @@ import { publish } from "@/server/events/bus";
 import { notifyHandoff } from "@/server/push/events";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
-import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
+import {
+  AgentAction,
+  degradeAction,
+  isCalendarAction,
+  isMcpAction,
+  resolveStage,
+  type AgentActionType,
+} from "@/server/ai/actions";
+import { stripBookingPromise } from "@/lib/promise-guard";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
@@ -20,9 +28,34 @@ import {
   renderCalendarSection,
   type CalendarContext,
 } from "@/server/calendar/agent-tools";
+import {
+  executeMcpAction,
+  loadMcpContext,
+  renderMcpSection,
+  MCP_TOOL_TEXT_ROLE,
+  type McpContext,
+} from "@/server/mcp/agent-tools";
 
 /** Vueltas extra al modelo por resultados de herramienta (research D6). */
 const MAX_TOOL_ROUNDS = 2;
+
+/**
+ * 016: el presupuesto de herramientas es POR FAMILIA (agenda / conector) con
+ * una cota TOTAL encima. Antes había un solo contador compartido: una empresa
+ * con agenda Y conector podía quedarse sin vueltas a mitad de una consulta de
+ * alojamientos porque las había gastado en la agenda — y peor, degradaba con
+ * el texto cableado de turnos ("te confirmo el turno con el equipo") a alguien
+ * que estaba preguntando por una cabaña.
+ */
+const MAX_TOOL_ROUNDS_TOTAL = 3;
+
+/**
+ * Reloj duro de TODO el tramo de herramientas del turno. El servidor del
+ * cliente no lo operamos nosotros y su latencia no es nuestra: sin esta cota,
+ * tres vueltas con timeout de 10 s cada una más el pensar del modelo pueden
+ * dejar a una persona esperando en WhatsApp mucho más de lo tolerable.
+ */
+const TOOL_WALL_CLOCK_MS = 45_000;
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -172,25 +205,77 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
+  // Constitución III: las dos lecturas pasan por scoped() como el resto del
+  // repo (venían con eq() pelado desde 001; mismo resultado, una regla menos
+  // que recordar a mano).
   const kb = await db
     .select()
     .from(schema.kbEntry)
-    .where(eq(schema.kbEntry.organizationId, organizationId))
+    .where(scoped(schema.kbEntry.organizationId, organizationId))
     .orderBy(asc(schema.kbEntry.createdAt));
   const stages = await db
     .select({ id: schema.pipelineStage.id, name: schema.pipelineStage.name })
     .from(schema.pipelineStage)
-    .where(eq(schema.pipelineStage.organizationId, organizationId))
+    .where(scoped(schema.pipelineStage.organizationId, organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
   // Agenda (005): la sección solo existe si la empresa conectó calendario.
   // Un fallo al cargarla NO tumba el turno: el agente opera sin agenda.
+  // 016: el último enlace seguro del conector, para que la frase de reemplazo
+  // de la guarda de promesas pueda ofrecer dónde reservar de verdad.
+  let lastStayLink: string | null = null;
   let calendar: CalendarContext | null = null;
   try {
     calendar = await loadCalendarContext(organizationId, conversation.contactId);
   } catch (err) {
     console.error("[agente] no se pudo cargar la agenda:", err instanceof Error ? err.message : err);
   }
+
+  // Conector MCP (016): la sección solo existe si la empresa tiene conector
+  // habilitado con un perfil que declara acciones. Igual que la agenda, un
+  // fallo al cargarlo NO tumba el turno — el agente opera sin datos en vivo.
+  // En sandbox jamás sale a la red (FR-013).
+  let mcp: McpContext | null = null;
+  try {
+    mcp = await loadMcpContext(organizationId, conversationId, {
+      sandbox: conversation.isTest,
+    });
+  } catch (err) {
+    console.error(
+      "[agente] no se pudo cargar el conector MCP:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  const mcpSection = mcp
+    ? renderMcpSection(mcp, { hasCalendar: calendar !== null })
+    : null;
+
+  /**
+   * Entrega conversacional con la GUARDA DE PROMESAS (016, FR-009).
+   *
+   * El sistema del cliente es de SOLO LECTURA: la allowlist de herramientas
+   * hace imposible que el agente EJECUTE una reserva, pero nada le impedía
+   * PROMETERLA por WhatsApp ("listo, te la reservo para el finde"). Eso es
+   * peor que un error técnico: la persona se queda tranquila, no reserva en
+   * el sitio, y la cabaña se la lleva otro.
+   *
+   * La guarda se aplica SOLO con conector activo. Con agenda (005) y sin
+   * conector, "te reservo el turno" es exactamente lo que el agente debe
+   * decir — ahí sí puede agendar de verdad.
+   */
+  const say = async (text: string): Promise<void> => {
+    if (!mcp) {
+      await deliverConversationalReply(conversation, text, lastInbound.id);
+      return;
+    }
+    const guarded = stripBookingPromise(text, { link: lastStayLink });
+    if (guarded.replaced) {
+      console.warn(
+        `[agente] promesa de reserva suprimida en ${conversation.id}: ${guarded.match ?? "?"}`
+      );
+    }
+    await deliverConversationalReply(conversation, guarded.text, lastInbound.id);
+  };
 
   const messages: ChatMessage[] = [
     {
@@ -202,6 +287,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         calendarSection: calendar ? renderCalendarSection(calendar) : null,
         calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
         transactionalNotice: transactional?.notice ?? null,
+        mcpSection,
+        mcpOverridesKb: mcpSection !== null,
       }),
     },
     ...history
@@ -226,8 +313,67 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // Loop de herramienta de la agenda (D6): el servidor ejecuta, el modelo
   // vuelve a decidir con el resultado; acotado a MAX_TOOL_ROUNDS.
   let lastAvailabilityText: string | null = null;
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (action.action !== "check_availability" && action.action !== "book_appointment") break;
+  // 016: lo último SEGURO que se supo del conector — plantilla propia,
+  // números y enlaces validados, sin un carácter de texto libre del tercero.
+  let lastStaySummary: string | null = null;
+  let calendarRounds = 0;
+  let mcpRounds = 0;
+  const toolDeadline = Date.now() + TOOL_WALL_CLOCK_MS;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS_TOTAL; round++) {
+    const wantsCalendar = isCalendarAction(action);
+    const wantsMcp = isMcpAction(action);
+    if (!wantsCalendar && !wantsMcp) break;
+    // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
+    // vueltas al conector, ni al revés.
+    if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
+    if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
+    if (Date.now() >= toolDeadline) break;
+
+    // ---- Conector MCP (016) -------------------------------------------
+    if (isMcpAction(action)) {
+      mcpRounds++;
+      // El modelo pidió una herramienta que esta empresa no tiene: degradar
+      // sin inventar y sin escalar a ciegas.
+      if (!mcp) {
+        await say("Dejame confirmar esa información con el equipo y te escribo en un ratito.");
+        await applyHandoff(conversationId, organizationId, "modelo");
+        return;
+      }
+      const out = await executeMcpAction(mcp, action, {
+        conversationId,
+        sandbox: conversation.isTest,
+        budgetMs: Math.max(0, toolDeadline - Date.now()),
+      });
+      if (out.clientSummary) {
+        lastStaySummary = out.clientSummary;
+        // El enlace ya pasó por safeLink contra los dominios del perfil
+        // cuando el perfil compuso el resumen: extraerlo de ahí es seguro y
+        // evita que el pipeline conozca la forma de la respuesta del PMS.
+        lastStayLink = out.clientSummary.match(/https:\/\/\S+/)?.[0] ?? lastStayLink;
+      }
+      // Corrección #7: el resultado entra como turno de USUARIO, no de
+      // sistema — es un DATO que llegó de afuera, no una regla nuestra.
+      messages.push({ role: MCP_TOOL_TEXT_ROLE, content: out.toolText });
+      const next = await chatJson(aiConfig, AgentAction, messages);
+      if (!next.ok) {
+        console.error(`[agente] fallo del proveedor tras conector (raw): ${next.detail}`);
+        if (lastStaySummary) {
+          await say(lastStaySummary);
+          return;
+        }
+        await applyHandoff(conversationId, organizationId, "error");
+        return;
+      }
+      action = next.data;
+      continue;
+    }
+
+    // ---- Agenda (005) --------------------------------------------------
+    // El guard en línea estrecha `action` a la unión de la agenda (con la
+    // variable booleana de arriba TypeScript no puede hacerlo).
+    if (!isCalendarAction(action)) break;
+    calendarRounds++;
 
     // Sin agenda (o agendado deshabilitado para reservas): el modelo no
     // debió elegir esto — degradar a derivación amable.
@@ -296,6 +442,21 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     action = next.data;
   }
 
+  // 016: agotado el presupuesto del CONECTOR, el modelo sigue pidiendo datos.
+  // Degradar con lo último seguro que se supo — que ya es una respuesta útil
+  // de verdad (propiedades, precios y enlace) — y solo escalar si no hay nada.
+  // Va por deliverConversationalReply y no por deliverReply: esto NO es la
+  // confirmación de una acción ya ejecutada, es una respuesta de conversación.
+  if (isMcpAction(action)) {
+    if (lastStaySummary) {
+      await say(lastStaySummary);
+      return;
+    }
+    await say("Estoy consultando la disponibilidad y te confirmo en un ratito.");
+    await applyHandoff(conversationId, organizationId, "modelo");
+    return;
+  }
+
   // Agotadas las vueltas y el modelo sigue pidiendo herramienta: degradar
   // a una respuesta útil con lo último que se supo, sin colgarse.
   if (action.action === "check_availability" || action.action === "book_appointment") {
@@ -322,7 +483,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
       if (action.reply) {
-        await deliverConversationalReply(conversation, action.reply, lastInbound.id);
+        await say(action.reply);
       }
       return;
     }
@@ -332,18 +493,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     case "none":
       return;
     case "reply":
-      await deliverConversationalReply(conversation, action.text, lastInbound.id);
+      await say(action.text);
       return;
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
       if (action.reply) {
-        await deliverConversationalReply(conversation, action.reply, lastInbound.id);
+        await say(action.reply);
       }
       return;
     }
     case "handoff": {
       if (action.farewell) {
-        await deliverConversationalReply(conversation, action.farewell, lastInbound.id);
+        await say(action.farewell);
       }
       await applyHandoff(conversationId, organizationId, "modelo");
       return;
