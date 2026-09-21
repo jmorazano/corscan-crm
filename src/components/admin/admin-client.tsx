@@ -7,6 +7,7 @@ import {
   McpAdminCard,
   type McpAdminSummary,
 } from "@/components/admin/mcp-admin-client";
+import { McpOverviewClient } from "@/components/admin/mcp-overview-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -292,6 +293,11 @@ export function AdminClient() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Panel consolidado de conectores MCP (016): el estado de TODAS las
+            empresas de un vistazo, arriba de la lista. La tarjeta por empresa
+            sigue abajo, que es donde se edita la dirección y la credencial. */}
+        <McpOverviewClient onChanged={refetch} />
 
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

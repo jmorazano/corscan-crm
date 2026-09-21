@@ -156,10 +156,159 @@ desconocido).
 `mcp: null` cuando no hay fila. La `endpointUrl` completa se sirve solo en el
 `McpAdminView` del PUT o del detalle, no en el listado.
 
+## Panel consolidado de conectores
+
+Las rutas de arriba son las de **alta, edición y baja** de UNA empresa. Las de
+esta sección son las de **observación y verificación de TODAS**: sin ellas, el
+estado de una conexión solo se podía mirar empresa por empresa, entrando al
+panel expandido de cada una, y con lo que la fila declara de sí misma —
+nunca con lo que la bitácora `mcp_tool_call` sabe de si la conexión ANDA.
+
+Módulo: `src/server/mcp/admin.ts`. Es **cross-tenant a propósito** (misma
+excepción consciente del Principio III que `listOrganizations` y que
+`sharedWithFor`), y por eso se sirve **únicamente** bajo `withSuperAdmin`. La
+credencial no viaja nunca: solo `credentialLoaded` + `credentialLast4`. La
+`endpointUrl` completa sí, porque el consumidor es el super admin (#36).
+
+### DTO `McpConnectorRow`
+
+```jsonc
+{
+  "organizationId": "org_…",
+  "organizationName": "Altos de Calamuchita",
+  "connector": {                      // null si la empresa no tiene fila
+    "profile": "altos_de_calamuchita",
+    "profileName": "Altos de Calamuchita",
+    "label": "Altos de Calamuchita (reservas)",
+    "endpointUrl": "https://altosdecalamuchita.com/mcp/assistant",  // completa
+    "endpointHost": "altosdecalamuchita.com",
+    "authScheme": "bearer",
+    "status": "connected",            // enabled | connected | reconnect_required | disabled
+    "sessionMode": "stateless",
+    "serverName": "altos-mcp", "serverVersion": "1.4.0", "protocolVersion": "2025-06-18",
+    "toolCount": 3,                   // cuántas expuso el último tools/list, no cuáles
+    "credentialLoaded": true, "credentialLast4": "3f9a",   // el valor JAMÁS sale
+    "agentToolsEnabled": true, "useServerInstructions": false,
+    "timezone": "America/Argentina/Cordoba",
+    "timeoutMs": 10000, "maxResponseBytes": 524288,
+    "catalogTtlMinutes": 60, "catalogFetchedAt": "ISO|null",
+    "catalogStale": false,            // venció el TTL; false si el perfil no tiene catálogo
+    "enabledAt": "ISO", "connectedAt": "ISO|null", "lastHandshakeAt": "ISO|null",
+    "lastErrorCode": "timeout|null",  // CÓDIGO, nunca texto del remoto (#13)
+    "lastErrorAt": "ISO|null",
+    "shared": false,
+    "sharedWith": [{ "organizationId": "org_…", "name": "Otra empresa" }]
+  },
+  "health": {                         // de mcp_tool_call, SIN las filas is_test
+    "calls24h": 40, "errors24h": 3,
+    "calls7d": 210, "errors7d": 11,
+    "sandboxCalls24h": 6,             // el Laboratorio, aparte: no salió a la red (SC-003)
+    "lastCallAt": "ISO|null",
+    "lastErrorCode": "timeout|null",  // el más reciente de los últimos 7 días
+    "p50Ms": 812, "p95Ms": 2991,      // latencia de 24 h; null sin muestras
+    "topErrors": [{ "code": "timeout", "n": 8 }]   // 7 días, top 3
+  }
+}
+```
+
+`health` viene en **cero** (no `null`) para una empresa sin conector o sin una
+sola llamada: la UI no tiene que distinguir casos para pintar un número.
+
+Las filas `is_test` se excluyen de toda la salud **a propósito**: nunca
+salieron a la red, así que contarlas diría que el conector anda cuando jamás
+se probó. Van en `sandboxCalls24h`, que es además la evidencia del sandbox.
+
+### `GET /api/admin/mcp`
+
+```jsonc
+{
+  "summary": {
+    "organizations": 12, "withConnector": 4,
+    "connected": 2, "reconnectRequired": 1, "enabled": 1, "disabled": 0,
+    "withErrors24h": 1              // empresas con ≥1 error REAL en 24 h
+  },
+  "filters": { "q": "", "status": null },
+  "organizations": [ McpConnectorRow, … ]
+}
+```
+
+| Query | Efecto |
+|---|---|
+| `?q=` | texto libre sobre nombre de empresa, `endpointHost` o `label`; sin tildes y sin mayúsculas |
+| `?status=` | `connected` · `reconnect_required` · `enabled` · `disabled` · `none` (empresas SIN conector) |
+
+Un `status` desconocido **se ignora** (no es un 422): un filtro de la URL que
+rompe la pantalla es peor que un filtro que no filtra. Los filtros son puros y
+se testean solos: `parseMcpConnectorFilters` / `filterMcpConnectors`.
+
+El `summary` es **siempre el de toda la instancia**, nunca el del subconjunto
+filtrado: si filtrar cambiara el resumen, el semáforo dejaría de ser un
+semáforo.
+
+Orden de `organizations`: primero lo que necesita atención
+(`reconnect_required` → con errores en 24 h → el resto → sin conector) y,
+dentro de cada grupo, alfabético. El panel se lee de arriba hacia abajo.
+
+`401 unauthorized` / `403 forbidden`.
+
+### `GET /api/admin/mcp/[id]`
+
+`200 { organization: McpConnectorRow & { recentCalls } }` — el mismo DTO más
+las **últimas 20 llamadas** de la bitácora de esa empresa (esta query sí pasa
+por `scoped()`: es la única lectura de datos de dominio de una sola empresa).
+
+```jsonc
+{
+  "id": "mcall_…", "tool": "check-availability",
+  "status": "ok",                    // ok | error
+  "errorCode": null, "httpStatus": 200,
+  "durationMs": 457, "responseBytes": 14820,
+  "isTest": false, "conversationId": "cv_…", "createdAt": "ISO",
+  // NO los args completos: solo escalares de una allowlist, saneados,
+  // aplastados a una línea y truncados a 40 caracteres.
+  "argsSummary": { "check_in": "2026-10-12", "check_out": "2026-10-14", "guests": 4 }
+}
+```
+
+`argsSummary` existe para diagnosticar («pidió del 12 al 14 para 4 personas»)
+sin convertir el panel del super admin en una pantalla para texto que escribió
+un cliente por WhatsApp (FR-011, #22). Allowlist: `check_in`, `check_out`,
+`guests`, `city`, `property_type`, `bedrooms`, `bathrooms`, `property`.
+
+`404 organization_not_found` cuando la empresa no existe (una empresa sin
+conector devuelve `200` con `connector: null`).
+
+### `POST /api/admin/mcp/[id]/verify`
+
+Handshake **en vivo** de cualquier empresa, disparado por el super admin. Es
+lo que convierte el panel en gestión y no en lectura: hasta acá, para saber si
+el conector de un cliente seguía vivo había que entrar como ese cliente.
+
+Body vacío. Va por `handshakeGuarded` (`src/server/mcp/calls.ts`), **no** por
+`handshake` a secas: mismo cupo de **6 por minuto POR EMPRESA** (#16), así que
+esta ruta no es una puerta de atrás al cupo. Tras un handshake OK dispara el
+prefetch del catálogo, igual que la verificación del `owner`.
+
+| Respuesta | Cuándo |
+|---|---|
+| `200 { ok: true, organization: McpConnectorDetail }` | conector actualizado, listo para repintar la fila sin un GET extra |
+| `401` / `403` | sin sesión / sin rol de plataforma |
+| `404 organization_not_found` | la empresa no existe |
+| `409 not_enabled` | la empresa no tiene el conector habilitado |
+| `409 no_credential` | todavía no se cargó la credencial del proveedor |
+| `429 rate_limited { retryInSeconds }` | cupo de 6/min de esa empresa |
+| `502 provider_error { mcpCode, missingTools?, organization }` | el servidor falló; el conector va igual, porque `lastErrorCode`/`lastErrorAt` ya quedaron escritos y el fallo también es información |
+
+Todo `message` sale de `MCP_ERROR_TEXT`; `mcpCode` es el código estable para
+que la UI elija el banner. El super admin **no ve ni toca la credencial**: el
+handshake la descifra dentro de `integration.ts` y de ahí no sale.
+
 ## Qué NO está en este contrato
 
-- **Verificar la conexión** — es del `owner` de la empresa; el super admin no
-  toca credenciales de terceros más allá de dejar una cargada al habilitar.
+- **Cargar o rotar la credencial de una empresa** — es del `owner`; el super
+  admin solo puede dejar una cargada al habilitar. Verificar, en cambio, sí es
+  suyo desde `POST /api/admin/mcp/[id]/verify` (arriba): dispara el handshake
+  sin ver el secreto.
 - **Un segundo servidor MCP por empresa** — `uniqueIndex(organization_id)`.
   Pasar a N es aditivo (`+ slug` y unique compuesto); al revés, no.
 - **Una env nueva** — la superficie de env de 016 es **cero exacto**

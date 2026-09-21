@@ -25,6 +25,8 @@ type State = {
   agentProfile: Row[];
   metaCredentials: Row[];
   aiCredentials: Row[];
+  /** 016: conector MCP por empresa. */
+  mcpIntegration: Row[];
 };
 
 let state: State;
@@ -53,6 +55,7 @@ function tableKey(table: unknown): keyof State {
   if (table === schema.agentProfile) return "agentProfile";
   if (table === schema.metaCredentials) return "metaCredentials";
   if (table === schema.aiCredentials) return "aiCredentials";
+  if (table === schema.mcpIntegration) return "mcpIntegration";
   throw new Error("tabla inesperada en el stub");
 }
 
@@ -174,6 +177,7 @@ beforeEach(() => {
     agentProfile: [],
     metaCredentials: [],
     aiCredentials: [],
+    mcpIntegration: [],
   };
   signUpEmailMock.mockReset();
   // El signup real escribe el usuario vía el adapter de Better Auth: el mock
@@ -282,6 +286,84 @@ describe("createOrganizationWithAdmin", () => {
 });
 
 describe("listOrganizations", () => {
+  /**
+   * REGRESIÓN (016): `listOrganizations` no devolvía el campo `mcp`, así que
+   * `McpAdminCard` lo recibía `undefined` y mostraba «Sin conector» aunque la
+   * empresa tuviera uno andando — ofreciendo «Habilitar conector», que es un
+   * upsert y al reescribir la dirección BORRA la credencial (FR-005). El bug
+   * llegó a producción; este test existe para que no vuelva.
+   */
+  it("016: informa el conector MCP de cada empresa, y marca el host compartido", async () => {
+    state.organization.push(
+      {
+        id: "org_con",
+        name: "Con conector",
+        slug: "con",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+      {
+        id: "org_otro",
+        name: "Mismo host",
+        slug: "otro",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+      {
+        id: "org_sin",
+        name: "Sin conector",
+        slug: "sin",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
+      }
+    );
+    state.mcpIntegration.push(
+      {
+        organizationId: "org_con",
+        profile: "altos_de_calamuchita",
+        status: "connected",
+        endpointUrl: "https://altosdecalamuchita.com/mcp/assistant",
+      },
+      {
+        organizationId: "org_otro",
+        profile: "altos_de_calamuchita",
+        status: "enabled",
+        endpointUrl: "https://altosdecalamuchita.com/mcp/otro",
+      }
+    );
+
+    const orgs = await listOrganizations(stubDb());
+    const byId = new Map(orgs.map((o) => [o.id, o]));
+
+    // La empresa CON conector lo informa: es exactamente lo que fallaba.
+    expect(byId.get("org_con")?.mcp).toEqual({
+      enabled: true,
+      profile: "altos_de_calamuchita",
+      status: "connected",
+      endpointHost: "altosdecalamuchita.com",
+      shared: true,
+    });
+    // Dos empresas contra el mismo host: las dos quedan marcadas.
+    expect(byId.get("org_otro")?.mcp?.shared).toBe(true);
+    expect(byId.get("org_otro")?.mcp?.status).toBe("enabled");
+    // La que no tiene conector devuelve null explícito, no undefined.
+    expect(byId.get("org_sin")?.mcp).toBeNull();
+  });
+
+  it("016: `disabled` sigue siendo un conector existente, pero no habilitado", async () => {
+    state.organization.push({
+      id: "org_off",
+      name: "Apagada",
+      slug: "off",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    state.mcpIntegration.push({
+      organizationId: "org_off",
+      profile: "generic",
+      status: "disabled",
+      endpointUrl: "https://pms.example.com/mcp",
+    });
+    const orgs = await listOrganizations(stubDb());
+    expect(orgs[0]?.mcp).toMatchObject({ enabled: false, status: "disabled" });
+  });
+
   it("empresas con miembros y estados; aiConfigured real por ai_credentials (US3)", async () => {
     state.organization.push(
       {
@@ -321,6 +403,7 @@ describe("listOrganizations", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         whatsappConnected: true,
         aiConfigured: true,
+        mcp: null,
         members: [
           {
             userId: "u_1",
@@ -337,6 +420,7 @@ describe("listOrganizations", () => {
         createdAt: "2026-02-01T00:00:00.000Z",
         whatsappConnected: false,
         aiConfigured: false,
+        mcp: null,
         members: [],
       },
     ]);

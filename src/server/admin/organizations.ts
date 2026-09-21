@@ -252,6 +252,21 @@ export type AdminOrganization = {
   createdAt: string;
   whatsappConnected: boolean;
   aiConfigured: boolean;
+  /**
+   * 016: resumen del conector MCP de esta empresa. `null` = no tiene.
+   * Antes este campo NO se poblaba y `McpAdminCard` recibía `undefined`:
+   * la tarjeta decía «Sin conector» aunque la empresa tuviera uno andando,
+   * y ofrecía «Habilitar conector» — que es un upsert y, al reescribir la
+   * dirección, BORRA la credencial (FR-005). Es decir: se podía pisar un
+   * conector en producción creyendo que se lo estaba dando de alta.
+   */
+  mcp: {
+    enabled: boolean;
+    profile: string;
+    status: string;
+    endpointHost: string;
+    shared: boolean;
+  } | null;
   members: { userId: string; name: string; email: string; role: string }[];
 };
 
@@ -301,6 +316,46 @@ export async function listOrganizations(
     .from(schema.aiCredentials);
   const aiConfiguredOrgs = new Set(aiRows.map((r) => r.organizationId));
 
+  // 016: conector MCP por empresa. Lectura CROSS-TENANT deliberada — es el
+  // panel de plataforma, igual que las dos consultas de arriba.
+  const mcpRows = await db
+    .select({
+      organizationId: schema.mcpIntegration.organizationId,
+      profile: schema.mcpIntegration.profile,
+      status: schema.mcpIntegration.status,
+      endpointUrl: schema.mcpIntegration.endpointUrl,
+    })
+    .from(schema.mcpIntegration);
+  const hostOf = (url: string): string => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return "";
+    }
+  };
+  // Un host que aparece en más de una empresa: se avisa en la tarjeta,
+  // porque si además comparten credencial comparten la atribución.
+  const hostCount = new Map<string, number>();
+  for (const r of mcpRows) {
+    const h = hostOf(r.endpointUrl);
+    hostCount.set(h, (hostCount.get(h) ?? 0) + 1);
+  }
+  const mcpByOrg = new Map(
+    mcpRows.map((r) => {
+      const host = hostOf(r.endpointUrl);
+      return [
+        r.organizationId,
+        {
+          enabled: r.status !== "disabled",
+          profile: r.profile,
+          status: r.status,
+          endpointHost: host,
+          shared: (hostCount.get(host) ?? 0) > 1,
+        },
+      ] as const;
+    })
+  );
+
   return orgs.map((org) => ({
     id: org.id,
     name: org.name,
@@ -308,6 +363,7 @@ export async function listOrganizations(
     createdAt: org.createdAt.toISOString(),
     whatsappConnected: connected.has(org.id),
     aiConfigured: aiConfiguredOrgs.has(org.id),
+    mcp: mcpByOrg.get(org.id) ?? null,
     members: members
       .filter((m) => m.organizationId === org.id)
       .map((m) => ({
