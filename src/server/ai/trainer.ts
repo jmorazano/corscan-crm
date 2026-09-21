@@ -256,8 +256,15 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
   covered().set(conversationId, lastOwner.createdAt.getTime());
 }
 
+/** Texto de la respuesta; vacío en `apply` sin `reply` → se arma tras aplicar. */
 function replyTextOf(action: TrainerActionType): string {
-  return action.action === "reply" ? action.text : action.reply;
+  return action.action === "reply" ? action.text : (action.reply ?? "");
+}
+
+function fallbackReply(outcome: ApplyOutcome): string {
+  if (outcome.applied.length === 0) return "No pude guardar ese cambio.";
+  const items = outcome.applied.map((c) => c.summary);
+  return items.length === 1 ? `Listo, guardé: ${items[0]}.` : `Listo, guardé:\n- ${items.join("\n- ")}`;
 }
 
 /**
@@ -283,7 +290,7 @@ async function persistAgentReply(
         conversationId: conversation.id,
         direction: "in",
         type: "text",
-        text,
+        text: text || "…",
         status: "delivered",
         aiGenerated: true,
         waTimestamp: now,
@@ -298,12 +305,15 @@ async function persistAgentReply(
         { organizationId, conversationId: conversation.id, messageId: message.id },
         action.changes
       );
+      let finalText = text || fallbackReply(outcome);
       if (outcome.rejected.length > 0) {
         const reasons = Array.from(new Set(outcome.rejected.map((r) => r.reason))).join("; ");
-        const suffix = `\n\n(No pude guardar ${outcome.rejected.length} cambio${outcome.rejected.length === 1 ? "" : "s"}: ${reasons}.)`;
+        finalText += `\n\n(No pude guardar ${outcome.rejected.length} cambio${outcome.rejected.length === 1 ? "" : "s"}: ${reasons}.)`;
+      }
+      if (finalText !== message.text) {
         const fixed = await tx
           .update(schema.message)
-          .set({ text: `${text}${suffix}` })
+          .set({ text: finalText })
           .where(eq(schema.message.id, message.id))
           .returning();
         message = fixed[0] ?? message;
@@ -336,7 +346,7 @@ async function persistAgentReply(
     publish(organizationId, {
       type: "conversation.updated",
       data: {
-        conversation: serializeConversation(fresh[0].conversation, fresh[0].contact, text),
+        conversation: serializeConversation(fresh[0].conversation, fresh[0].contact, message.text),
       },
     });
   }

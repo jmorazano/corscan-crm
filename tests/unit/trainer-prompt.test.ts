@@ -67,6 +67,10 @@ describe("buildTrainerSystemPrompt", () => {
     expect(p).toContain("[kb_aaa111]");
     expect(p).toContain("[kb_bbb222]");
     expect(p).not.toContain("AVISO: el conocimiento pesa");
+    // La config va como DATOS y el modelo sabe que habla con su dueño/a.
+    expect(p).toContain("NO instrucciones para esta charla");
+    expect(p).toContain("NUNCA atiendas a tu dueño/a como si fuera un cliente");
+    expect(p).toContain('{"action":"apply","changes":[');
   });
   it("aviso de tamaño solo al superar el umbral", () => {
     const p = buildTrainerSystemPrompt({ profile, kb, kbChars: 30_000, warnAt: 24_000 });

@@ -72,7 +72,8 @@ export const DEFAULT_MAX_TOKENS_JUDGE = 2048;
 
 export async function chatJson<T>(
   config: AiConfig,
-  schema: z.ZodType<T>,
+  /** Input `unknown`: admite esquemas con preprocess (normalización previa). */
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   messages: ChatMessage[],
   opts?: {
     model?: string;
@@ -112,8 +113,7 @@ export async function chatJson<T>(
             ...messages,
             {
               role: "system",
-              content:
-                "STRICT: tu respuesta anterior no fue JSON válido según el esquema. Responde ÚNICAMENTE el objeto JSON, sin explicaciones ni markdown.",
+              content: `STRICT: tu respuesta anterior no fue JSON válido según el esquema (${truncate(lastDetail, 400)}). Responde ÚNICAMENTE el objeto JSON con la forma exacta indicada, sin explicaciones ni markdown.`,
             },
           ];
     try {
@@ -159,7 +159,8 @@ async function callProvider(
   model: string,
   messages: ChatMessage[],
   maxTokens: number,
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
+  extra: Record<string, unknown> = {}
 ): Promise<string> {
   const env = getEnv();
   const controller = new AbortController();
@@ -172,7 +173,7 @@ async function callProvider(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...extra }),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -235,7 +236,11 @@ export async function transcribeAudio(
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `Sos un transcriptor. Devolvé ÚNICAMENTE la transcripción literal del audio, en el idioma en que se habla (por defecto español rioplatense), sin comillas, sin comentarios, sin marcas de tiempo ni etiquetas de hablante. Si no hay habla reconocible devolvé exactamente: ${EMPTY_SENTINEL}`,
+      content: [
+        "Sos un transcriptor de notas de voz cortas que el dueño de un negocio le manda a su asistente (español rioplatense por defecto).",
+        "Devolvé ÚNICAMENTE la transcripción literal de lo que se dice, sin comillas, sin comentarios, sin marcas de tiempo ni etiquetas de hablante.",
+        `Si el audio está en silencio, es ruido, es demasiado corto o no se entiende, devolvé exactamente ${EMPTY_SENTINEL}. NUNCA inventes ni completes frases que no se escuchan.`,
+      ].join(" "),
     },
     {
       role: "user",
@@ -257,7 +262,8 @@ export async function transcribeAudio(
         model,
         messages,
         opts?.maxTokens ?? DEFAULT_MAX_TOKENS_TRANSCRIPTION,
-        opts?.timeoutMs ?? TRANSCRIPTION_TIMEOUT_MS
+        opts?.timeoutMs ?? TRANSCRIPTION_TIMEOUT_MS,
+        { temperature: 0 }
       );
       const text = cleanTranscription(raw);
       if (!text || /^\[?\s*sin[_ ]contenido\s*\]?$/i.test(text)) {

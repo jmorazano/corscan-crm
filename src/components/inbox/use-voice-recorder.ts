@@ -5,9 +5,14 @@ import { encodeWav, pickRecorderMimeType } from "@/lib/audio-record";
 
 /**
  * Grabador de notas de voz (015, US3). Tap para grabar / tap para enviar.
- * MediaRecorder en `audio/mp4` (Safari/iOS, Chrome escritorio) o
- * `audio/ogg` (Firefox); si el navegador solo ofrece WebM (que el proveedor
- * no acepta), graba PCM con un AudioWorklet y codifica WAV en el cliente.
+ *
+ * Camino principal: PCM por AudioWorklet → WAV 16 kHz mono codificado en el
+ * cliente. Es el formato más robusto para cualquier modelo de transcripción
+ * (sin contenedor ni códec que decodificar) y el reproductor muestra la
+ * duración real. El MP4 fragmentado de MediaRecorder (Chrome) se reproducía
+ * con 0:00/0:00 y el modelo alucinaba frases sobre audio que no decodificaba.
+ * Respaldo (sin AudioWorklet): MediaRecorder en `audio/mp4` u `audio/ogg`;
+ * nunca WebM (el proveedor no lo acepta).
  */
 
 export type RecorderState = "idle" | "requesting" | "recording" | "uploading" | "error";
@@ -157,23 +162,15 @@ export function useVoiceRecorder(opts: {
     chunksRef.current = [];
     pcmRef.current = [];
 
-    const mime =
-      typeof MediaRecorder !== "undefined"
-        ? pickRecorderMimeType((t) => MediaRecorder.isTypeSupported(t))
-        : null;
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     try {
-      if (mime) {
-        mimeRef.current = mime;
-        const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32_000 });
-        rec.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
-        };
-        recorderRef.current = rec;
-        rec.start(1000);
-      } else {
-        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (Ctx) {
         const ctx = new Ctx();
         ctxRef.current = ctx;
+        // iOS crea el contexto suspendido hasta un gesto: estamos dentro del tap.
+        if (ctx.state === "suspended") await ctx.resume().catch(() => {});
         const source = ctx.createMediaStreamSource(stream);
         if (ctx.audioWorklet) {
           await ctx.audioWorklet.addModule("/pcm-recorder-worklet.js");
@@ -193,6 +190,19 @@ export function useVoiceRecorder(opts: {
           proc.connect(ctx.destination);
           nodeRef.current = proc;
         }
+      } else {
+        const mime =
+          typeof MediaRecorder !== "undefined"
+            ? pickRecorderMimeType((t) => MediaRecorder.isTypeSupported(t))
+            : null;
+        if (!mime) throw new Error("sin formato de grabación aceptado");
+        mimeRef.current = mime;
+        const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32_000 });
+        rec.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
+        recorderRef.current = rec;
+        rec.start(1000);
       }
     } catch {
       release();

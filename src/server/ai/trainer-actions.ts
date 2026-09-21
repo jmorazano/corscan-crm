@@ -53,15 +53,53 @@ export const TrainerChange = z.discriminatedUnion("op", [
 ]);
 export type TrainerChangeType = z.infer<typeof TrainerChange>;
 
-export const TrainerAction = z.discriminatedUnion("action", [
+const OPS = ["kb_add", "kb_update", "kb_delete", "profile_set", "profile_append"] as const;
+
+/**
+ * Normaliza salidas "casi correctas" del modelo ANTES de validar (puro):
+ * - `{"action":"kb_add",…}` o `{"op":"kb_add",…}` (el cambio suelto, sin el
+ *   sobre `apply`) → `{"action":"apply","changes":[…]}`.
+ * - `{"changes":[…]}` sin `action` → `apply`.
+ * - `reply`/`text` intercambiados en `reply` y `apply`.
+ * En producción el modelo devolvió el primer caso tres veces seguidas y el
+ * turno degradaba a «proveedor no respondió» por un detalle de forma.
+ */
+export function normalizeTrainerOutput(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const o = raw as Record<string, unknown>;
+  const isOp = (v: unknown): v is (typeof OPS)[number] =>
+    typeof v === "string" && (OPS as readonly string[]).includes(v);
+  if (isOp(o.op) || isOp(o.action)) {
+    const op = isOp(o.op) ? o.op : (o.action as (typeof OPS)[number]);
+    const { action: _action, op: _op, reply, text, ...rest } = o;
+    void _action;
+    void _op;
+    const message = typeof reply === "string" ? reply : typeof text === "string" ? text : undefined;
+    return { action: "apply", changes: [{ ...rest, op }], ...(message ? { reply: message } : {}) };
+  }
+  if (Array.isArray(o.changes) && o.action !== "apply") {
+    return { ...o, action: "apply" };
+  }
+  if (o.action === "reply" && typeof o.text !== "string" && typeof o.reply === "string") {
+    return { ...o, text: o.reply };
+  }
+  if (o.action === "apply" && typeof o.reply !== "string" && typeof o.text === "string") {
+    return { ...o, reply: o.text };
+  }
+  return raw;
+}
+
+const TrainerActionStrict = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reply"), text: z.string().trim().min(1).max(2000) }),
   z.object({
     action: z.literal("apply"),
     changes: z.array(TrainerChange).min(1).max(MAX_CHANGES_PER_TURN),
-    reply: z.string().trim().min(1).max(2000),
+    /** Opcional: si falta, el servidor confirma con los resúmenes aplicados. */
+    reply: z.string().trim().min(1).max(2000).optional(),
   }),
 ]);
-export type TrainerActionType = z.infer<typeof TrainerAction>;
+export const TrainerAction = z.preprocess(normalizeTrainerOutput, TrainerActionStrict);
+export type TrainerActionType = z.infer<typeof TrainerActionStrict>;
 
 /**
  * Agrega una línea a un campo de texto (puro): "amable" + "No usar emojis."

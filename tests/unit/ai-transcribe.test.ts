@@ -32,6 +32,7 @@ describe("transcribeAudio", () => {
     expect(r).toEqual({ ok: true, text: "Hola, quiero enseñarte algo." });
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
     expect(body.model).toBe("google/gemini-2.5-flash");
+    expect(body.temperature).toBe(0);
     const user = body.messages.find((m: { role: string }) => m.role === "user");
     expect(user.content[0]).toEqual({ type: "text", text: "Transcribí este audio." });
     expect(user.content[1].type).toBe("input_audio");
