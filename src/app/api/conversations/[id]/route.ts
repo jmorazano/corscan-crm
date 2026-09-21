@@ -58,6 +58,15 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
  */
 export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
+  // 015: la conversación del entrenador es fija (se puede vaciar, no borrar).
+  const current = await getConversation(session.organizationId, id);
+  if (current?.conversation.kind === "trainer") {
+    return apiError(
+      409,
+      "trainer_conversation",
+      "La conversación con tu agente no se puede borrar; podés vaciarla desde su panel"
+    );
+  }
   const deleted = await deleteConversation(session.organizationId, id);
   if (!deleted) return apiError(404, "not_found", "Conversación no encontrada");
   publish(session.organizationId, {

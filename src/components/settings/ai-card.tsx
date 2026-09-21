@@ -28,17 +28,23 @@ type AiSettingsResponse = {
     tokenLast4: string;
     model: string | null;
     judgeModel: string | null;
+    transcriptionModel: string | null;
   } | null;
-  defaults: { model: string; judgeModel: string };
+  defaults: { model: string; judgeModel: string; transcriptionModel: string };
 };
 
 export function AiCard() {
   const [loaded, setLoaded] = useState(false);
   const [config, setConfig] = useState<AiSettingsResponse["config"]>(null);
-  const [defaults, setDefaults] = useState({ model: "", judgeModel: "" });
+  const [defaults, setDefaults] = useState({
+    model: "",
+    judgeModel: "",
+    transcriptionModel: "",
+  });
   const [token, setToken] = useState("");
   const [model, setModel] = useState("");
   const [judgeModel, setJudgeModel] = useState("");
+  const [transcriptionModel, setTranscriptionModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -52,6 +58,7 @@ export function AiCard() {
     setDefaults(data.defaults);
     setModel(data.config?.model ?? "");
     setJudgeModel(data.config?.judgeModel ?? "");
+    setTranscriptionModel(data.config?.transcriptionModel ?? "");
     setLoaded(true);
   }, []);
 
@@ -70,6 +77,7 @@ export function AiCard() {
         token,
         model: model.trim() || undefined,
         judgeModel: judgeModel.trim() || undefined,
+        transcriptionModel: transcriptionModel.trim() || undefined,
       }),
     }).catch(() => null);
     setSaving(false);
@@ -187,6 +195,22 @@ export function AiCard() {
                 placeholder={defaults.judgeModel || "default de producto"}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-transcription-model">
+              Modelo de transcripción de notas de voz (opcional)
+            </Label>
+            <Input
+              id="ai-transcription-model"
+              value={transcriptionModel}
+              onChange={(e) => setTranscriptionModel(e.target.value)}
+              placeholder={defaults.transcriptionModel || "default de producto"}
+            />
+            <p className="text-xs text-muted-foreground">
+              Modelo con entrada de audio (p. ej. google/gemini-2.5-flash). Lo
+              usa la conversación con tu agente para transcribir lo que le
+              decís por voz.
+            </p>
           </div>
           <p className="text-xs text-muted-foreground">
             Vacíos usan los defaults de producto que ves de guía. El token no

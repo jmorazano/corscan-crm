@@ -8,10 +8,13 @@ import {
   CheckCheck,
   Clock3,
   Copy,
+  Loader2,
+  Mic,
   Paperclip,
   Sparkles,
 } from "lucide-react";
 import type { MessageDto } from "@/lib/types";
+import { formatElapsed } from "@/lib/audio-record";
 import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { cn } from "@/lib/utils";
 import { useLongPress } from "@/components/gestures";
@@ -91,7 +94,17 @@ async function copyText(text: string): Promise<boolean> {
 /** Umbral para considerar que el operador está «al final» del hilo. */
 const NEAR_BOTTOM_PX = 80;
 
-export function MessageThread({ messages }: { messages: MessageDto[] }) {
+export function MessageThread({
+  messages,
+  kind = "whatsapp",
+  thinkingLabel = null,
+}: {
+  messages: MessageDto[];
+  /** 015: en el hilo del entrenador no hay ticks de entrega ni etiquetas de API. */
+  kind?: "whatsapp" | "trainer";
+  /** 015: «{agente} está pensando…» mientras se espera la respuesta. */
+  thinkingLabel?: string | null;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const prevRef = useRef<{ count: number; firstId: string | null }>({
@@ -172,12 +185,25 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
               )}
               <Bubble
                 message={m}
+                kind={kind}
                 grouped={grouped}
                 onLongPress={() => setSheetMsg(m)}
               />
             </div>
           );
         })}
+        {thinkingLabel && (
+          <div className="mt-2.5 flex justify-start" data-testid="trainer-thinking">
+            <div className="flex items-center gap-2 rounded-lg rounded-tl-[5px] bg-background px-3 py-2 text-sm text-text-3 shadow-sm">
+              <span className="flex items-center gap-[3px]" aria-hidden>
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-3 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-3 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-3" />
+              </span>
+              {thinkingLabel}
+            </div>
+          </div>
+        )}
       </div>
 
       {showJump && (
@@ -236,17 +262,70 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
   );
 }
 
+/**
+ * Nota de voz (015): reproductor + transcripción con estados. `status`
+ * es el estado de la transcripción, no de la entrega.
+ */
+function AudioNote({ message: m }: { message: MessageDto }) {
+  const media = m.media!;
+  return (
+    <div className="min-w-[220px]" data-testid="audio-message" data-status={m.status}>
+      <div className="flex items-center gap-2">
+        <audio
+          controls
+          preload="none"
+          src={media.url}
+          data-testid="audio-player"
+          className="h-9 w-full max-w-[260px]"
+        />
+        {media.durationMs !== null && (
+          <span className="shrink-0 text-[11px] text-text-3">
+            {formatElapsed(media.durationMs)}
+          </span>
+        )}
+      </div>
+      <div
+        data-testid="audio-transcription"
+        className={cn(
+          "mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[13px] leading-snug",
+          m.status === "failed" ? "text-destructive" : "text-text-2"
+        )}
+      >
+        {m.status === "pending" ? (
+          <>
+            <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
+            <span>Transcribiendo…</span>
+          </>
+        ) : m.status === "failed" ? (
+          <>
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+            <span>{m.error ?? "No pude transcribir el audio"}</span>
+          </>
+        ) : (
+          <>
+            <Mic className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" strokeWidth={1.7} />
+            <span className="whitespace-pre-wrap break-words">{m.text}</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Bubble({
   message: m,
+  kind,
   grouped,
   onLongPress,
 }: {
   message: MessageDto;
+  kind: "whatsapp" | "trainer";
   grouped: boolean;
   onLongPress: () => void;
 }) {
   const { handlers } = useLongPress(onLongPress);
   const out = m.direction === "out";
+  const wa = kind === "whatsapp";
   return (
     <div
       className={cn(
@@ -268,6 +347,8 @@ function Bubble({
       >
         {m.type === "text" || m.type === "template" ? (
           <span className="whitespace-pre-wrap break-words">{m.text}</span>
+        ) : m.type === "audio" && m.media ? (
+          <AudioNote message={m} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />
@@ -278,6 +359,7 @@ function Bubble({
         <span className="float-right ml-2 mt-1 flex items-center gap-1">
           {m.aiGenerated && (
             <span
+              data-testid="message-ai-chip"
               className="inline-flex items-center gap-0.5 text-[10px] font-medium text-brand"
               title="Respuesta generada por IA"
             >
@@ -285,9 +367,9 @@ function Bubble({
             </span>
           )}
           <span className="text-[10.5px] text-text-4">{bubbleTime(m.createdAt)}</span>
-          {out && <StatusTicks status={m.status} error={m.error} />}
+          {out && wa && <StatusTicks status={m.status} error={m.error} />}
         </span>
-        {out && m.via?.kind === "api" && (
+        {out && wa && m.via?.kind === "api" && (
           <span
             data-testid="message-via-api"
             className="mt-1.5 block clear-both border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3"
@@ -296,7 +378,7 @@ function Bubble({
             Enviado por API · {m.via.label}
           </span>
         )}
-        {out && m.status === "failed" && (
+        {out && wa && m.status === "failed" && (
           <span
             data-testid="message-fail-reason"
             className="mt-1.5 block clear-both border-t border-destructive/20 pt-1 text-[11px] leading-snug text-destructive"

@@ -1,53 +1,45 @@
-import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
-import { getDb, schema } from "@/lib/db";
-import { scoped } from "@/lib/db/tenant";
+import {
+  deleteEntry,
+  KbError,
+  kbPatchSchema,
+  updateEntry,
+} from "@/server/kb/service";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-const patchSchema = z.object({
-  question: z.string().trim().min(1).max(500).optional(),
-  answer: z.string().trim().min(1).max(4000).optional(),
-  content: z.string().trim().min(1).max(8000).optional(),
-});
+const KB_ERROR_STATUS: Record<KbError["code"], number> = {
+  not_found: 404,
+  kind_mismatch: 422,
+  invalid: 422,
+};
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
-  const body = await parseBody(req, patchSchema);
+  const body = await parseBody(req, kbPatchSchema);
   if (!body.ok) return body.response;
-
-  const db = getDb();
-  const updated = await db
-    .update(schema.kbEntry)
-    .set({ ...body.data, updatedAt: new Date() })
-    .where(
-      scoped(
-        schema.kbEntry.organizationId,
-        session.organizationId,
-        eq(schema.kbEntry.id, id)
-      )
-    )
-    .returning();
-  if (!updated[0]) return apiError(404, "not_found", "Entrada no encontrada");
-  return Response.json({ entry: updated[0] });
+  try {
+    const { after } = await updateEntry(session.organizationId, id, body.data);
+    return Response.json({ entry: after });
+  } catch (err) {
+    if (err instanceof KbError) {
+      return apiError(KB_ERROR_STATUS[err.code], err.code, err.message);
+    }
+    throw err;
+  }
 });
 
 export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
-  const db = getDb();
-  const deleted = await db
-    .delete(schema.kbEntry)
-    .where(
-      scoped(
-        schema.kbEntry.organizationId,
-        session.organizationId,
-        eq(schema.kbEntry.id, id)
-      )
-    )
-    .returning();
-  if (!deleted[0]) return apiError(404, "not_found", "Entrada no encontrada");
-  return Response.json({ deleted: true });
+  try {
+    await deleteEntry(session.organizationId, id);
+    return Response.json({ deleted: true });
+  } catch (err) {
+    if (err instanceof KbError) {
+      return apiError(KB_ERROR_STATUS[err.code], err.code, err.message);
+    }
+    throw err;
+  }
 });

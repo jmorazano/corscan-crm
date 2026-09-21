@@ -2,7 +2,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { scoped } from "@/lib/db/tenant";
-import type { AiConfig } from "@/lib/ai";
+import { DEFAULT_TRANSCRIPTION_MODEL, type AiConfig } from "@/lib/ai";
 
 /**
  * Config de IA POR EMPRESA (US3, contrato ai-settings.md) — patrón calcado de
@@ -18,6 +18,7 @@ import type { AiConfig } from "@/lib/ai";
  */
 export const DEFAULT_AGENT_MODEL = "anthropic/claude-sonnet-4.5";
 export const DEFAULT_JUDGE_MODEL = "anthropic/claude-haiku-4.5";
+export { DEFAULT_TRANSCRIPTION_MODEL };
 
 /** Lo que la UI puede ver de la config (jamás el token completo). */
 export type AiSettings = {
@@ -25,6 +26,8 @@ export type AiSettings = {
   /** Modelo elegido por la empresa; null = usa el default de producto. */
   model: string | null;
   judgeModel: string | null;
+  /** 015: modelo con entrada de audio para notas de voz; null = default. */
+  transcriptionModel: string | null;
 };
 
 /**
@@ -55,6 +58,7 @@ export async function getAiConfig(
     }),
     model: row.model ?? DEFAULT_AGENT_MODEL,
     judgeModel: row.judgeModel ?? row.model ?? DEFAULT_JUDGE_MODEL,
+    transcriptionModel: row.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL,
   };
 }
 
@@ -93,6 +97,7 @@ export async function getAiSettings(
     ),
     model: row.model,
     judgeModel: row.judgeModel,
+    transcriptionModel: row.transcriptionModel,
   };
 }
 
@@ -102,6 +107,7 @@ export async function saveAiConfig(input: {
   token: string;
   model?: string | null;
   judgeModel?: string | null;
+  transcriptionModel?: string | null;
 }): Promise<void> {
   const db = getDb();
   const enc = encryptSecret(input.token);
@@ -115,6 +121,7 @@ export async function saveAiConfig(input: {
       tokenTag: enc.tag,
       model: input.model ?? null,
       judgeModel: input.judgeModel ?? null,
+      transcriptionModel: input.transcriptionModel ?? null,
     })
     .onConflictDoUpdate({
       target: [schema.aiCredentials.organizationId],
@@ -124,6 +131,7 @@ export async function saveAiConfig(input: {
         tokenTag: enc.tag,
         model: input.model ?? null,
         judgeModel: input.judgeModel ?? null,
+        transcriptionModel: input.transcriptionModel ?? null,
         updatedAt: new Date(),
       },
     });

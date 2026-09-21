@@ -8,6 +8,8 @@ import { EventEmitter } from "node:events";
 
 export type SseEvent =
   | { type: "message.new"; data: { conversationId: string; message: unknown } }
+  /** 015: reemplazo in situ (transcripción de una nota de voz lista o fallida). */
+  | { type: "message.updated"; data: { conversationId: string; message: unknown } }
   | {
       type: "message.status";
       data: { conversationId: string; messageId: string; status: string };

@@ -75,6 +75,13 @@ export async function sendText(input: {
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
     );
   }
+  // 015: segundo guardrail — la conversación del entrenador es interna.
+  if (row.conversation.kind !== "whatsapp") {
+    throw new SendError(
+      "sandbox_violation",
+      "Conversación interna (entrenador): el envío real está prohibido"
+    );
+  }
 
   if (!isWindowOpen(row.conversation.lastInboundAt)) {
     throw new SendError(

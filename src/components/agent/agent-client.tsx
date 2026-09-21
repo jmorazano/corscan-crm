@@ -25,6 +25,8 @@ type KbEntry = {
   question: string | null;
   answer: string | null;
   content: string | null;
+  /** 015: origen de la entrada (chip «desde el chat» / «del Laboratorio»). */
+  source?: "manual" | "lab" | "trainer";
 };
 
 export function AgentClient() {
@@ -299,7 +301,12 @@ function KbSection({
 
         <ul className="space-y-2">
           {entries.map((e) => (
-            <li key={e.id} className="flex items-start gap-2 rounded-md border p-3">
+            <li
+              key={e.id}
+              data-testid="kb-entry"
+              data-source={e.source ?? "manual"}
+              className="flex items-start gap-2 rounded-md border p-3"
+            >
               <div className="min-w-0 flex-1 text-sm">
                 {e.kind === "qa" ? (
                   <>
@@ -308,6 +315,19 @@ function KbSection({
                   </>
                 ) : (
                   <p className="whitespace-pre-wrap text-muted-foreground">{e.content}</p>
+                )}
+                {e.source && e.source !== "manual" && (
+                  <span
+                    data-testid="kb-source"
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[10.5px] font-medium text-brand-text"
+                    title={
+                      e.source === "trainer"
+                        ? "La agregó el agente a partir de lo que le enseñaste en la Bandeja"
+                        : "Sugerencia del Laboratorio aplicada"
+                    }
+                  >
+                    {e.source === "trainer" ? "desde el chat" : "del Laboratorio"}
+                  </span>
                 )}
               </div>
               <Button

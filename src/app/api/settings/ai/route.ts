@@ -3,11 +3,13 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_JUDGE_MODEL,
+  DEFAULT_TRANSCRIPTION_MODEL,
   deleteAiConfig,
   getAiSettings,
   saveAiConfig,
   tokenLast4,
 } from "@/server/ai/credentials";
+import { publish } from "@/server/events/bus";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +28,14 @@ export const GET = withAuth(async (session) => {
           tokenLast4: settings.tokenLast4,
           model: settings.model,
           judgeModel: settings.judgeModel,
+          transcriptionModel: settings.transcriptionModel,
         }
       : null,
-    defaults: { model: DEFAULT_AGENT_MODEL, judgeModel: DEFAULT_JUDGE_MODEL },
+    defaults: {
+      model: DEFAULT_AGENT_MODEL,
+      judgeModel: DEFAULT_JUDGE_MODEL,
+      transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
+    },
   });
 });
 
@@ -38,6 +45,8 @@ const putSchema = z.object({
   token: z.string().trim().min(1).max(512),
   model: z.string().trim().min(1).max(200).optional(),
   judgeModel: z.string().trim().min(1).max(200).optional(),
+  /** 015: modelo con entrada de audio (notas de voz del entrenador). */
+  transcriptionModel: z.string().trim().min(1).max(200).optional(),
 });
 
 export const PUT = withAuth(async (session, req: Request) => {
@@ -56,6 +65,12 @@ export const PUT = withAuth(async (session, req: Request) => {
     token: body.data.token,
     model: body.data.model ?? null,
     judgeModel: body.data.judgeModel ?? null,
+    transcriptionModel: body.data.transcriptionModel ?? null,
+  });
+  // 015: la conversación con el agente aparece/desaparece con la config.
+  publish(session.organizationId, {
+    type: "conversations.updated",
+    data: { conversationIds: [] },
   });
   return Response.json({ ok: true, tokenLast4: tokenLast4(body.data.token) });
 });
@@ -70,5 +85,9 @@ export const DELETE = withAuth(async (session) => {
     );
   }
   await deleteAiConfig(session.organizationId);
+  publish(session.organizationId, {
+    type: "conversations.updated",
+    data: { conversationIds: [] },
+  });
   return Response.json({ ok: true });
 });

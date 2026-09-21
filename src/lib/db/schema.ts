@@ -206,8 +206,16 @@ export const conversation = pgTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contact.id, { onDelete: "cascade" }),
-    /** Conversación del Laboratorio: jamás toca la API de WhatsApp. */
+    /** Sandbox (Laboratorio o entrenador, 015): jamás toca la API de WhatsApp. */
     isTest: boolean("is_test").notNull().default(false),
+    /**
+     * 015: `whatsapp` = conversación real con un contacto; `trainer` = la
+     * conversación fija del dueño con su propio agente (una por empresa,
+     * contacto sintético, is_test). Ramifica UI, envío y turno.
+     */
+    kind: text("kind", { enum: ["whatsapp", "trainer"] })
+      .notNull()
+      .default("whatsapp"),
     aiEnabled: boolean("ai_enabled").notNull().default(true),
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
@@ -228,6 +236,10 @@ export const conversation = pgTable(
     uniqueIndex("conversation_org_contact_real_uq")
       .on(t.organizationId, t.contactId)
       .where(sql`${t.isTest} = false`),
+    // 015: una sola conversación del entrenador por empresa.
+    uniqueIndex("conversation_org_trainer_uq")
+      .on(t.organizationId)
+      .where(sql`${t.kind} = 'trainer'`),
     index("conversation_org_last_idx").on(t.organizationId, t.lastMessageAt),
     index("conversation_tags_gin_idx").using("gin", t.tags),
   ]
@@ -327,6 +339,10 @@ export const aiCredentials = pgTable(
     model: text("model"),
     /** Modelo del juez del Laboratorio; NULL = default (o el del agente). */
     judgeModel: text("judge_model"),
+    /** 015: modelo con entrada de audio para transcribir notas de voz del
+     * entrenador; NULL = default de producto (nunca el del agente: puede no
+     * aceptar audio). */
+    transcriptionModel: text("transcription_model"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -363,11 +379,76 @@ export const kbEntry = pgTable(
     question: text("question"),
     answer: text("answer"),
     content: text("content"),
+    /** 015: origen de la entrada (chip en Agente): manual, sugerencia del
+     * Laboratorio o enseñanza por chat del entrenador. */
+    source: text("source", { enum: ["manual", "lab", "trainer"] })
+      .notNull()
+      .default("manual"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [index("kb_org_idx").on(t.organizationId)]
 );
+
+/**
+ * Auditoría de cambios del agente (015): cada alta/edición/baja del
+ * conocimiento o del perfil aplicada por el entrenador, con el estado
+ * anterior y posterior para poder deshacerla. `message_id` apunta a la
+ * respuesta del agente que la reportó (sin cascade: borrar el hilo no borra
+ * la auditoría).
+ */
+export const agentChange = pgTable(
+  "agent_change",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    messageId: text("message_id").references(() => message.id, {
+      onDelete: "set null",
+    }),
+    source: text("source", { enum: ["trainer", "manual", "lab"] })
+      .notNull()
+      .default("trainer"),
+    op: text("op", {
+      enum: ["kb_add", "kb_update", "kb_delete", "profile_update"],
+    }).notNull(),
+    /** id de kb_entry, o nombre del campo del perfil. */
+    targetId: text("target_id"),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    summary: text("summary").notNull(),
+    revertedAt: timestamp("reverted_at"),
+    revertedBy: text("reverted_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("agent_change_org_created_idx").on(t.organizationId, t.createdAt)]
+);
+
+/**
+ * Media adjunta a un mensaje (015, notas de voz del entrenador). 1:1 con el
+ * mensaje; se sirve SOLO autenticada y por tenant en /api/message-media/{id}
+ * (a diferencia de template_media, que Meta descarga sin auth).
+ */
+export const messageMedia = pgTable("message_media", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  messageId: text("message_id")
+    .notNull()
+    .unique()
+    .references(() => message.id, { onDelete: "cascade" }),
+  /** Normalizado, sin `;codecs=` (audio/mp4, audio/ogg, audio/wav…). */
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  durationMs: integer("duration_ms"),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const template = pgTable(
   "template",

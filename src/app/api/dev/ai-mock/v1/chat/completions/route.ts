@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => ({}))) as {
-    messages?: { role: string; content: string }[];
+    messages?: Parameters<typeof aiMockCompletion>[0];
   };
   const content = aiMockCompletion(body.messages ?? []);
   return Response.json({

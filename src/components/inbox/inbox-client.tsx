@@ -26,9 +26,13 @@ import {
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { TrainerPanel } from "./trainer-panel";
+import { TrainerAvatar } from "./trainer-row";
 
 type ConversationPage = {
   conversations: ConversationDto[];
+  /** 015: la conversación fija con el agente (null si no aplica). */
+  trainer?: ConversationDto | null;
   total: number;
   unreadTotal: number;
   nextCursor: string | null;
@@ -36,11 +40,19 @@ type ConversationPage = {
 
 const JSON_HEADERS = { "content-type": "application/json" };
 
+/** Tras este plazo sin respuesta, el «está pensando…» se apaga solo. */
+const TRAINER_THINKING_TIMEOUT_MS = 90_000;
+
 export function InboxClient() {
   const isMobile = useIsMobile();
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
+  // 015: fila fija del entrenador (fuera de la paginación) y su indicador
+  // de «pensando» (estado del cliente: POST ok → respuesta o timeout).
+  const [trainer, setTrainer] = useState<ConversationDto | null>(null);
+  const [trainerThinking, setTrainerThinking] = useState(false);
+  const thinkingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pageMeta, setPageMeta] = useState<{
     total: number;
     unreadTotal: number;
@@ -135,6 +147,7 @@ export function InboxClient() {
     const data = (await res.json()) as ConversationPage;
     if (seq !== conversationsSeqRef.current) return; // llegó una más nueva
     setConversations(data.conversations);
+    setTrainer(data.trainer ?? null);
     setPageMeta({
       total: data.total,
       unreadTotal: data.unreadTotal,
@@ -276,7 +289,9 @@ export function InboxClient() {
     }
   }, [urlConversationId, refetchMessages, patchById]);
 
-  const inList = conversations?.find((c) => c.id === selectedId) ?? null;
+  const inList =
+    conversations?.find((c) => c.id === selectedId) ??
+    (trainer && trainer.id === selectedId ? trainer : null);
   const needsFallback = selectedId !== null && conversations !== null && !inList;
   useEffect(() => {
     if (!needsFallback || !selectedId) {
@@ -330,6 +345,21 @@ export function InboxClient() {
     };
   }, [contactParam, conversations, openThread]);
 
+  const stopThinking = useCallback(() => {
+    if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+    thinkingTimerRef.current = null;
+    setTrainerThinking(false);
+  }, []);
+  const startThinking = useCallback(() => {
+    if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+    setTrainerThinking(true);
+    thinkingTimerRef.current = setTimeout(() => {
+      thinkingTimerRef.current = null;
+      setTrainerThinking(false);
+    }, TRAINER_THINKING_TIMEOUT_MS);
+  }, []);
+  useEffect(() => stopThinking, [selectedId, stopThinking]);
+
   useEvents({
     onMessageNew: ({ conversationId, message }) => {
       if (selectedIdRef.current === conversationId) {
@@ -337,11 +367,20 @@ export function InboxClient() {
         setMessages((prev) =>
           prev.some((x) => x.id === m.id) ? prev : [...prev, m]
         );
+        // 015: llegó la respuesta del agente al hilo del entrenador.
+        if (m.direction === "in" && selectedRef.current?.kind === "trainer") {
+          stopThinking();
+        }
         void patchById(conversationId, { markRead: true });
       }
       void refetchConversations();
       // Un entrante nuevo puede crear/mover el lead: refresca el panel.
       setDetailRev((v) => v + 1);
+    },
+    onMessageUpdated: ({ conversationId, message }) => {
+      if (selectedIdRef.current !== conversationId) return;
+      const m = message as MessageDto;
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
     },
     onMessageStatus: ({ conversationId, messageId, status }) => {
       if (selectedIdRef.current !== conversationId) return;
@@ -397,9 +436,37 @@ export function InboxClient() {
       }
       if (selectedIdRef.current) void refetchMessages(selectedIdRef.current);
       void refetchConversations();
+      if (selectedRef.current?.kind === "trainer") startThinking();
       return null;
     },
-    [refetchMessages, refetchConversations]
+    [refetchMessages, refetchConversations, startThinking]
+  );
+
+  // 015: nota de voz al entrenador (multipart). El mensaje llega por SSE en
+  // `pending` y su transcripción por `message.updated`.
+  const sendVoiceNote = useCallback(
+    async (file: File, meta: { durationMs: number | null }): Promise<string | null> => {
+      if (!selectedIdRef.current) return "Sin conversación seleccionada";
+      const form = new FormData();
+      form.append("file", file);
+      if (meta.durationMs !== null) form.append("durationMs", String(meta.durationMs));
+      const res = await fetch(
+        `/api/conversations/${selectedIdRef.current}/messages/audio`,
+        { method: "POST", body: form }
+      ).catch(() => null);
+      if (!res) return "Sin conexión con el servidor";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo enviar la nota de voz";
+      }
+      if (selectedIdRef.current) void refetchMessages(selectedIdRef.current);
+      void refetchConversations();
+      if (selectedRef.current?.kind === "trainer") startThinking();
+      return null;
+    },
+    [refetchMessages, refetchConversations, startThinking]
   );
 
   const patchConversation = useCallback(
@@ -566,7 +633,10 @@ export function InboxClient() {
         case "next":
         case "prev": {
           e.preventDefault();
-          const ids = (conversations ?? []).map((c) => c.id);
+          const ids = [
+            ...(trainer ? [trainer.id] : []),
+            ...(conversations ?? []).map((c) => c.id),
+          ];
           const idx = neighborIndex(ids, selectedIdRef.current, sc === "next" ? 1 : -1);
           const id = ids[idx];
           if (id) openThread(id);
@@ -583,6 +653,7 @@ export function InboxClient() {
     return () => window.removeEventListener("keydown", onKey);
   }, [
     conversations,
+    trainer,
     isMobile,
     view,
     panelOpen,
@@ -604,6 +675,7 @@ export function InboxClient() {
       >
         <ConversationList
           conversations={conversations}
+          trainer={trainer}
           selectedId={selectedId}
           onSelect={openThread}
           onSeeded={() => void refetchConversations()}
@@ -648,18 +720,34 @@ export function InboxClient() {
               <button
                 type="button"
                 onClick={openDetails}
-                aria-label={`Ver ficha de ${selected.contact.name}`}
+                aria-label={
+                  selected.kind === "trainer"
+                    ? "Ver panel del entrenador"
+                    : `Ver ficha de ${selected.contact.name}`
+                }
                 data-testid="thread-contact"
                 className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 pr-2 text-left transition-colors hover:bg-accent/60 md:px-1"
               >
-                <ContactAvatar
-                  name={selected.contact.name}
-                  seed={selected.contact.id}
-                  size="md"
-                />
+                {selected.kind === "trainer" ? (
+                  <TrainerAvatar />
+                ) : (
+                  <ContactAvatar
+                    name={selected.contact.name}
+                    seed={selected.contact.id}
+                    size="md"
+                  />
+                )}
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 text-[15px] font-[650] leading-tight">
                     <span className="truncate">{selected.contact.name}</span>
+                    {selected.kind === "trainer" && (
+                      <span
+                        data-testid="trainer-badge"
+                        className="shrink-0 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-text"
+                      >
+                        Tu agente
+                      </span>
+                    )}
                     {selected.contact.optedOut && (
                       <span
                         data-testid="optout-badge"
@@ -670,16 +758,22 @@ export function InboxClient() {
                       </span>
                     )}
                   </span>
-                  <span
-                    className={cn(
-                      "block truncate text-xs",
-                      selected.windowOpen ? "font-medium text-success" : "text-text-3"
-                    )}
-                  >
-                    {selected.windowOpen
-                      ? "ventana abierta"
-                      : `+${selected.contact.phone}`}
-                  </span>
+                  {selected.kind === "trainer" ? (
+                    <span className="block truncate text-xs text-text-3">
+                      Tu asistente de WhatsApp · lo que le digas se aplica al instante
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "block truncate text-xs",
+                        selected.windowOpen ? "font-medium text-success" : "text-text-3"
+                      )}
+                    >
+                      {selected.windowOpen
+                        ? "ventana abierta"
+                        : `+${selected.contact.phone}`}
+                    </span>
+                  )}
                 </span>
               </button>
               {!panelOpen && (
@@ -692,10 +786,19 @@ export function InboxClient() {
                 </button>
               )}
             </header>
-            <MessageThread messages={messages} />
+            <MessageThread
+              messages={messages}
+              kind={selected.kind}
+              thinkingLabel={
+                selected.kind === "trainer" && trainerThinking
+                  ? `${selected.contact.name} está pensando…`
+                  : null
+              }
+            />
             <Composer
               conversation={selected}
               onSend={sendText}
+              onSendAudio={selected.kind === "trainer" ? sendVoiceNote : undefined}
               onSent={() => {
                 if (selectedIdRef.current)
                   void refetchMessages(selectedIdRef.current);
@@ -722,14 +825,22 @@ export function InboxClient() {
       >
         {selected && (
           <div className="h-full w-full md:w-[320px]">
-            <ContactPanel
-              conversation={selected}
-              refreshKey={detailRev}
-              conversationFacets={facets}
-              onPatchConversation={patchConversation}
-              onDelete={deleteSelected}
-              onClose={closeDetails}
-            />
+            {selected.kind === "trainer" ? (
+              <TrainerPanel
+                conversation={selected}
+                refreshKey={detailRev}
+                onClose={closeDetails}
+              />
+            ) : (
+              <ContactPanel
+                conversation={selected}
+                refreshKey={detailRev}
+                conversationFacets={facets}
+                onPatchConversation={patchConversation}
+                onDelete={deleteSelected}
+                onClose={closeDetails}
+              />
+            )}
           </div>
         )}
       </section>

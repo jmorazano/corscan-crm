@@ -8,6 +8,7 @@ import { normalizeToWaId } from "@/lib/phone";
 import { parseTagMode, parseTagsParam, sanitizeTags } from "@/lib/tags";
 import { tagsWhere } from "@/server/tags";
 import { serializeContact } from "@/server/contacts";
+import { notTrainerContact } from "@/server/trainer/conversation";
 import { parseLimit, parsePage } from "@/lib/pagination";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,9 @@ export const GET = withAuth(async (session, req: Request) => {
         )
       : undefined,
     includeArchived ? undefined : isNull(schema.contact.archivedAt),
-    tagsWhere(schema.contact.tags, tags, mode)
+    tagsWhere(schema.contact.tags, tags, mode),
+    // 015: el contacto sintético del entrenador no es un contacto.
+    notTrainerContact()
   );
 
   const db = getDb();

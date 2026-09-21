@@ -88,4 +88,24 @@ describe("sandbox del Laboratorio en el sender", () => {
     }
     expect(graphRequest).not.toHaveBeenCalled();
   });
+
+  it("015: conversación kind=trainer (aunque no fuera is_test) → sandbox_violation", async () => {
+    selectRows.push([
+      {
+        conversation: {
+          id: "cv_trainer",
+          organizationId: "org_1",
+          isTest: false,
+          kind: "trainer",
+          lastInboundAt: new Date(),
+        },
+        contact: { id: "ct_t", phone: "trainer" },
+      },
+    ]);
+    const { sendText } = await import("@/server/inbox/send");
+    await expect(
+      sendText({ conversationId: "cv_trainer", organizationId: "org_1", text: "hola" })
+    ).rejects.toMatchObject({ code: "sandbox_violation" });
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
 });

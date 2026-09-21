@@ -112,6 +112,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .limit(1);
   const conversation = convRows[0];
   if (!conversation) return;
+  // 015: la conversación del entrenador tiene su propio turno
+  // (src/server/ai/trainer.ts); el agente de clientes jamás la atiende.
+  if (conversation.kind === "trainer") return;
   const organizationId = conversation.organizationId;
 
   // Config de IA DE LA EMPRESA dueña de la conversación (US3): sin config,

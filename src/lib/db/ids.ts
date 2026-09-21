@@ -26,6 +26,8 @@ const prefixes = {
   appointment: "apt",
   apiKey: "ak",
   apiRequest: "areq",
+  agentChange: "chg",
+  messageMedia: "mm",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

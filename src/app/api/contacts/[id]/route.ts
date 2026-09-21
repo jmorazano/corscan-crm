@@ -11,6 +11,7 @@ import {
   serializeContact,
 } from "@/server/contacts";
 import { publish } from "@/server/events/bus";
+import { isTrainerContact } from "@/server/trainer/conversation";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,16 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
  */
 export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
+  // 015: el contacto sintético del entrenador no se borra (arrastraría la
+  // conversación fija de la Bandeja).
+  const current = await getContactById(session.organizationId, id);
+  if (current && isTrainerContact(current)) {
+    return apiError(
+      409,
+      "trainer_contact",
+      "Este contacto representa a tu agente y no se puede borrar"
+    );
+  }
   const result = await deleteContact(session.organizationId, id);
   if (!result) return apiError(404, "not_found", "Contacto no encontrado");
   for (const conversationId of result.conversationIds) {

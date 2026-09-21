@@ -122,6 +122,8 @@ describe("config de IA por empresa (US3)", () => {
       token: "sk-or-mi-token-abcd",
       model: "openai/gpt-5",
       judgeModel: "z/juez",
+      // 015: el modelo de transcripción cae al default (nunca al del agente).
+      transcriptionModel: "google/gemini-2.5-flash",
     });
   });
 

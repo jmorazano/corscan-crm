@@ -27,6 +27,7 @@ import { TagFilter } from "@/components/tags/tag-filter";
 import type { TagFacet } from "@/components/tags/use-tag-facets";
 import type { TagFilterState } from "@/components/use-query-filters";
 import { formatTime, previewText } from "./helpers";
+import { TrainerRow } from "./trainer-row";
 
 const STAGE_DOT: Record<string, string> = {
   Nuevo: "#9ca3af",
@@ -89,6 +90,7 @@ function EmptyState({ onSeeded }: { onSeeded: () => void }) {
 
 export function ConversationList({
   conversations: conversationsProp,
+  trainer = null,
   selectedId,
   onSelect,
   onSeeded,
@@ -109,6 +111,8 @@ export function ConversationList({
   searchRef,
 }: {
   conversations: ConversationDto[] | null;
+  /** 015: la conversación fija con el agente, arriba de la lista. */
+  trainer?: ConversationDto | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
@@ -375,6 +379,13 @@ export function ConversationList({
       )}
 
       <div className="flex-1 overflow-y-auto">
+        {trainer && !selectMode && (
+          <TrainerRow
+            conversation={trainer}
+            active={selectedId === trainer.id}
+            onActivate={() => onSelect(trainer.id)}
+          />
+        )}
         {loading ? (
           <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
         ) : conversations.length === 0 && !filtered ? (

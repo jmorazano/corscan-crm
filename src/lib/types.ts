@@ -2,6 +2,8 @@
 
 export type ConversationDto = {
   id: string;
+  /** 015: `trainer` = la conversación fija del dueño con su propio agente. */
+  kind: "whatsapp" | "trainer";
   contact: {
     id: string;
     name: string;
@@ -25,6 +27,9 @@ export type ConversationDto = {
 /** 014: origen externo de un saliente («Enviado por API · <clave>»). */
 export type MessageVia = { kind: "api"; label: string };
 
+/** 015: media adjunta (nota de voz); `url` es privada y por tenant. */
+export type MessageMediaDto = { url: string; mimeType: string; durationMs: number | null };
+
 export type MessageDto = {
   id: string;
   conversationId: string;
@@ -37,6 +42,9 @@ export type MessageDto = {
   aiGenerated: boolean;
   /** 014: null salvo mensajes originados por la API pública. */
   via: MessageVia | null;
+  /** 015: nota de voz adjunta (type="audio"); `text` es la transcripción,
+   * `status` su estado (pending → delivered | failed) y `error` el motivo. */
+  media: MessageMediaDto | null;
   createdAt: string;
 };
 

@@ -14,21 +14,48 @@ import { getEnv } from "@/lib/env";
  * interceptado por el ai-mock en el self-test).
  */
 
+/** Formatos de audio que OpenRouter acepta en `input_audio` (docs, sep-2026). */
+export type AudioFormat = "wav" | "mp3" | "aiff" | "aac" | "ogg" | "flac" | "m4a";
+
+/** Parte de contenido multimodal (015): texto o audio base64. */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "input_audio"; input_audio: { data: string; format: AudioFormat } };
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 };
+
+/**
+ * Modelo de transcripción por defecto (015): tiene que aceptar entrada de
+ * audio; NUNCA se cae al modelo del agente (puede no aceptarla).
+ */
+export const DEFAULT_TRANSCRIPTION_MODEL = "google/gemini-2.5-flash";
 
 /** Config de IA resuelta por empresa (defaults de producto ya aplicados). */
 export type AiConfig = {
   token: string;
   model: string;
   judgeModel: string;
+  /** 015: modelo con entrada de audio; ausente = DEFAULT_TRANSCRIPTION_MODEL. */
+  transcriptionModel?: string;
 };
 
 export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
+
+/** Error HTTP del proveedor con su status (para clasificar sin regex frágil). */
+export class ProviderHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "ProviderHttpError";
+  }
+}
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
@@ -153,7 +180,8 @@ async function callProvider(
       // El body es del proveedor: algunos ecoan la API key en sus errores
       // (p. ej. un 401 estilo OpenAI). Se redacta antes de que el detail
       // llegue a cualquier log (Constitución I).
-      throw new Error(
+      throw new ProviderHttpError(
+        res.status,
         `proveedor respondió ${res.status}: ${truncate(redactSecrets(text))}`
       );
     }
@@ -168,6 +196,103 @@ async function callProvider(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export type TranscribeResult =
+  | { ok: true; text: string }
+  | {
+      ok: false;
+      error: "not_configured" | "unsupported_audio" | "provider_error" | "empty";
+      detail: string;
+    };
+
+const TRANSCRIBE_MAX_ATTEMPTS = 2;
+export const TRANSCRIPTION_TIMEOUT_MS = 90_000;
+export const DEFAULT_MAX_TOKENS_TRANSCRIPTION = 2048;
+/** Tope de la transcripción (mismo que el texto libre del composer). */
+const TRANSCRIPTION_MAX_CHARS = 4096;
+const EMPTY_SENTINEL = "[SIN_CONTENIDO]";
+
+/**
+ * Transcripción de una nota de voz (015, D9) por el MISMO proveedor
+ * OpenRouter-compatible con un modelo multimodal (`input_audio` base64).
+ * Salida en texto plano (no JSON). Reintenta solo ante red/timeout/5xx/429;
+ * un 4xx que hable de audio/modalidad → `unsupported_audio` (el modelo
+ * configurado no acepta audio). El base64 jamás llega a `detail` ni a logs.
+ */
+export async function transcribeAudio(
+  config: AiConfig,
+  audio: { bytes: Buffer | Uint8Array; format: AudioFormat },
+  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+): Promise<TranscribeResult> {
+  if (!config.token.trim()) {
+    return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
+  }
+  const model = (opts?.model ?? config.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL).trim();
+  if (!model) {
+    return { ok: false, error: "not_configured", detail: "Sin modelo de transcripción" };
+  }
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: `Sos un transcriptor. Devolvé ÚNICAMENTE la transcripción literal del audio, en el idioma en que se habla (por defecto español rioplatense), sin comillas, sin comentarios, sin marcas de tiempo ni etiquetas de hablante. Si no hay habla reconocible devolvé exactamente: ${EMPTY_SENTINEL}`,
+    },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Transcribí este audio." },
+        {
+          type: "input_audio",
+          input_audio: { data: Buffer.from(audio.bytes).toString("base64"), format: audio.format },
+        },
+      ],
+    },
+  ];
+
+  let lastDetail = "";
+  for (let attempt = 1; attempt <= TRANSCRIBE_MAX_ATTEMPTS; attempt++) {
+    try {
+      const raw = await callProvider(
+        config.token,
+        model,
+        messages,
+        opts?.maxTokens ?? DEFAULT_MAX_TOKENS_TRANSCRIPTION,
+        opts?.timeoutMs ?? TRANSCRIPTION_TIMEOUT_MS
+      );
+      const text = cleanTranscription(raw);
+      if (!text || /^\[?\s*sin[_ ]contenido\s*\]?$/i.test(text)) {
+        return { ok: false, error: "empty", detail: "audio sin habla reconocible" };
+      }
+      return { ok: true, text: text.slice(0, TRANSCRIPTION_MAX_CHARS) };
+    } catch (err) {
+      lastDetail = err instanceof Error ? err.message : String(err);
+      if (err instanceof ProviderHttpError) {
+        const { status } = err;
+        if (
+          [400, 404, 415, 422].includes(status) &&
+          /audio|modalit|input_audio|not support|unsupported|no soport/i.test(lastDetail)
+        ) {
+          return { ok: false, error: "unsupported_audio", detail: lastDetail };
+        }
+        if (status >= 400 && status < 500 && status !== 429) {
+          return { ok: false, error: "provider_error", detail: lastDetail };
+        }
+      }
+      if (attempt < TRANSCRIBE_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
+  return { ok: false, error: "provider_error", detail: lastDetail };
+}
+
+/** Quita comillas envolventes, fences y saltos de línea Windows. */
+function cleanTranscription(raw: string): string {
+  let t = raw.replace(/\r\n/g, "\n").trim();
+  const fence = t.match(/^```[a-z]*\s*([\s\S]*?)```$/i);
+  if (fence?.[1]) t = fence[1].trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("«") && t.endsWith("»"))) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
 }
 
 /**

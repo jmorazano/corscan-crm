@@ -5,7 +5,9 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { parseTagMode, parseTagsParam } from "@/lib/tags";
 import { decodeCursor, parseLimit } from "@/lib/pagination";
-import { listConversationsPage } from "@/server/inbox/queries";
+import { listConversationsPage, serializeConversation } from "@/server/inbox/queries";
+import { ensureTrainerConversation } from "@/server/trainer/conversation";
+import { trainerVisible } from "@/lib/trainer";
 import { getOrCreateConversation } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send";
 import { isWindowOpen } from "@/server/inbox/window";
@@ -28,21 +30,50 @@ export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? new Date(sinceParam) : undefined;
+  const tags = parseTagsParam(
+    url.searchParams.get("tags"),
+    url.searchParams.get("tag")
+  );
+  const q = url.searchParams.get("q") ?? undefined;
+  const unreadOnly = url.searchParams.get("filter") === "unread";
+  const cursor = decodeCursor(url.searchParams.get("cursor"));
+  const contactId = url.searchParams.get("contactId") ?? undefined;
   // 006: filtros (etiquetas, búsqueda, no leídas) y paginación por cursor,
   // todo resuelto en SQL (contrato tags-api.md).
   const page = await listConversationsPage(session.organizationId, {
     since: since && !Number.isNaN(since.getTime()) ? since : undefined,
-    tags: parseTagsParam(
-      url.searchParams.get("tags"),
-      url.searchParams.get("tag")
-    ),
+    tags,
     mode: parseTagMode(url.searchParams.get("mode")),
-    q: url.searchParams.get("q") ?? undefined,
-    unreadOnly: url.searchParams.get("filter") === "unread",
+    q,
+    unreadOnly,
     limit: parseLimit(url.searchParams.get("limit")),
-    cursor: decodeCursor(url.searchParams.get("cursor")),
-    contactId: url.searchParams.get("contactId") ?? undefined,
+    cursor,
+    contactId,
   });
+
+  // 015: la conversación fija con el agente va fuera del keyset (solo en la
+  // primera página) y su no leído suma al badge de la pestaña aunque los
+  // filtros la oculten de la lista.
+  if (!cursor && !contactId) {
+    const trainerRow = await ensureTrainerConversation(session.organizationId);
+    if (trainerRow) {
+      page.unreadMessages += trainerRow.conversation.unreadCount;
+      if (
+        trainerVisible({
+          filter: unreadOnly ? "unread" : null,
+          q,
+          tags,
+          unreadCount: trainerRow.conversation.unreadCount,
+        })
+      ) {
+        page.trainer = serializeConversation(
+          trainerRow.conversation,
+          trainerRow.contact,
+          trainerRow.preview
+        );
+      }
+    }
+  }
   return Response.json(page);
 });
 

@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
-import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { createEntry } from "@/server/kb/service";
 
 export const dynamic = "force-dynamic";
 
@@ -37,15 +37,10 @@ export const POST = withAuth(async (session, req: Request) => {
     .limit(1);
   if (!cases[0]) return apiError(404, "not_found", "Caso no encontrado");
 
-  const inserted = await db
-    .insert(schema.kbEntry)
-    .values({
-      id: newId("kbEntry"),
-      organizationId: session.organizationId,
-      kind: "qa",
-      question: body.data.pregunta,
-      answer: body.data.respuesta,
-    })
-    .returning();
-  return Response.json({ entry: inserted[0] }, { status: 201 });
+  const entry = await createEntry(
+    session.organizationId,
+    { kind: "qa", question: body.data.pregunta, answer: body.data.respuesta },
+    "lab"
+  );
+  return Response.json({ entry }, { status: 201 });
 });

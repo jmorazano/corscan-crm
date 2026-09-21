@@ -83,6 +83,7 @@ describe("GET /api/settings/ai", () => {
     expect(body.defaults).toEqual({
       model: DEFAULT_AGENT_MODEL,
       judgeModel: DEFAULT_JUDGE_MODEL,
+      transcriptionModel: "google/gemini-2.5-flash",
     });
   });
 

@@ -3,6 +3,7 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError, sendText } from "@/server/inbox/send";
+import { postTrainerMessage, TrainerError } from "@/server/ai/trainer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,14 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
     messages: messages.map((r) =>
       serializeMessage(
         r.message,
-        r.apiKeyName ? { kind: "api", label: r.apiKeyName } : null
+        r.apiKeyName ? { kind: "api", label: r.apiKeyName } : null,
+        r.mediaId
+          ? {
+              url: `/api/message-media/${r.mediaId}`,
+              mimeType: r.mediaMime ?? "audio/wav",
+              durationMs: r.mediaDuration,
+            }
+          : null
       )
     ),
   });
@@ -43,10 +51,35 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   meta_unavailable: 503,
 };
 
+const TRAINER_ERROR_STATUS: Record<TrainerError["code"], number> = {
+  ai_not_configured: 409,
+  not_found: 404,
+  not_trainer: 409,
+};
+
 export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, sendSchema);
   if (!body.ok) return body.response;
+
+  // 015: la conversación con el propio agente no va a WhatsApp — el mensaje
+  // del dueño se persiste y dispara el turno del entrenador.
+  const row = await getConversation(session.organizationId, id);
+  if (row?.conversation.kind === "trainer") {
+    try {
+      const result = await postTrainerMessage({
+        conversationId: id,
+        organizationId: session.organizationId,
+        text: body.data.text,
+      });
+      return Response.json({ messageId: result.messageId });
+    } catch (err) {
+      if (err instanceof TrainerError) {
+        return apiError(TRAINER_ERROR_STATUS[err.code], err.code, err.message);
+      }
+      throw err;
+    }
+  }
 
   try {
     const result = await sendText({

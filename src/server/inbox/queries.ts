@@ -12,6 +12,8 @@ import {
 
 export type ConversationDto = {
   id: string;
+  /** 015: `trainer` = la conversación fija del dueño con su propio agente. */
+  kind: "whatsapp" | "trainer";
   contact: {
     id: string;
     name: string;
@@ -49,6 +51,9 @@ export type ListConversationsOptions = {
 
 export type ConversationPage = {
   conversations: ConversationDto[];
+  /** 015: la conversación fija con el agente (fuera de la paginación);
+   * null sin IA configurada o cuando los filtros la ocultan. */
+  trainer: ConversationDto | null;
   /** Total que cumple filtros (tags + q), sin la restricción de no leídas. */
   total: number;
   /** Conversaciones con mensajes sin leer (tags + q). */
@@ -166,6 +171,7 @@ export async function listConversationsPage(
     conversations: page.map((r) =>
       serializeConversation(r.conversation, r.contact, r.preview, r.stageName)
     ),
+    trainer: null,
     total: Number(aggRows[0]?.total ?? 0),
     unreadTotal: Number(aggRows[0]?.unreadTotal ?? 0),
     unreadMessages: Number(aggRows[0]?.unreadMessages ?? 0),
@@ -219,16 +225,38 @@ export async function getConversation(
  * originó cada saliente (la clave revocada conserva su fila → la etiqueta
  * «Enviado por API · nombre» sobrevive a la revocación).
  */
+export type MessageMediaMeta = {
+  id: string;
+  mimeType: string;
+  durationMs: number | null;
+} | null;
+
 export async function listMessages(
   organizationId: string,
   conversationId: string,
   since?: Date
-): Promise<{ message: typeof schema.message.$inferSelect; apiKeyName: string | null }[]> {
+): Promise<
+  {
+    message: typeof schema.message.$inferSelect;
+    apiKeyName: string | null;
+    /** 015: metadatos de la nota de voz (jamás el blob). */
+    mediaId: string | null;
+    mediaMime: string | null;
+    mediaDuration: number | null;
+  }[]
+> {
   const db = getDb();
   return db
-    .select({ message: schema.message, apiKeyName: schema.apiKey.name })
+    .select({
+      message: schema.message,
+      apiKeyName: schema.apiKey.name,
+      mediaId: schema.messageMedia.id,
+      mediaMime: schema.messageMedia.mimeType,
+      mediaDuration: schema.messageMedia.durationMs,
+    })
     .from(schema.message)
     .leftJoin(schema.apiKey, eq(schema.apiKey.id, schema.message.apiKeyId))
+    .leftJoin(schema.messageMedia, eq(schema.messageMedia.messageId, schema.message.id))
     .where(
       scoped(
         schema.message.organizationId,
@@ -248,6 +276,7 @@ export function serializeConversation(
 ): ConversationDto {
   return {
     id: c.id,
+    kind: c.kind,
     contact: {
       id: contact.id,
       name: contact.name,
