@@ -63,7 +63,12 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   }
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
-  if (body.data.name !== undefined) set.name = body.data.name;
+  if (body.data.name !== undefined) {
+    set.name = body.data.name;
+    // 021: lo editó una PERSONA del equipo. A partir de acá ni la sync de la
+    // agenda del celular (017) ni el agente (021) pueden pisarlo.
+    set.nameEditedAt = new Date();
+  }
   if (body.data.notes !== undefined) set.notes = body.data.notes;
   if (body.data.tags !== undefined) set.tags = sanitizeTags(body.data.tags);
   if (body.data.archived !== undefined) {

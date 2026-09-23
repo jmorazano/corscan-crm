@@ -300,6 +300,19 @@ function dispatchTrainer(system: string, lastUser: string): string {
  * El `toolText` del conector llega con `role:"user"` (corrección #7), no
  * "system" como el de la agenda: se lo busca entre los mensajes de usuario.
  */
+/**
+ * 021: el nombre que el huésped dijo en el chat. Un modelo real lo manda en
+ * `contact_name` junto con la respuesta; el mock lo saca con un regex para
+ * que el guion E2E pueda verificar que el CRM lo guarda (y que respeta al
+ * contacto que cargó una persona del equipo).
+ */
+function nameFrom(todo: string): string | null {
+  const m = todo.match(/\b(?:mi nombre es|me llamo|soy)\s+([\p{L}][\p{L}\p{M}'’.\- ]{1,40})/iu);
+  if (!m?.[1]) return null;
+  // Hasta dos palabras: nombre y apellido.
+  return m[1].trim().split(/\s+/).slice(0, 2).join(" ") || null;
+}
+
 function dispatchStays(
   messages: InMessage[],
   system: string
@@ -324,6 +337,17 @@ function dispatchStays(
         text: "¿Para qué fechas y cuántas personas serían? Así te paso las opciones con el precio.",
       });
     }
+    // 021: ficha de una propiedad. El mock hace lo que haría un modelo
+    // ingenuo: repite lo que le pasaron, detalles y entorno incluidos.
+    if (lastText.includes("PROPIEDAD ")) {
+      const nombre = lastText.match(/PROPIEDAD ([^—]+)—/)?.[1]?.trim() ?? "el alojamiento";
+      const detalles = lastText.match(/Detalles: ([^\n]+)/)?.[1] ?? "";
+      const enlace = lastText.match(/Enlace: (\S+)/)?.[1] ?? "";
+      return JSON.stringify({
+        action: "reply",
+        text: `${nombre}: ${detalles}\nMirá las fotos acá: ${enlace}`,
+      });
+    }
     if (lastText.includes("NO DISPONIBLE")) {
       return JSON.stringify({
         action: "handoff",
@@ -341,15 +365,25 @@ function dispatchStays(
     }
     const lines = lastText.split("\n").filter((l) => l.startsWith("- ")).slice(0, 2);
     const link = lastText.match(/https:\/\/\S+/)?.[0] ?? "";
+    // 021: el nombre que dijo en el chat viaja con la respuesta.
+    const contactName = nameFrom(
+      messages
+        .filter((m) => m.role === "user")
+        .map((m) => textOf(m.content))
+        .filter((t) => !t.startsWith("[HERRAMIENTA]"))
+        .join(" \n ")
+    );
     if (lines.length === 0) {
       return JSON.stringify({
         action: "reply",
         text: "Para esas fechas no me quedó nada libre. ¿Probamos corriendo las fechas o con menos personas?",
+        ...(contactName ? { contact_name: contactName } : {}),
       });
     }
     return JSON.stringify({
       action: "reply",
       text: `Tengo estas opciones:\n${lines.join("\n")}\nPodés ver fotos y reservar acá: ${link}`,
+      ...(contactName ? { contact_name: contactName } : {}),
     });
   }
 
@@ -413,6 +447,12 @@ function dispatchStays(
         text: `Los totales por toda la estadía son:\n${lineas.join("\n")}\nPodés ver fotos y reservar acá: ${enlacePrevio ?? ""}`,
       });
     }
+  }
+
+  // 021: el cliente nombra una propiedad puntual (código o enlace) → ficha.
+  const codigo = todo.match(/\bac-?\s?0?(\d{2,3})\b/i);
+  if (codigo && /ficha|detalle|cont[aá]|c[oó]mo es|info|qu[eé] tiene|entorno|barrio|r[ií]o|arroyo/.test(todo)) {
+    return JSON.stringify({ action: "show_stay", property: `AC-${codigo[1]!.padStart(3, "0")}` });
   }
 
   if (dates.length >= 2 && guests !== null) {

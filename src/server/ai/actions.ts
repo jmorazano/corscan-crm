@@ -7,11 +7,24 @@ import { z } from "zod";
  */
 export const AgentAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("none") }),
-  z.object({ action: z.literal("reply"), text: z.string().min(1) }),
+  /**
+   * 021: `contact_name` viaja CON la respuesta en vez de ser una acción
+   * propia. Con una acción por turno, un agente que tuviera que elegir entre
+   * contestar y guardar el nombre elegiría contestar — y el nombre se
+   * perdería justo en el mensaje donde el huésped lo dice.
+   * El servidor lo valida (`normalizeContactName`) y decide si puede pisar
+   * el nombre actual (`canOverwriteContactName`): nunca se escribe a ciegas.
+   */
+  z.object({
+    action: z.literal("reply"),
+    text: z.string().min(1),
+    contact_name: z.string().trim().optional(),
+  }),
   z.object({
     action: z.literal("update_lead"),
     note: z.string().min(1),
     reply: z.string().optional(),
+    contact_name: z.string().trim().optional(),
   }),
   z.object({
     action: z.literal("move_stage"),

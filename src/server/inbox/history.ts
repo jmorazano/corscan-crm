@@ -9,7 +9,7 @@ import {
   isWithinDays,
   mapEchoMessage,
   mapHistoryMessage,
-  shouldAdoptAddressBookName,
+  canOverwriteContactName,
   textOf,
   type HistoryRow,
 } from "@/lib/history-import";
@@ -287,6 +287,7 @@ export async function processStateSyncValue(value: WebhookValue): Promise<void> 
         name: schema.contact.name,
         phone: schema.contact.phone,
         consentSource: schema.contact.consentSource,
+        nameEditedAt: schema.contact.nameEditedAt,
         isTest: schema.contact.isTest,
       })
       .from(schema.contact)
@@ -307,7 +308,7 @@ export async function processStateSyncValue(value: WebhookValue): Promise<void> 
       continue;
     }
     if (contact.isTest) continue;
-    if (contact.name === name || !shouldAdoptAddressBookName(contact)) continue;
+    if (contact.name === name || !canOverwriteContactName(contact)) continue;
     await db
       .update(schema.contact)
       .set({ name, updatedAt: new Date() })

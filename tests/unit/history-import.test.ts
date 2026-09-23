@@ -5,7 +5,7 @@ import {
   isWithinDays,
   mapEchoMessage,
   mapHistoryMessage,
-  shouldAdoptAddressBookName,
+  canOverwriteContactName,
   statusFor,
 } from "@/lib/history-import";
 
@@ -77,11 +77,11 @@ describe("mapEchoMessage", () => {
   });
 });
 
-describe("shouldAdoptAddressBookName", () => {
+describe("canOverwriteContactName", () => {
   it("adopta si el nombre es el teléfono o vino por entrante; conserva import/manual/api", () => {
-    expect(shouldAdoptAddressBookName({ name: "5493515550777", phone: "5493515550777", consentSource: "import" })).toBe(true);
-    expect(shouldAdoptAddressBookName({ name: "Juanchi 🚀", phone: "1", consentSource: "inbound" })).toBe(true);
-    expect(shouldAdoptAddressBookName({ name: "Juan Pérez (cliente)", phone: "1", consentSource: "import" })).toBe(false);
-    expect(shouldAdoptAddressBookName({ name: "Juan", phone: "1", consentSource: "manual" })).toBe(false);
+    expect(canOverwriteContactName({ name: "5493515550777", phone: "5493515550777", consentSource: "import" })).toBe(true);
+    expect(canOverwriteContactName({ name: "Juanchi 🚀", phone: "1", consentSource: "inbound" })).toBe(true);
+    expect(canOverwriteContactName({ name: "Juan Pérez (cliente)", phone: "1", consentSource: "import" })).toBe(false);
+    expect(canOverwriteContactName({ name: "Juan", phone: "1", consentSource: "manual" })).toBe(false);
   });
 });

@@ -134,6 +134,15 @@ export const contact = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     phone: text("phone").notNull(),
     name: text("name").notNull(),
+    /**
+     * 021: cuándo una PERSONA del equipo editó el nombre a mano en el CRM.
+     * NULL = nadie lo tocó, así que el nombre es el del perfil de WhatsApp
+     * (lo eligió el cliente) y se puede reemplazar por uno mejor: el de la
+     * agenda del celular (017) o el que el huésped dice en el chat (021).
+     * Tapa un agujero de 017: `consent_source` sigue diciendo 'inbound'
+     * aunque el operador haya corregido el nombre, y la sync se lo pisaba.
+     */
+    nameEditedAt: timestamp("name_edited_at"),
     notes: text("notes"),
     /** Etiquetas de segmentación (004): saneadas (trim, lower, únicas). */
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),

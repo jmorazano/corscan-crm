@@ -89,6 +89,9 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"none"} — no responder nada.',
       '- {"action":"reply","text":"..."} — responder al cliente.',
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
+      // 021: el nombre viaja con la respuesta. Con una acción por turno, una
+      // acción propia para esto perdería siempre contra contestar.
+      '- `reply` y `update_lead` aceptan además "contact_name":"..." — SOLO el nombre, cuando la persona te dice cómo se llama («me llamo Santiago Pintos» → "contact_name":"Santiago Pintos"). No lo inventes ni copies el nombre que ya ves del contacto: mandalo solo si te lo dijo en este chat.',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
       ...(input.mcpSection
