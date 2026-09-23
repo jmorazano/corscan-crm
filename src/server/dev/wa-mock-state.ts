@@ -35,6 +35,10 @@ type WaMockState = {
   failUploads: boolean;
   /** Knob 014: el próximo `POST …/messages` falla con 500 (Meta caída). */
   failNextSend: boolean;
+  /** 017: solicitudes `smb_app_data` recibidas (sync_type + fecha). */
+  syncRequests: { phoneNumberId: string; syncType: string; at: string }[];
+  /** Knob 017: el próximo sync de historial devuelve «rechazado» (2593109). */
+  historyDeclined: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -47,9 +51,17 @@ export function getWaMockState(): WaMockState {
       counter: 0,
       failUploads: false,
       failNextSend: false,
+      syncRequests: [],
+      historyDeclined: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
+  if (globalForMock.__waMockState.syncRequests === undefined) {
+    globalForMock.__waMockState.syncRequests = [];
+  }
+  if (globalForMock.__waMockState.historyDeclined === undefined) {
+    globalForMock.__waMockState.historyDeclined = false;
+  }
   if (globalForMock.__waMockState.failUploads === undefined) {
     globalForMock.__waMockState.failUploads = false;
   }
@@ -60,12 +72,18 @@ export function getWaMockState(): WaMockState {
 }
 
 export function resetWaMockState(): void {
+  // El contador NO se reinicia: los wamid ya emitidos siguen persistidos y
+  // repetirlos hacía que la dedup descartara en silencio los "nuevos"
+  // entrantes de un guion que limpia el outbox entre pasos.
+  const counter = globalForMock.__waMockState?.counter ?? 0;
   globalForMock.__waMockState = {
     outbox: [],
     templates: [],
-    counter: 0,
+    counter,
     failUploads: false,
     failNextSend: false,
+    syncRequests: [],
+    historyDeclined: false,
   };
 }
 

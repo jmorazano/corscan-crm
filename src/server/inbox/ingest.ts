@@ -264,6 +264,7 @@ export function serializeMessage(
     aiGenerated: m.aiGenerated,
     via,
     media,
+    source: m.source ?? "cloud",
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };
 }

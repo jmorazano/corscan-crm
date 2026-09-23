@@ -41,10 +41,42 @@ export function isValidSignature(
 
 export type WebhookMessage = {
   from: string;
+  /** Solo en ecos e historial de salientes (017). */
+  to?: string;
   id: string;
   timestamp: string;
   type: string;
   text?: { body: string };
+  image?: WebhookMedia;
+  video?: WebhookMedia;
+  audio?: WebhookMedia;
+  document?: WebhookMedia;
+  sticker?: WebhookMedia;
+  /** Historial del celular (017): estado de entrega del mensaje original. */
+  history_context?: { status?: string; from_me?: boolean };
+};
+
+export type WebhookMedia = {
+  id?: string;
+  mime_type?: string;
+  sha256?: string;
+  caption?: string;
+  filename?: string;
+};
+
+/** 017: un chunk del webhook `history` (o el error de rechazo). */
+export type WebhookHistoryChunk = {
+  metadata?: { phase?: number; chunk_order?: number; progress?: number };
+  threads?: { id: string; messages?: WebhookMessage[] }[];
+  errors?: { code?: number; title?: string; message?: string }[];
+};
+
+/** 017: contacto de la agenda del celular (`smb_app_state_sync`). */
+export type WebhookStateSync = {
+  type?: string;
+  contact?: { full_name?: string; first_name?: string; phone_number?: string };
+  action?: string;
+  metadata?: { timestamp?: string };
 };
 
 export type WebhookStatus = {
@@ -61,6 +93,10 @@ export type WebhookValue = {
   contacts?: { profile?: { name?: string }; wa_id?: string }[];
   messages?: WebhookMessage[];
   statuses?: WebhookStatus[];
+  // 017 coexistence
+  history?: WebhookHistoryChunk[];
+  message_echoes?: WebhookMessage[];
+  state_sync?: WebhookStateSync[];
   // message_template_status_update
   event?: string;
   message_template_name?: string;

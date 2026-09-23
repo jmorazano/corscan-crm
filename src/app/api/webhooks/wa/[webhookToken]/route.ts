@@ -6,6 +6,11 @@ import {
   type WebhookPayload,
 } from "@/server/inbox/webhook";
 import { processMessagesValue } from "@/server/inbox/ingest";
+import {
+  processEchoesValue,
+  processHistoryValue,
+  processStateSyncValue,
+} from "@/server/inbox/history";
 import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
 
 /**
@@ -84,6 +89,13 @@ async function processPayload(payload: WebhookPayload): Promise<void> {
           await processMessagesValue(change.value);
         } else if (change.field === "message_template_status_update") {
           await processTemplateStatusValue(entry.id ?? null, change.value);
+        } else if (change.field === "history") {
+          // 017: historial del celular (coexistence) — camino propio.
+          await processHistoryValue(change.value);
+        } else if (change.field === "smb_message_echoes") {
+          await processEchoesValue(change.value);
+        } else if (change.field === "smb_app_state_sync") {
+          await processStateSyncValue(change.value);
         }
         // otros fields: ignorar sin error
       } catch (err) {

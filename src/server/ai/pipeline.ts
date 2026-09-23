@@ -185,6 +185,11 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   history.reverse();
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
   if (!lastInbound) return;
+  // 017: si lo último de la conversación ya es del negocio (el dueño
+  // respondió desde el celular, o alguien mandó algo desde el CRM), el
+  // agente no habla encima.
+  const lastMessage = history[history.length - 1];
+  if (lastMessage && lastMessage.direction === "out") return;
 
   // 014 (FR-011): si lo último que mandó la empresa fue una NOTIFICACIÓN
   // enviada por API (plantilla con api_key_id), un simple acuse de recibo

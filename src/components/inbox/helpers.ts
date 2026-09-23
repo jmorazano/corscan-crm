@@ -31,6 +31,7 @@ const MEDIA_LABELS: Record<string, string> = {
   location: "Ubicación",
   contacts: "Contacto compartido",
   template: "Plantilla",
+  media_placeholder: "Archivo del celular",
 };
 
 export function mediaLabel(type: string): string {

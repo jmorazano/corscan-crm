@@ -45,6 +45,8 @@ export type MessageDto = {
   /** 015: nota de voz adjunta (type="audio"); `text` es la transcripción,
    * `status` su estado (pending → delivered | failed) y `error` el motivo. */
   media: MessageMediaDto | null;
+  /** 017: `history` = importado del celular; `phone` = eco de la app del celular. */
+  source: "cloud" | "history" | "phone";
   createdAt: string;
 };
 

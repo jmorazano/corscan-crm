@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HistoryImportCard } from "@/components/settings/history-import-card";
 
 type Connection = {
   wabaId: string;
@@ -159,6 +160,8 @@ export function WhatsappWizard() {
           <Badge variant="success">Conectado</Badge>
         </div>
       )}
+
+      {connection && <HistoryImportCard />}
 
       {esConfig && (
         <EmbeddedSignupCard

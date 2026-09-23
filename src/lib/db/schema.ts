@@ -271,6 +271,12 @@ export const message = pgTable(
     /** Clave de API que originó el saliente (014). Sin FK: la clave revocada
      * conserva su fila y el hilo sigue mostrando «Enviado por API · nombre». */
     apiKeyId: text("api_key_id"),
+    /** 017: `cloud` = Cloud API (normal); `history` = importado del historial
+     * del celular (coexistence); `phone` = eco de lo que el negocio mandó
+     * desde la app del celular. */
+    source: text("source", { enum: ["cloud", "history", "phone"] })
+      .notNull()
+      .default("cloud"),
     text: text("text"),
     status: text("status", {
       enum: ["pending", "sent", "delivered", "read", "failed"],
@@ -673,6 +679,35 @@ export const initiatedSend = pgTable(
   },
   (t) => [index("initiated_send_org_sent_idx").on(t.organizationId, t.sentAt)]
 );
+
+/**
+ * Importación del historial del celular (017, coexistence): UNA fila por
+ * empresa con el estado de la sincronización pedida a Meta y sus contadores.
+ */
+export const historyImport = pgTable("history_import", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  status: text("status", {
+    enum: ["idle", "requested", "receiving", "done", "failed", "declined"],
+  })
+    .notNull()
+    .default("idle"),
+  /** Ventana que se conserva al ingerir (Meta manda hasta 180). */
+  days: integer("days").notNull().default(60),
+  requestId: text("request_id"),
+  requestedAt: timestamp("requested_at"),
+  lastChunkAt: timestamp("last_chunk_at"),
+  finishedAt: timestamp("finished_at"),
+  progress: integer("progress").notNull().default(0),
+  importedMessages: integer("imported_messages").notNull().default(0),
+  skippedOld: integer("skipped_old").notNull().default(0),
+  threads: integer("threads").notNull().default(0),
+  lastErrorCode: text("last_error_code"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 export const sendSettings = pgTable(
   "send_settings",

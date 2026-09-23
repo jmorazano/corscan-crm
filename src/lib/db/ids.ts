@@ -30,6 +30,7 @@ const prefixes = {
   messageMedia: "mm",
   mcpIntegration: "mint",
   mcpToolCall: "mcall",
+  historyImport: "hi",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -369,6 +369,15 @@ function Bubble({
           <span className="text-[10.5px] text-text-4">{bubbleTime(m.createdAt)}</span>
           {out && wa && <StatusTicks status={m.status} error={m.error} />}
         </span>
+        {out && wa && m.source === "phone" && (
+          <span
+            data-testid="message-from-phone"
+            className="mt-1.5 block clear-both border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3"
+            title="Lo mandaste desde la app de WhatsApp del celular"
+          >
+            Desde el celular
+          </span>
+        )}
         {out && wa && m.via?.kind === "api" && (
           <span
             data-testid="message-via-api"

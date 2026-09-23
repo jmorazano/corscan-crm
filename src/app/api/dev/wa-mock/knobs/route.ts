@@ -14,6 +14,8 @@ const bodySchema = z.object({
   failUploads: z.boolean().optional(),
   /** 014: el próximo envío a Graph falla con 500 (503 de cara a la API). */
   failNextSend: z.boolean().optional(),
+  /** 017: el próximo sync de historial llega rechazado. */
+  historyDeclined: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -30,8 +32,12 @@ export async function POST(req: Request) {
   if (body.data.failNextSend !== undefined) {
     state.failNextSend = body.data.failNextSend;
   }
+  if (body.data.historyDeclined !== undefined) {
+    state.historyDeclined = body.data.historyDeclined;
+  }
   return Response.json({
     failUploads: state.failUploads,
     failNextSend: state.failNextSend,
+    historyDeclined: state.historyDeclined,
   });
 }

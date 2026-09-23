@@ -1,4 +1,5 @@
 import { exchangeCodeForToken, MetaApiError } from "@/lib/meta/client";
+import { requestHistorySync } from "@/server/whatsapp/history-sync";
 import {
   listWabaPhoneNumbers,
   subscribeAppToWaba,
@@ -97,6 +98,18 @@ export async function completeEmbeddedSignup(input: {
   // Best-effort: sin esto no llegan webhooks, pero la conexión ya es válida y
   // la suscripción se puede reintentar desde el panel de Meta.
   await subscribeAppToWaba(input.wabaId, token);
+
+  // 017: en coexistence (el popup no trae phone_number_id) Meta solo permite
+  // pedir la sincronización dentro de las 24 h del onboarding — se pide sola,
+  // en segundo plano; el estado queda en Ajustes → WhatsApp.
+  if (!input.phoneNumberId) {
+    void requestHistorySync(input.organizationId).catch((err) =>
+      console.warn(
+        "[historial] auto-sync tras el onboarding falló:",
+        err instanceof Error ? err.message : err
+      )
+    );
+  }
 
   return {
     ok: true,

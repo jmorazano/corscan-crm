@@ -1,4 +1,6 @@
 import { mockGuard } from "@/lib/dev-guard";
+import { scheduleSyncDelivery } from "@/server/dev/wa-mock-history";
+import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import {
   getWaMockState,
   nextN,
@@ -214,6 +216,25 @@ export async function POST(req: Request, ctx: Params) {
   // POST {wabaId}/subscribed_apps → suscripción (con o sin override)
   if (path.length === 2 && path[1] === "subscribed_apps") {
     return Response.json({ success: true });
+  }
+
+  // POST {phoneNumberId}/smb_app_data → sync de coexistence (017): responde
+  // el request_id y entrega los webhooks en segundo plano.
+  if (path.length === 2 && path[1] === "smb_app_data") {
+    const syncType = String(body.sync_type ?? "");
+    if (syncType !== "history" && syncType !== "smb_app_state_sync") {
+      return Response.json(
+        { error: { message: "Invalid sync_type", type: "OAuthException", code: 100 } },
+        { status: 400 }
+      );
+    }
+    const creds = await getCredentialsByPhoneNumberId(path[0]!);
+    scheduleSyncDelivery({
+      wabaId: creds?.wabaId ?? "WABA-MOCK",
+      phoneNumberId: path[0]!,
+      syncType,
+    });
+    return Response.json({ messaging_product: "whatsapp", request_id: `syncreq_${nextN()}` });
   }
 
   return Response.json({});
