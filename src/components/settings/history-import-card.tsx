@@ -134,11 +134,20 @@ export function HistoryImportCard() {
           </p>
         )}
         {(status === "failed" || status === "declined") && data?.lastError && (
-          <p className="text-sm text-destructive" data-testid="history-import-error">
-            {data.lastError}
-          </p>
+          <div className="space-y-1" data-testid="history-import-error">
+            <p className="text-sm text-destructive">{data.lastError}</p>
+            {data.lastErrorCode === "135000" && (
+              <p className="text-xs text-text-3">
+                Meta solo permite pedir el historial dentro de las 24 horas de
+                conectar el número. Para traerlo hay que desconectar el CRM desde
+                la app de WhatsApp Business del celular y volver a conectar el
+                número con «Conectar sin perder el celular» (aprobando compartir
+                el historial); al terminar, la importación se pide sola.
+              </p>
+            )}
+          </div>
         )}
-        {error && (
+        {error && error !== data?.lastError && (
           <p className="text-sm text-destructive" data-testid="history-import-error">
             {error}
           </p>
