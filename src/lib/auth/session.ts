@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
-import { resolveMembership } from "@/server/auth/on-signup";
+import { resolveActiveMembership } from "@/server/auth/on-signup";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
 
 export type SessionContext = {
@@ -10,6 +10,8 @@ export type SessionContext = {
   email: string;
   organizationId: string;
   role: string;
+  /** 018: id de la fila de sesión (para cambiar de espacio de trabajo). */
+  sessionId: string;
 };
 
 /** Sombrero de plataforma (research D2): sin membresía de organización. */
@@ -70,11 +72,20 @@ export async function requireSession(options?: {
   const auth = getAuth();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) throw new UnauthorizedError();
+  // 018: la empresa activa vive en la sesión (activeOrganizationId del
+  // plugin organization) y se valida contra las membresías en CADA pedido.
   // La sesión puede crearse antes de que la membresía exista (registro
-  // inicial) — la membresía en BD es la fuente de verdad de org + rol.
-  const membership = await resolveMembership(session.user.id);
+  // inicial) o apuntar a una empresa de la que ya no es miembro — la
+  // membresía en BD es la fuente de verdad de org + rol, y ante un
+  // desajuste se repara la sesión (fallback determinista a la más antigua).
+  const sessionRow = (session as { session?: SessionRowLike }).session;
+  const preferred = sessionRow?.activeOrganizationId ?? null;
+  const membership = await resolveActiveMembership(session.user.id, preferred);
   if (!membership) {
     throw new UnauthorizedError("Sesión sin organización activa");
+  }
+  if (!membership.matchedPreferred && sessionRow?.id) {
+    void repairSessionOrganization(sessionRow.id, membership.organizationId);
   }
   if (!options?.allowPendingPassword) {
     await assertPasswordNotPending(session.user.id);
@@ -84,7 +95,29 @@ export async function requireSession(options?: {
     email: session.user.email,
     organizationId: membership.organizationId,
     role: membership.role,
+    sessionId: sessionRow?.id ?? "",
   };
+}
+
+type SessionRowLike = { id?: string; activeOrganizationId?: string | null };
+
+/**
+ * Repara `session.active_organization_id` cuando apunta a una empresa que
+ * ya no es del usuario (o está vacío). En segundo plano y tolerante: un
+ * fallo acá no puede tumbar el pedido.
+ */
+async function repairSessionOrganization(
+  sessionId: string,
+  organizationId: string
+): Promise<void> {
+  try {
+    await getDb()
+      .update(schema.session)
+      .set({ activeOrganizationId: organizationId, updatedAt: new Date() })
+      .where(eq(schema.session.id, sessionId));
+  } catch {
+    // se reintenta en el próximo pedido
+  }
 }
 
 /**

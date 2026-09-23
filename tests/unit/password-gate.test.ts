@@ -28,6 +28,12 @@ vi.mock("@/server/auth/on-signup", () => ({
     organizationId: "org_1",
     role: "owner",
   }),
+  // 018: requireSession resuelve la empresa activa desde la sesión.
+  resolveActiveMembership: async () => ({
+    organizationId: "org_1",
+    role: "owner",
+    matchedPreferred: true,
+  }),
 }));
 
 vi.mock("@/server/auth/super-admin", () => ({

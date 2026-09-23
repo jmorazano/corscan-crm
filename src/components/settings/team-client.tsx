@@ -47,10 +47,16 @@ export function TeamClient() {
     );
   }
 
+  // 018: el correo ya tiene cuenta y no es miembro → ofrecer sumarla.
+  const [attachOffer, setAttachOffer] = useState<string | null>(null);
+  const [attached, setAttached] = useState<string | null>(null);
+
   async function create() {
     setSaving(true);
     setError(null);
     setCreated(null);
+    setAttachOffer(null);
+    setAttached(null);
     const res = await fetch("/api/settings/team", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -59,12 +65,41 @@ export function TeamClient() {
     setSaving(false);
     if (!res?.ok) {
       const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: { message?: string; code?: string; canAttach?: boolean };
       } | null;
       setError(data?.error?.message ?? "No se pudo crear la cuenta");
+      if (data?.error?.code === "duplicate" && data.error.canAttach) {
+        setAttachOffer(email.trim().toLowerCase());
+      }
       return;
     }
     setCreated({ email, password: tempPassword });
+    setName("");
+    setEmail("");
+    setTempPassword("");
+    void refetch();
+  }
+
+  /** 018 (FR-008): sumar una cuenta existente como miembro, sin contraseña. */
+  async function attachExisting() {
+    if (!attachOffer) return;
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/settings/team", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: attachOffer, attachExisting: true }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo sumar la cuenta");
+      return;
+    }
+    setAttached(attachOffer);
+    setAttachOffer(null);
     setName("");
     setEmail("");
     setTempPassword("");
@@ -116,6 +151,40 @@ export function TeamClient() {
             </div>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
+          {attachOffer && (
+            <div
+              className="rounded-md border border-[#e6dcc4] bg-[#fbf7ec] p-3 text-sm"
+              data-testid="team-attach-offer"
+            >
+              <p className="text-[#6b5a2e]">
+                Esa persona ya tiene cuenta en esta instancia. Podés sumarla a
+                tu empresa como miembro: conserva su contraseña y verá esta
+                empresa junto a la suya en su rail de espacios de trabajo.
+              </p>
+              <Button
+                size="sm"
+                className="mt-2"
+                disabled={saving}
+                onClick={() => void attachExisting()}
+                data-testid="team-attach-existing"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                {saving ? "Sumando…" : "Sumar esa cuenta a esta empresa"}
+              </Button>
+            </div>
+          )}
+          {attached && (
+            <div
+              className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm"
+              data-testid="team-user-attached"
+            >
+              <p className="font-medium text-[#3f6b52]">Cuenta sumada ✓</p>
+              <p className="mt-1 text-[#3f6b52]/90">
+                <code>{attached}</code> ya puede cambiar a esta empresa desde
+                su rail de espacios de trabajo. Conserva su contraseña.
+              </p>
+            </div>
+          )}
           {created && (
             <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
               <p className="font-medium text-[#3f6b52]">Cuenta creada ✓</p>

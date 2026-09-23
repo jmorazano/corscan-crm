@@ -93,6 +93,30 @@ export function inboxShortcut(e: KeyLike): InboxShortcut {
   return null;
 }
 
+/**
+ * 018: ⌘/Ctrl + 1…9 → índice (0-based) del espacio de trabajo, en el orden
+ * del rail; null si la combinación no aplica. `mod` es ⌘ en Mac y Ctrl en
+ * Windows/Linux (como los atajos de la bandeja); Alt/Shift lo anulan para
+ * no pisar atajos del sistema. Se mira `code` además de `key` porque en
+ * algunos teclados el dígito con modificador llega como símbolo.
+ */
+export function workspaceShortcut(e: KeyLike & { code?: string }): number | null {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod || e.altKey || e.shiftKey) return null;
+  const fromKey = /^[1-9]$/.test(e.key) ? Number(e.key) : null;
+  const fromCode =
+    e.code && /^(Digit|Numpad)[1-9]$/.test(e.code)
+      ? Number(e.code.slice(-1))
+      : null;
+  const n = fromKey ?? fromCode;
+  return n === null ? null : n - 1;
+}
+
+/** Etiqueta del modificador para mostrar el atajo: ⌘ en Apple, Ctrl en el resto. */
+export function modifierLabel(platform: string): string {
+  return /mac|iphone|ipad|ipod/i.test(platform) ? "⌘" : "Ctrl+";
+}
+
 /** Índice vecino en una lista (acotado; -1 si la lista está vacía). */
 export function neighborIndex(
   ids: readonly string[],

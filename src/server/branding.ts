@@ -36,6 +36,14 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
   }
 }
 
+/** 018: marca a partir del `metadata` crudo de una organización ya leída. */
+export function brandingFromMetadata(metadata: string | null): Branding {
+  const meta = parseMetadata(metadata);
+  return normalizeBranding(
+    (meta.branding as Partial<Branding> | undefined) ?? null
+  );
+}
+
 export async function getBranding(
   organizationId?: string | null
 ): Promise<Branding> {

@@ -40,12 +40,15 @@ export function AppNav({
   role,
   isSuperAdmin = false,
   unread = 0,
+  workspaceName = null,
 }: {
   branding: Branding;
   userName: string;
   role: string;
   isSuperAdmin?: boolean;
   unread?: number;
+  /** 018: nombre de la empresa activa (solo con dos o más espacios). */
+  workspaceName?: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -64,7 +67,12 @@ export function AppNav({
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
-          <span className="block text-[11px] text-text-3">CRM · WhatsApp</span>
+          <span
+            className="block truncate text-[11px] text-text-3"
+            data-testid="nav-workspace-name"
+          >
+            {workspaceName ?? "CRM · WhatsApp"}
+          </span>
         </span>
       </div>
 

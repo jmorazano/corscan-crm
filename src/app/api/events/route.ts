@@ -3,7 +3,8 @@ import {
   requireSession,
   UnauthorizedError,
 } from "@/lib/auth/session";
-import { subscribe } from "@/server/events/bus";
+import { subscribe, type SseEvent } from "@/server/events/bus";
+import { listMembershipOrganizationIds } from "@/server/workspaces/list";
 
 /**
  * Canal SSE de la bandeja (contrato sse.md).
@@ -24,6 +25,19 @@ const HEARTBEAT_MS = 25_000;
 const MAX_STREAM_LIFETIME_MS = 15 * 60_000;
 const encoder = new TextEncoder();
 
+/**
+ * 018: eventos de OTRA empresa del usuario que pueden mover su no leído.
+ * Se traducen a un ping `workspace.unread { organizationId }` (sin
+ * contenido, con debounce por empresa) para que el rail se refresque.
+ */
+const WORKSPACE_UNREAD_TRIGGERS: ReadonlySet<SseEvent["type"]> = new Set([
+  "message.new",
+  "conversation.updated",
+  "conversations.updated",
+  "conversation.deleted",
+]);
+const WORKSPACE_PING_DEBOUNCE_MS = 1_000;
+
 export async function GET(req: Request) {
   let session;
   try {
@@ -38,6 +52,11 @@ export async function GET(req: Request) {
     throw err;
   }
   const { organizationId } = session;
+  // 018: las otras empresas del usuario (resueltas UNA vez; el tope de
+  // vida del stream revalida la lista al reconectar).
+  const otherOrganizationIds = (
+    await listMembershipOrganizationIds(session.userId).catch(() => [])
+  ).filter((id) => id !== organizationId);
 
   let cleanup: (() => void) | null = null;
 
@@ -61,6 +80,25 @@ export async function GET(req: Request) {
         );
       });
 
+      const pingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+      const unsubscribeOthers = otherOrganizationIds.map((otherId) =>
+        subscribe(otherId, (event) => {
+          if (!WORKSPACE_UNREAD_TRIGGERS.has(event.type)) return;
+          if (pingTimers.has(otherId)) return;
+          pingTimers.set(
+            otherId,
+            setTimeout(() => {
+              pingTimers.delete(otherId);
+              send(
+                `event: workspace.unread\n` +
+                  `id: ${Date.now()}\n` +
+                  `data: ${JSON.stringify({ organizationId: otherId })}\n\n`
+              );
+            }, WORKSPACE_PING_DEBOUNCE_MS)
+          );
+        })
+      );
+
       const heartbeat = setInterval(() => send(`: ping\n\n`), HEARTBEAT_MS);
       const maxLifetime = setTimeout(
         () => cleanup?.(),
@@ -71,6 +109,9 @@ export async function GET(req: Request) {
         clearInterval(heartbeat);
         clearTimeout(maxLifetime);
         unsubscribe();
+        for (const off of unsubscribeOthers) off();
+        for (const t of pingTimers.values()) clearTimeout(t);
+        pingTimers.clear();
         try {
           controller.close();
         } catch {

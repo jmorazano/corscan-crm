@@ -281,7 +281,10 @@ desde Administración; verificar acceso con las nuevas credenciales.
 - Sin servicio de email (constitución II): toda entrega de credenciales es
   manual, en pantalla y por única vez.
 - Un usuario pertenece a una sola empresa; compartir un usuario entre
-  empresas queda fuera de alcance.
+  empresas queda fuera de alcance. **Superado por 018-workspaces
+  (23-sep-2026)**: una cuenta puede tener membresía en varias empresas y
+  cambia entre ellas desde el rail de espacios de trabajo; la resolución
+  determinista de FR-012 sigue siendo el fallback.
 - Un número de WhatsApp por empresa (límite actual aceptado); varios números
   por empresa queda fuera de alcance.
 - Sin fallback global del token de IA: la variable de entorno actual queda

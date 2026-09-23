@@ -33,6 +33,8 @@ export type EventHandlers = {
       skipped: number;
     };
   }) => void;
+  /** 018: cambió el no leído de OTRA empresa del usuario (solo el id). */
+  onWorkspaceUnread?: (data: { organizationId: string }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
 };
@@ -79,6 +81,9 @@ export function useEvents(handlers: EventHandlers): void {
     listen("lab.run", (d) => handlersRef.current.onLabRun?.(d as never));
     listen("campaign.progress", (d) =>
       handlersRef.current.onCampaignProgress?.(d as never)
+    );
+    listen("workspace.unread", (d) =>
+      handlersRef.current.onWorkspaceUnread?.(d as never)
     );
 
     source.onerror = () => {

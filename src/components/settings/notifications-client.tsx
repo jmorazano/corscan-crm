@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { usePush } from "@/components/push/use-push";
+import { useWorkspacesContext } from "@/components/app-shell";
 import type { PushMode } from "@/lib/push-client";
 
 const MODES: ReadonlyArray<{ id: PushMode; label: string; hint: string }> = [
@@ -40,6 +41,9 @@ function deviceLabel(ua: string | null): string {
 export function NotificationsClient() {
   const { state, enable, disable, setMode, sendTest } = usePush();
   const active = state.endpoint !== null;
+  // 018 (FR-012): un dispositivo = una suscripción = una empresa.
+  const { workspaces, activeId } = useWorkspacesContext();
+  const activeWorkspace = workspaces.find((w) => w.id === activeId) ?? null;
 
   return (
     <div className="max-w-2xl space-y-6" data-testid="notifications-settings">
@@ -52,6 +56,20 @@ export function NotificationsClient() {
           <CardDescription>
             Enterate de los mensajes nuevos aunque el CRM esté cerrado. Cada
             teléfono o computadora se activa por separado.
+            {workspaces.length >= 2 && (
+              <span className="mt-1 block" data-testid="push-workspaces-note">
+                Tenés {workspaces.length} espacios de trabajo: este dispositivo
+                recibe los avisos de la <strong>última empresa</strong> en la que
+                lo usaste
+                {activeWorkspace ? (
+                  <>
+                    {" "}
+                    (ahora, <strong>{activeWorkspace.name}</strong>)
+                  </>
+                ) : null}
+                . Al cambiar de espacio, los avisos pasan a esa empresa.
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -27,6 +27,11 @@ export type SseEvent =
         score?: number | null;
       };
     }
+  /**
+   * 018: ping sin contenido que emite el route SSE (no el bus) cuando en
+   * OTRA empresa del usuario cambia algo que mueve su no leído.
+   */
+  | { type: "workspace.unread"; data: { organizationId: string } }
   | {
       type: "campaign.progress";
       data: {

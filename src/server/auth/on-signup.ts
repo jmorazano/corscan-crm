@@ -1,4 +1,4 @@
-import { asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { provisionOrganization } from "@/server/admin/organizations";
@@ -40,6 +40,25 @@ export async function onUserCreated(userId: string, userName: string) {
   });
 }
 
+export type Membership = { organizationId: string; role: string };
+
+/**
+ * Organización activa al CREAR la sesión (login): la última usada por el
+ * usuario (018, FR-009) si sigue siendo miembro; si no, la más antigua.
+ */
+export async function resolveLoginOrganizationId(
+  userId: string
+): Promise<string | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ last: schema.user.lastOrganizationId })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1);
+  const resolved = await resolveActiveMembership(userId, rows[0]?.last ?? null);
+  return resolved?.organizationId ?? null;
+}
+
 /** Organización activa de un usuario (su primera membresía). */
 export async function resolveActiveOrganizationId(
   userId: string
@@ -47,9 +66,42 @@ export async function resolveActiveOrganizationId(
   return (await resolveMembership(userId))?.organizationId ?? null;
 }
 
+/**
+ * Membresía activa (018, FR-001): la que pide la sesión
+ * (`preferredOrganizationId`) si el usuario ES miembro de esa empresa; si
+ * no (empresa removida, sesión vieja sin empresa, id ajeno), la más
+ * antigua — determinismo de FR-012 (003). `matchedPreferred` le dice al
+ * llamador si la sesión hay que repararla.
+ */
+export async function resolveActiveMembership(
+  userId: string,
+  preferredOrganizationId: string | null | undefined
+): Promise<(Membership & { matchedPreferred: boolean }) | null> {
+  if (preferredOrganizationId) {
+    const db = getDb();
+    const rows = await db
+      .select({
+        organizationId: schema.member.organizationId,
+        role: schema.member.role,
+      })
+      .from(schema.member)
+      .where(
+        and(
+          eq(schema.member.userId, userId),
+          eq(schema.member.organizationId, preferredOrganizationId)
+        )
+      )
+      .limit(1);
+    const match = rows[0];
+    if (match) return { ...match, matchedPreferred: true };
+  }
+  const oldest = await resolveMembership(userId);
+  return oldest ? { ...oldest, matchedPreferred: false } : null;
+}
+
 export async function resolveMembership(
   userId: string
-): Promise<{ organizationId: string; role: string } | null> {
+): Promise<Membership | null> {
   const db = getDb();
   const rows = await db
     .select({

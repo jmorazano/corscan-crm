@@ -43,6 +43,13 @@ vi.mock("@/lib/db", async (importOriginal) => {
   return {
     ...actual,
     getDb: () => ({
+      // 018: el alta pre-chequea si el correo ya tiene cuenta (para ofrecer
+      // sumarla); en estos casos no existe → sigue el alta normal.
+      select: () => ({
+        from: () => ({
+          where: () => Promise.resolve([]),
+        }),
+      }),
       insert: () => ({
         values: (v: Record<string, unknown>) => {
           memberInserts.push(v);

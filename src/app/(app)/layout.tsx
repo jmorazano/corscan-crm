@@ -6,6 +6,7 @@ import { getSessionOrNull } from "@/lib/auth/session";
 import { getDb, schema } from "@/lib/db";
 import { getBranding } from "@/server/branding";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
+import { listWorkspaces } from "@/server/workspaces/list";
 import { AppShell } from "@/components/app-shell";
 
 export default async function AppLayout({
@@ -24,6 +25,9 @@ export default async function AppLayout({
   const authSession = await getAuth().api.getSession({
     headers: await headers(),
   });
+  // 018: espacios de trabajo del usuario renderizados desde el servidor
+  // (el rail aparece sin parpadeo; con una sola empresa no se dibuja).
+  const workspaces = await listWorkspaces(session.userId).catch(() => []);
 
   // 012: el shell (sidebar en escritorio / barra inferior en móvil) es
   // cliente; el layout solo resuelve sesión y marca.
@@ -35,6 +39,8 @@ export default async function AppLayout({
       // El link solo se muestra al super admin; la protección real vive
       // server-side en /admin (FR-004).
       isSuperAdmin={isSuperAdminEmail(session.email)}
+      organizationId={session.organizationId}
+      workspaces={workspaces}
     >
       {children}
     </AppShell>

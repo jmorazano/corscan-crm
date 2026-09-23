@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
+import { isMemberOf } from "@/server/auth/membership";
 import type { AdminDbConn } from "@/server/admin/organizations";
 
 /**
@@ -24,6 +25,9 @@ export type CreateOrganizationUserResult =
       ok: false;
       code: "not_found" | "duplicate_email" | "reserved_email" | "invalid";
       message: string;
+      /** 018: en `duplicate_email`, true si la cuenta existe y NO es miembro
+       * de esta empresa — la UI ofrece sumarla (`attachExisting`). */
+      canAttach?: boolean;
     };
 
 /**
@@ -58,16 +62,23 @@ export async function createOrganizationUser(
     return { ok: false, code: "not_found", message: "La empresa no existe" };
   }
 
-  // Pre-chequeo de duplicado ANTES de crear: sin efectos parciales.
+  // Pre-chequeo de duplicado ANTES de crear: sin efectos parciales. 018:
+  // si la cuenta existe, el super admin puede SUMARLA a esta empresa en un
+  // segundo paso explícito (salvo que ya sea miembro).
   const existing = await db
     .select({ id: schema.user.id })
     .from(schema.user)
     .where(eq(schema.user.email, email));
-  if (existing.length > 0) {
+  const existingId = existing[0]?.id;
+  if (existingId) {
+    const member = await isMemberOf(existingId, input.organizationId, db);
     return {
       ok: false,
       code: "duplicate_email",
-      message: "Ya existe una cuenta con ese correo",
+      message: member
+        ? "Esa cuenta ya es miembro de esta empresa"
+        : "Ya existe una cuenta con ese correo",
+      canAttach: !member,
     };
   }
 

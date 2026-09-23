@@ -70,6 +70,16 @@ export function AdminClient() {
     email: string;
     password: string;
   } | null>(null);
+  // 018: el correo ya tiene cuenta y NO es miembro → segundo paso explícito.
+  const [attachOffer, setAttachOffer] = useState<{
+    organizationId: string;
+    email: string;
+    role: "owner" | "member";
+  } | null>(null);
+  const [attached, setAttached] = useState<{
+    organizationId: string;
+    email: string;
+  } | null>(null);
 
   // US5: reset de contraseña por usuario (temporal nueva mostrada una vez).
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
@@ -136,12 +146,15 @@ export function AdminClient() {
     setUserPassword("");
     setUserError(null);
     setUserCreated(null);
+    setAttachOffer(null);
+    setAttached(null);
   }
 
   async function createUser(orgId: string) {
     setUserSaving(true);
     setUserError(null);
     setUserCreated(null);
+    setAttachOffer(null);
     const res = await fetch(`/api/admin/organizations/${orgId}/users`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -155,9 +168,16 @@ export function AdminClient() {
     setUserSaving(false);
     if (!res?.ok) {
       const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: { message?: string; code?: string; canAttach?: boolean };
       } | null;
       setUserError(data?.error?.message ?? "No se pudo crear el usuario");
+      if (data?.error?.code === "duplicate_email" && data.error.canAttach) {
+        setAttachOffer({
+          organizationId: orgId,
+          email: userEmail.trim().toLowerCase(),
+          role: userRole,
+        });
+      }
       return;
     }
     setUserCreated({
@@ -165,6 +185,40 @@ export function AdminClient() {
       email: userEmail,
       password: userPassword,
     });
+    setAddUserOrgId(null);
+    void refetch();
+  }
+
+  /** 018 (FR-008): sumar la cuenta existente a esta empresa, sin contraseña. */
+  async function attachExisting() {
+    if (!attachOffer) return;
+    setUserSaving(true);
+    setUserError(null);
+    const res = await fetch(
+      `/api/admin/organizations/${attachOffer.organizationId}/users`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: attachOffer.email,
+          role: attachOffer.role,
+          attachExisting: true,
+        }),
+      }
+    ).catch(() => null);
+    setUserSaving(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setUserError(data?.error?.message ?? "No se pudo sumar la cuenta");
+      return;
+    }
+    setAttached({
+      organizationId: attachOffer.organizationId,
+      email: attachOffer.email,
+    });
+    setAttachOffer(null);
     setAddUserOrgId(null);
     void refetch();
   }
@@ -402,6 +456,19 @@ export function AdminClient() {
                   </p>
                 </div>
               )}
+              {attached?.organizationId === org.id && (
+                <div
+                  className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm"
+                  data-testid="admin-user-attached"
+                >
+                  <p className="font-medium text-[#3f6b52]">Cuenta sumada ✓</p>
+                  <p className="mt-1 text-[#3f6b52]/90">
+                    <code>{attached.email}</code> ya puede cambiar a esta
+                    empresa desde su rail de espacios de trabajo. Conserva su
+                    contraseña.
+                  </p>
+                </div>
+              )}
               {addUserOrgId === org.id ? (
                 <div className="space-y-3 rounded-md border p-3">
                   <div className="grid gap-3 md:grid-cols-2">
@@ -468,6 +535,30 @@ export function AdminClient() {
                   </div>
                   {userError && (
                     <p className="text-sm text-destructive">{userError}</p>
+                  )}
+                  {attachOffer?.organizationId === org.id && (
+                    <div
+                      className="rounded-md border border-[#e6dcc4] bg-[#fbf7ec] p-3 text-sm"
+                      data-testid="admin-attach-offer"
+                    >
+                      <p className="text-[#6b5a2e]">
+                        Esa persona ya tiene cuenta en esta instancia. Podés
+                        sumarla a <strong>{org.name}</strong> como{" "}
+                        {attachOffer.role === "owner" ? "propietaria" : "miembro"}:
+                        conserva su contraseña y verá esta empresa junto a la
+                        suya en su rail de espacios de trabajo.
+                      </p>
+                      <Button
+                        size="sm"
+                        className="mt-2"
+                        disabled={userSaving}
+                        onClick={() => void attachExisting()}
+                        data-testid="admin-attach-existing"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        {userSaving ? "Sumando…" : "Sumar esa cuenta a esta empresa"}
+                      </Button>
+                    </div>
                   )}
                   <div className="flex gap-2">
                     <Button

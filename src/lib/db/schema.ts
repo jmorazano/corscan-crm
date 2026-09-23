@@ -32,6 +32,9 @@ export const user = pgTable("user", {
   /** Contraseña temporal vigente (FR-017): toda alta por tercero y todo
    * reset lo setean; el cambio de contraseña propio lo limpia. */
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  /** 018: última empresa usada (se restaura al iniciar sesión si el usuario
+   * sigue siendo miembro). Sin FK: si la empresa se borra, se ignora. */
+  lastOrganizationId: text("last_organization_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -86,17 +89,23 @@ export const organization = pgTable("organization", {
   metadata: text("metadata"),
 });
 
-export const member = pgTable("member", {
-  id: text("id").primaryKey(),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  role: text("role").notNull().default("member"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const member = pgTable(
+  "member",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  // 018: un usuario puede ser miembro de VARIAS empresas, pero una sola
+  // vez de cada una (sumar una cuenta existente es idempotente).
+  (t) => [uniqueIndex("member_org_user_uq").on(t.organizationId, t.userId)]
+);
 
 export const invitation = pgTable("invitation", {
   id: text("id").primaryKey(),

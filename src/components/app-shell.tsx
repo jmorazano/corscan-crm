@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
+import { modifierLabel, workspaceShortcut } from "@/lib/gestures";
 import { signOut } from "@/lib/auth/client";
 import {
   getCurrentSubscription,
@@ -39,8 +40,32 @@ import {
 import { AppNav } from "@/components/app-nav";
 import { Dialog } from "@/components/ui/dialog";
 import { useUnreadBadge } from "@/components/use-unread-badge";
+import {
+  useWorkspaces,
+  type WorkspaceDto,
+  type WorkspacesState,
+} from "@/components/workspaces/use-workspaces";
+import { WorkspaceRail } from "@/components/workspaces/workspace-rail";
+import {
+  formatUnread,
+  WorkspaceAvatar,
+} from "@/components/workspaces/workspace-tiles";
 
 type MobileChrome = { setTabBarHidden: (hidden: boolean) => void };
+
+/**
+ * 018: espacios de trabajo del usuario, para pantallas que necesitan saber
+ * si hay más de uno (p. ej. Ajustes → Notificaciones explica que las push
+ * siguen a la última empresa usada en el dispositivo).
+ */
+const WorkspacesContext = createContext<{
+  workspaces: WorkspaceDto[];
+  activeId: string;
+}>({ workspaces: [], activeId: "" });
+
+export function useWorkspacesContext() {
+  return useContext(WorkspacesContext);
+}
 
 const MobileChromeContext = createContext<MobileChrome>({
   setTabBarHidden: () => {},
@@ -183,25 +208,67 @@ export function AppShell({
   userName,
   role,
   isSuperAdmin = false,
+  organizationId,
+  workspaces,
   children,
 }: {
   branding: Branding;
   userName: string;
   role: string;
   isSuperAdmin?: boolean;
+  /** 018: empresa activa de la sesión y espacios del usuario (SSR). */
+  organizationId: string;
+  workspaces: WorkspaceDto[];
   children: ReactNode;
 }) {
   const [tabBarHidden, setTabBarHiddenState] = useState(false);
   const setTabBarHidden = useCallback((h: boolean) => setTabBarHiddenState(h), []);
   const ctx = useMemo(() => ({ setTabBarHidden }), [setTabBarHidden]);
-  const unread = useUnreadBadge();
+  const ws = useWorkspaces(workspaces, organizationId);
+  const unread = useUnreadBadge({
+    onWorkspaceUnread: ws.refetch,
+    onReconnect: ws.refetch,
+  });
   const shellRef = useRef<HTMLDivElement>(null);
   useKeyboardAwareHeight(shellRef);
   const router = useRouter();
   usePushRuntime(unread, (url) => router.push(url));
+  const multiWorkspace = ws.workspaces.length >= 2;
+  const workspacesCtx = useMemo(
+    () => ({ workspaces: ws.workspaces, activeId: ws.activeId }),
+    [ws.workspaces, ws.activeId]
+  );
+
+  // Etiqueta del modificador (⌘ / Ctrl+) tras montar: en SSR no hay
+  // plataforma y un título distinto rompería la hidratación.
+  const [modLabel, setModLabel] = useState("");
+  useEffect(() => {
+    setModLabel(modifierLabel(navigator.platform || navigator.userAgent));
+  }, []);
+
+  // 018 (FR-007): ⌘/Ctrl+1…9 salta al espacio N. Solo con dos o más
+  // espacios; en fase de captura y con preventDefault para que el
+  // navegador no cambie de pestaña. Con un solo espacio no se intercepta.
+  const wsRef = useRef(ws);
+  wsRef.current = ws;
+  useEffect(() => {
+    if (!multiWorkspace) return;
+    const onKey = (e: KeyboardEvent) => {
+      const idx = workspaceShortcut(e);
+      if (idx === null) return;
+      const target = wsRef.current.workspaces[idx];
+      if (!target) return;
+      e.preventDefault();
+      if (target.id === wsRef.current.activeId) return;
+      void wsRef.current.switchTo(target.id);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [multiWorkspace]);
 
   return (
     <MobileChromeContext.Provider value={ctx}>
+      <WorkspacesContext.Provider value={workspacesCtx}>
       {/*
         Móvil: el shell se ancla al viewport con `fixed inset-0` en vez de
         medir `100dvh`. En iOS Safari `100dvh` incluye el espacio de la barra
@@ -214,12 +281,19 @@ export function AppShell({
         ref={shellRef}
         className="fixed inset-0 flex flex-col overflow-hidden bg-background md:static md:h-screen md:h-dvh md:flex-row"
       >
+        <WorkspaceRail
+          workspaces={ws.workspaces}
+          activeId={ws.activeId}
+          modLabel={modLabel}
+          onSelect={(id) => void ws.switchTo(id)}
+        />
         <AppNav
           branding={branding}
           userName={userName}
           role={role}
           isSuperAdmin={isSuperAdmin}
           unread={unread}
+          workspaceName={multiWorkspace ? (ws.active?.name ?? null) : null}
         />
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
         <MobileTabBar
@@ -228,8 +302,40 @@ export function AppShell({
           userName={userName}
           role={role}
           isSuperAdmin={isSuperAdmin}
+          ws={ws}
         />
+        {ws.switching && (
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="workspace-switching"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          >
+            <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 shadow-md">
+              <span
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-[13px] font-semibold text-white"
+                style={{ backgroundColor: ws.switching.accent }}
+                aria-hidden
+              >
+                {initials(ws.switching.name)}
+              </span>
+              <span className="text-sm">
+                Cambiando a <strong>{ws.switching.name}</strong>…
+              </span>
+            </div>
+          </div>
+        )}
+        {ws.error && (
+          <div
+            role="alert"
+            data-testid="workspace-error"
+            className="fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-sm text-destructive shadow-md md:bottom-6"
+          >
+            {ws.error}
+          </div>
+        )}
       </div>
+      </WorkspacesContext.Provider>
     </MobileChromeContext.Provider>
   );
 }
@@ -240,16 +346,20 @@ function MobileTabBar({
   userName,
   role,
   isSuperAdmin,
+  ws,
 }: {
   unread: number;
   hidden: boolean;
   userName: string;
   role: string;
   isSuperAdmin: boolean;
+  /** 018: espacios de trabajo (sección en «Más» + punto rojo). */
+  ws: WorkspacesState;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  const multiWorkspace = ws.workspaces.length >= 2;
 
   // Navegar cierra la hoja.
   useEffect(() => {
@@ -309,7 +419,16 @@ function MobileTabBar({
               aria-expanded={moreOpen}
               className={itemClass(moreActive)}
             >
-              <Ellipsis className="h-[22px] w-[22px]" strokeWidth={moreActive ? 2 : 1.7} />
+              <span className="relative">
+                <Ellipsis className="h-[22px] w-[22px]" strokeWidth={moreActive ? 2 : 1.7} />
+                {multiWorkspace && ws.othersUnread > 0 && (
+                  <span
+                    data-testid="tabbar-workspaces-dot"
+                    aria-label={`${ws.othersUnread} sin leer en otros espacios`}
+                    className="absolute -right-1.5 -top-1 h-2.5 w-2.5 rounded-full bg-[#d64545] ring-2 ring-background"
+                  />
+                )}
+              </span>
               Más
             </button>
           </li>
@@ -323,6 +442,65 @@ function MobileTabBar({
         size="sm"
         testId="more-sheet"
       >
+        {multiWorkspace && (
+          <section
+            aria-label="Espacios de trabajo"
+            data-testid="more-workspaces"
+            className="-mx-1 mb-3 border-b pb-3"
+          >
+            <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Espacios de trabajo
+            </p>
+            <ul className="flex flex-col">
+              {ws.workspaces.map((w) => {
+                const active = w.id === ws.activeId;
+                return (
+                  <li key={w.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (active) {
+                          setMoreOpen(false);
+                          return;
+                        }
+                        void ws.switchTo(w.id);
+                      }}
+                      aria-current={active ? "true" : undefined}
+                      data-testid="workspace-row"
+                      data-workspace-id={w.id}
+                      className={cn(
+                        "flex min-h-[52px] w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors",
+                        active ? "bg-brand-tint" : "hover:bg-accent"
+                      )}
+                    >
+                      <WorkspaceAvatar workspace={w} active={active} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-semibold">
+                          {w.name}
+                        </span>
+                        <span className="block text-[11px] text-text-3">
+                          {active
+                            ? "Espacio activo"
+                            : w.role === "owner"
+                              ? "Propietario"
+                              : "Equipo"}
+                        </span>
+                      </span>
+                      {!active && w.unread > 0 && (
+                        <span
+                          data-testid="workspace-unread"
+                          className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-[#d64545] px-1.5 text-[11px] font-bold text-white"
+                        >
+                          {formatUnread(w.unread)}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
         <ul className="-mx-1 flex flex-col">
           {[
             ...MORE,

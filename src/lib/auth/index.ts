@@ -8,7 +8,7 @@ import { getEnv } from "@/lib/env";
 import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
   onUserCreated,
-  resolveActiveOrganizationId,
+  resolveLoginOrganizationId,
 } from "@/server/auth/on-signup";
 import {
   hasAnyOrganization,
@@ -128,7 +128,9 @@ function createAuth() {
       session: {
         create: {
           before: async (session) => {
-            const organizationId = await resolveActiveOrganizationId(
+            // 018: arranca en la última empresa usada (si sigue siendo
+            // miembro); si no, en la más antigua.
+            const organizationId = await resolveLoginOrganizationId(
               session.userId
             );
             return {
