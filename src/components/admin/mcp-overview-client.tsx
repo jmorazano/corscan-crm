@@ -692,7 +692,7 @@ export function McpOverviewClient({
               {view.summary.organizations - view.summary.withConnector}
             </Badge>
             <span className="ml-auto text-xs text-muted-foreground">
-              Habilitar acá evita buscar la empresa en la lista de abajo
+              Habilitar acá evita entrar a la empresa desde la pestaña Empresas
             </span>
           </button>
           {showWithout && (

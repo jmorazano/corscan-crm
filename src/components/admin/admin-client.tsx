@@ -1,26 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, KeyRound, UserPlus } from "lucide-react";
-import { ContactAvatar } from "@/components/avatar";
-import {
-  McpAdminCard,
-  type McpAdminSummary,
-} from "@/components/admin/mcp-admin-client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Building2, ChevronRight, Plug, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { McpAdminSummary } from "@/components/admin/mcp-admin-client";
 import { McpOverviewClient } from "@/components/admin/mcp-overview-client";
+import { generateTempPassword } from "@/components/admin/temp-password";
+import { useQueryFilters } from "@/components/use-query-filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type AdminOrganization = {
+/** DTO de `GET /api/admin/organizations` (contrato admin-api.md + 016). */
+export type AdminOrganization = {
   id: string;
   name: string;
   slug: string;
@@ -32,84 +28,253 @@ type AdminOrganization = {
   members: { userId: string; name: string; email: string; role: string }[];
 };
 
-// Mismo generador que team-client (D7): la contraseña nace en el cliente y
-// el server jamás la devuelve — se muestra UNA sola vez.
-function generateTempPassword(): string {
-  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint32Array(14);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+type Tab = "orgs" | "mcp";
+
+const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
+  { id: "orgs", label: "Empresas", icon: Building2 },
+  { id: "mcp", label: "Conectores MCP", icon: Plug },
+];
+
+/** Etiqueta del conector para la tabla (mismo vocabulario que el panel MCP). */
+export function mcpCell(mcp: McpAdminSummary | null | undefined): {
+  label: string;
+  variant: "success" | "secondary" | "warning" | "destructive";
+} {
+  if (!mcp) return { label: "Sin conector", variant: "secondary" };
+  if (!mcp.enabled || mcp.status === "disabled")
+    return { label: "Deshabilitado", variant: "secondary" };
+  if (mcp.status === "connected") return { label: "Conectado", variant: "success" };
+  if (mcp.status === "reconnect_required")
+    return { label: "Requiere reconexión", variant: "destructive" };
+  return { label: "Sin conectar", variant: "warning" };
 }
 
+/**
+ * Administración (019): dos pestañas — «Empresas» (tabla + alta en diálogo,
+ * cada fila lleva a `/admin/organizations/[id]`) y «Conectores MCP» (panel
+ * consolidado de 016). La pestaña activa vive en `?tab=` (FR-001).
+ */
 export function AdminClient() {
-  const [organizations, setOrganizations] = useState<
-    AdminOrganization[] | null
-  >(null);
-  const [orgName, setOrgName] = useState("");
-  const [adminName, setAdminName] = useState("");
-  const [adminEmail, setAdminEmail] = useState("");
-  const [tempPassword, setTempPassword] = useState("");
-  const [created, setCreated] = useState<{
-    organization: string;
-    email: string;
-    password: string;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { params, set } = useQueryFilters();
+  const tab: Tab = params.get("tab") === "mcp" ? "mcp" : "orgs";
 
-  // US5: usuario adicional por empresa (un solo formulario abierto a la vez).
-  const [addUserOrgId, setAddUserOrgId] = useState<string | null>(null);
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState<"owner" | "member">("member");
-  const [userPassword, setUserPassword] = useState("");
-  const [userError, setUserError] = useState<string | null>(null);
-  const [userSaving, setUserSaving] = useState(false);
-  const [userCreated, setUserCreated] = useState<{
-    organizationId: string;
-    email: string;
-    password: string;
-  } | null>(null);
-  // 018: el correo ya tiene cuenta y NO es miembro → segundo paso explícito.
-  const [attachOffer, setAttachOffer] = useState<{
-    organizationId: string;
-    email: string;
-    role: "owner" | "member";
-  } | null>(null);
-  const [attached, setAttached] = useState<{
-    organizationId: string;
-    email: string;
-  } | null>(null);
-
-  // US5: reset de contraseña por usuario (temporal nueva mostrada una vez).
-  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
-  // Scoped por usuario: un fallo se muestra solo junto al usuario afectado,
-  // no repetido bajo todas las tarjetas de empresa.
-  const [resetError, setResetError] = useState<{
-    userId: string;
-    message: string;
-  } | null>(null);
-  const [resetDone, setResetDone] = useState<{
-    userId: string;
-    email: string;
-    password: string;
-  } | null>(null);
-
+  const [organizations, setOrganizations] = useState<AdminOrganization[] | null>(
+    null
+  );
   const refetch = useCallback(async () => {
     const res = await fetch("/api/admin/organizations").catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { organizations: AdminOrganization[] };
     setOrganizations(data.organizations);
   }, []);
-
   useEffect(() => {
     void refetch();
   }, [refetch]);
 
+  return (
+    <div className="h-full overflow-y-auto">
+      <header className="border-b px-4 pt-3 md:px-6 md:pt-4">
+        <h2 className="font-semibold">Administración</h2>
+        <div role="tablist" aria-label="Secciones de administración" className="-mb-px mt-2 flex gap-1">
+          {TABS.map((t) => {
+            const active = t.id === tab;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                data-testid={`admin-tab-${t.id}`}
+                onClick={() => set({ tab: t.id === "orgs" ? null : t.id })}
+                className={cn(
+                  "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                  active
+                    ? "border-brand text-foreground"
+                    : "border-transparent text-text-2 hover:text-foreground"
+                )}
+              >
+                <t.icon className="h-4 w-4" strokeWidth={1.7} />
+                {t.label}
+                {t.id === "orgs" && organizations && (
+                  <span className="rounded-full bg-secondary px-1.5 text-[11px] text-text-3">
+                    {organizations.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </header>
+
+      <div className="p-4 md:p-6">
+        {tab === "orgs" ? (
+          <OrganizationsTab organizations={organizations} onChanged={refetch} />
+        ) : (
+          <div className="max-w-3xl">
+            <McpOverviewClient onChanged={refetch} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrganizationsTab({
+  organizations,
+  onChanged,
+}: {
+  organizations: AdminOrganization[] | null;
+  onChanged: () => Promise<void>;
+}) {
+  const router = useRouter();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  return (
+    <div className="max-w-5xl space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-text-2">
+          Cada empresa tiene su propio WhatsApp, agente, usuarios y conector.
+          Entrá a una para gestionarla.
+        </p>
+        <Button onClick={() => setCreateOpen(true)} data-testid="admin-new-org">
+          <Plus className="h-4 w-4" />
+          Nueva empresa
+        </Button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full min-w-[760px] text-sm" data-testid="admin-orgs-table">
+          <thead className="bg-subtle text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 font-normal">Empresa</th>
+              <th className="px-3 py-2.5 font-normal">Usuarios</th>
+              <th className="px-3 py-2.5 font-normal">WhatsApp</th>
+              <th className="px-3 py-2.5 font-normal">IA</th>
+              <th className="px-3 py-2.5 font-normal">Conector</th>
+              <th className="px-3 py-2.5 font-normal">Alta</th>
+              <th className="w-10 px-2 py-2.5" aria-label="Abrir" />
+            </tr>
+          </thead>
+          <tbody>
+            {organizations === null && (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                  Cargando…
+                </td>
+              </tr>
+            )}
+            {organizations?.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                  Todavía no hay empresas.
+                </td>
+              </tr>
+            )}
+            {organizations?.map((org) => {
+              const href = `/admin/organizations/${org.id}`;
+              const mcp = mcpCell(org.mcp);
+              const owners = org.members.filter((m) => m.role === "owner").length;
+              return (
+                <tr
+                  key={org.id}
+                  data-testid="admin-org-row"
+                  data-org-id={org.id}
+                  onClick={() => router.push(href)}
+                  className="cursor-pointer border-t transition-colors hover:bg-accent"
+                >
+                  <td className="px-4 py-3">
+                    <Link
+                      href={href}
+                      className="block truncate font-medium text-foreground hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {org.name}
+                    </Link>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {org.slug}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-text-2">
+                    {org.members.length}
+                    <span className="text-xs text-muted-foreground">
+                      {" "}
+                      · {owners} {owners === 1 ? "propietario" : "propietarios"}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <Badge variant={org.whatsappConnected ? "success" : "secondary"}>
+                      {org.whatsappConnected ? "Conectado" : "Sin conectar"}
+                    </Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <Badge variant={org.aiConfigured ? "success" : "secondary"}>
+                      {org.aiConfigured ? "Configurada" : "Sin configurar"}
+                    </Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <Badge variant={mcp.variant}>{mcp.label}</Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
+                    {new Date(org.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-2 py-3 text-text-3">
+                    <ChevronRight className="h-4 w-4" />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <CreateOrganizationDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={onChanged}
+      />
+    </div>
+  );
+}
+
+/**
+ * Alta de empresa (US1 de 003) en un diálogo: la empresa nace lista con su
+ * admin inicial; la contraseña temporal se muestra UNA sola vez.
+ */
+function CreateOrganizationDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}) {
+  const [orgName, setOrgName] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [tempPassword, setTempPassword] = useState("");
+  const [created, setCreated] = useState<{
+    organizationId: string;
+    organization: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
+
+  function reset() {
+    setOrgName("");
+    setAdminName("");
+    setAdminEmail("");
+    setTempPassword("");
+    setCreated(null);
+    setError(null);
+  }
+
   async function create() {
     setSaving(true);
     setError(null);
-    setCreated(null);
     const res = await fetch("/api/admin/organizations", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -126,212 +291,61 @@ export function AdminClient() {
       setError(data?.error?.message ?? "No se pudo crear la empresa");
       return;
     }
+    const data = (await res.json()) as { organizationId: string };
     setCreated({
+      organizationId: data.organizationId,
       organization: orgName,
       email: adminEmail,
       password: tempPassword,
     });
-    setOrgName("");
-    setAdminName("");
-    setAdminEmail("");
-    setTempPassword("");
-    void refetch();
-  }
-
-  function openAddUser(orgId: string) {
-    setAddUserOrgId(orgId);
-    setUserName("");
-    setUserEmail("");
-    setUserRole("member");
-    setUserPassword("");
-    setUserError(null);
-    setUserCreated(null);
-    setAttachOffer(null);
-    setAttached(null);
-  }
-
-  async function createUser(orgId: string) {
-    setUserSaving(true);
-    setUserError(null);
-    setUserCreated(null);
-    setAttachOffer(null);
-    const res = await fetch(`/api/admin/organizations/${orgId}/users`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: userName,
-        email: userEmail,
-        password: userPassword,
-        role: userRole,
-      }),
-    }).catch(() => null);
-    setUserSaving(false);
-    if (!res?.ok) {
-      const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string; code?: string; canAttach?: boolean };
-      } | null;
-      setUserError(data?.error?.message ?? "No se pudo crear el usuario");
-      if (data?.error?.code === "duplicate_email" && data.error.canAttach) {
-        setAttachOffer({
-          organizationId: orgId,
-          email: userEmail.trim().toLowerCase(),
-          role: userRole,
-        });
-      }
-      return;
-    }
-    setUserCreated({
-      organizationId: orgId,
-      email: userEmail,
-      password: userPassword,
-    });
-    setAddUserOrgId(null);
-    void refetch();
-  }
-
-  /** 018 (FR-008): sumar la cuenta existente a esta empresa, sin contraseña. */
-  async function attachExisting() {
-    if (!attachOffer) return;
-    setUserSaving(true);
-    setUserError(null);
-    const res = await fetch(
-      `/api/admin/organizations/${attachOffer.organizationId}/users`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: attachOffer.email,
-          role: attachOffer.role,
-          attachExisting: true,
-        }),
-      }
-    ).catch(() => null);
-    setUserSaving(false);
-    if (!res?.ok) {
-      const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      setUserError(data?.error?.message ?? "No se pudo sumar la cuenta");
-      return;
-    }
-    setAttached({
-      organizationId: attachOffer.organizationId,
-      email: attachOffer.email,
-    });
-    setAttachOffer(null);
-    setAddUserOrgId(null);
-    void refetch();
-  }
-
-  async function resetPassword(userId: string, email: string) {
-    if (
-      !window.confirm(
-        `¿Restablecer la contraseña de ${email}? Se cerrarán sus sesiones activas y deberá cambiarla en su próximo ingreso.`
-      )
-    ) {
-      return;
-    }
-    // La temporal nace en el cliente (D7) y se muestra UNA sola vez.
-    const password = generateTempPassword();
-    setResettingUserId(userId);
-    setResetError(null);
-    setResetDone(null);
-    const res = await fetch(`/api/admin/users/${userId}/password`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password }),
-    }).catch(() => null);
-    setResettingUserId(null);
-    if (!res?.ok) {
-      const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      setResetError({
-        userId,
-        message:
-          data?.error?.message ?? "No se pudo restablecer la contraseña",
-      });
-      return;
-    }
-    setResetDone({ userId, email, password });
+    void onCreated();
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <header className="border-b px-4 py-3 md:px-6 md:py-4">
-        <h2 className="font-semibold">Administración</h2>
-      </header>
-
-      <div className="max-w-3xl space-y-6 p-4 md:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Crear empresa</CardTitle>
-            <CardDescription>
-              La empresa nace lista (etapas y perfil de agente) con su admin
-              inicial. Entrega tú mismo la contraseña temporal: se muestra UNA
-              sola vez y el titular deberá cambiarla en su primer ingreso.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-org-name">Nombre de la empresa</Label>
-              <Input
-                id="admin-org-name"
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="admin-user-name">Nombre del admin</Label>
-                <Input
-                  id="admin-user-name"
-                  value={adminName}
-                  onChange={(e) => setAdminName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="admin-user-email">Correo del admin</Label>
-                <Input
-                  id="admin-user-email"
-                  type="email"
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-user-password">Contraseña temporal</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="admin-user-password"
-                  value={tempPassword}
-                  onChange={(e) => setTempPassword(e.target.value)}
-                  placeholder="mínimo 8 caracteres"
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => setTempPassword(generateTempPassword())}
-                >
-                  Generar
-                </Button>
-              </div>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {created && (
-              <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-                <p className="font-medium text-[#3f6b52]">
-                  Empresa «{created.organization}» creada ✓
-                </p>
-                <p className="mt-1 text-[#3f6b52]/90">
-                  Guarda y comparte estas credenciales ahora (no se volverán a
-                  mostrar):
-                  <br />
-                  <code>{created.email}</code> · contraseña{" "}
-                  <code>{created.password}</code>
-                </p>
-              </div>
-            )}
+    <Dialog
+      open={open}
+      onClose={() => {
+        onClose();
+        reset();
+      }}
+      title="Nueva empresa"
+      description="La empresa nace lista (etapas y perfil de agente) con su admin inicial. Entregá vos la contraseña temporal: se muestra UNA sola vez y el titular deberá cambiarla en su primer ingreso."
+      size="lg"
+      testId="admin-create-org"
+      footer={
+        created ? (
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                onClose();
+                reset();
+              }}
+            >
+              Cerrar
+            </Button>
+            <Button
+              onClick={() => {
+                const href = `/admin/organizations/${created.organizationId}`;
+                onClose();
+                reset();
+                router.push(href);
+              }}
+            >
+              Abrir la empresa
+            </Button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onClose();
+                reset();
+              }}
+            >
+              Cancelar
+            </Button>
             <Button
               disabled={
                 saving ||
@@ -341,260 +355,77 @@ export function AdminClient() {
                 tempPassword.length < 8
               }
               onClick={() => void create()}
+              data-testid="admin-create-org-submit"
             >
               <Building2 className="h-4 w-4" />
               {saving ? "Creando…" : "Crear empresa"}
             </Button>
-          </CardContent>
-        </Card>
-
-        {/* Panel consolidado de conectores MCP (016): el estado de TODAS las
-            empresas de un vistazo, arriba de la lista. La tarjeta por empresa
-            sigue abajo, que es donde se edita la dirección y la credencial. */}
-        <McpOverviewClient onChanged={refetch} />
-
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Empresas
+          </div>
+        )
+      }
+    >
+      {created ? (
+        <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
+          <p className="font-medium text-[#3f6b52]">
+            Empresa «{created.organization}» creada ✓
           </p>
-          {organizations === null && (
-            <p className="text-sm text-muted-foreground">Cargando…</p>
-          )}
-          {organizations?.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay empresas.
-            </p>
-          )}
-          {organizations?.map((org) => (
-            <div
-              key={org.id}
-              className="space-y-3 rounded-lg border bg-card px-4 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{org.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {org.slug} · creada el{" "}
-                    {new Date(org.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <Badge variant={org.whatsappConnected ? "success" : "secondary"}>
-                  {org.whatsappConnected ? "WhatsApp conectado" : "Sin WhatsApp"}
-                </Badge>
-                <Badge variant={org.aiConfigured ? "success" : "secondary"}>
-                  {org.aiConfigured ? "IA configurada" : "IA sin configurar"}
-                </Badge>
-              </div>
-              <div className="space-y-1.5">
-                {org.members.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Sin usuarios</p>
-                )}
-                {org.members.map((m) => (
-                  <div key={m.userId} className="space-y-1.5">
-                    <div className="flex items-center gap-2.5">
-                      <ContactAvatar name={m.name} seed={m.userId} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">{m.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {m.email}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={m.role === "owner" ? "default" : "secondary"}
-                      >
-                        {m.role === "owner" ? "Propietario" : "Miembro"}
-                      </Badge>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={resettingUserId === m.userId}
-                        onClick={() => void resetPassword(m.userId, m.email)}
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                        {resettingUserId === m.userId
-                          ? "Restableciendo…"
-                          : "Restablecer contraseña"}
-                      </Button>
-                    </div>
-                    {resetDone?.userId === m.userId && (
-                      <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-                        <p className="font-medium text-[#3f6b52]">
-                          Contraseña restablecida ✓
-                        </p>
-                        <p className="mt-1 text-[#3f6b52]/90">
-                          Comparte la temporal nueva ahora (no se volverá a
-                          mostrar):
-                          <br />
-                          <code>{resetDone.email}</code> · contraseña{" "}
-                          <code>{resetDone.password}</code>
-                        </p>
-                      </div>
-                    )}
-                    {resetError?.userId === m.userId && (
-                      <p className="text-sm text-destructive">
-                        {resetError.message}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <McpAdminCard
-                organizationId={org.id}
-                organizationName={org.name}
-                mcp={org.mcp}
-                onChanged={refetch}
-              />
-              {userCreated?.organizationId === org.id && (
-                <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-                  <p className="font-medium text-[#3f6b52]">Usuario creado ✓</p>
-                  <p className="mt-1 text-[#3f6b52]/90">
-                    Comparte estas credenciales ahora (no se volverán a
-                    mostrar):
-                    <br />
-                    <code>{userCreated.email}</code> · contraseña{" "}
-                    <code>{userCreated.password}</code>
-                  </p>
-                </div>
-              )}
-              {attached?.organizationId === org.id && (
-                <div
-                  className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm"
-                  data-testid="admin-user-attached"
-                >
-                  <p className="font-medium text-[#3f6b52]">Cuenta sumada ✓</p>
-                  <p className="mt-1 text-[#3f6b52]/90">
-                    <code>{attached.email}</code> ya puede cambiar a esta
-                    empresa desde su rail de espacios de trabajo. Conserva su
-                    contraseña.
-                  </p>
-                </div>
-              )}
-              {addUserOrgId === org.id ? (
-                <div className="space-y-3 rounded-md border p-3">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`admin-new-user-name-${org.id}`}>
-                        Nombre
-                      </Label>
-                      <Input
-                        id={`admin-new-user-name-${org.id}`}
-                        value={userName}
-                        onChange={(e) => setUserName(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`admin-new-user-email-${org.id}`}>
-                        Correo
-                      </Label>
-                      <Input
-                        id={`admin-new-user-email-${org.id}`}
-                        type="email"
-                        value={userEmail}
-                        onChange={(e) => setUserEmail(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`admin-new-user-role-${org.id}`}>
-                        Rol
-                      </Label>
-                      <select
-                        id={`admin-new-user-role-${org.id}`}
-                        value={userRole}
-                        onChange={(e) =>
-                          setUserRole(e.target.value as "owner" | "member")
-                        }
-                        className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
-                      >
-                        <option value="member">Miembro</option>
-                        <option value="owner">Propietario</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`admin-new-user-password-${org.id}`}>
-                        Contraseña temporal
-                      </Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id={`admin-new-user-password-${org.id}`}
-                          value={userPassword}
-                          onChange={(e) => setUserPassword(e.target.value)}
-                          placeholder="mínimo 8 caracteres"
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={() =>
-                            setUserPassword(generateTempPassword())
-                          }
-                        >
-                          Generar
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  {userError && (
-                    <p className="text-sm text-destructive">{userError}</p>
-                  )}
-                  {attachOffer?.organizationId === org.id && (
-                    <div
-                      className="rounded-md border border-[#e6dcc4] bg-[#fbf7ec] p-3 text-sm"
-                      data-testid="admin-attach-offer"
-                    >
-                      <p className="text-[#6b5a2e]">
-                        Esa persona ya tiene cuenta en esta instancia. Podés
-                        sumarla a <strong>{org.name}</strong> como{" "}
-                        {attachOffer.role === "owner" ? "propietaria" : "miembro"}:
-                        conserva su contraseña y verá esta empresa junto a la
-                        suya en su rail de espacios de trabajo.
-                      </p>
-                      <Button
-                        size="sm"
-                        className="mt-2"
-                        disabled={userSaving}
-                        onClick={() => void attachExisting()}
-                        data-testid="admin-attach-existing"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" />
-                        {userSaving ? "Sumando…" : "Sumar esa cuenta a esta empresa"}
-                      </Button>
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <Button
-                      disabled={
-                        userSaving ||
-                        !userName.trim() ||
-                        !userEmail.trim() ||
-                        userPassword.length < 8
-                      }
-                      onClick={() => void createUser(org.id)}
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      {userSaving ? "Creando…" : "Crear usuario"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setAddUserOrgId(null)}
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openAddUser(org.id)}
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Agregar usuario
-                </Button>
-              )}
-            </div>
-          ))}
+          <p className="mt-1 text-[#3f6b52]/90">
+            Guardá y compartí estas credenciales ahora (no se volverán a
+            mostrar):
+            <br />
+            <code>{created.email}</code> · contraseña <code>{created.password}</code>
+          </p>
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-org-name">Nombre de la empresa</Label>
+            <Input
+              id="admin-org-name"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-user-name">Nombre del admin</Label>
+              <Input
+                id="admin-user-name"
+                value={adminName}
+                onChange={(e) => setAdminName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-user-email">Correo del admin</Label>
+              <Input
+                id="admin-user-email"
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-user-password">Contraseña temporal</Label>
+            <div className="flex gap-2">
+              <Input
+                id="admin-user-password"
+                value={tempPassword}
+                onChange={(e) => setTempPassword(e.target.value)}
+                placeholder="mínimo 8 caracteres"
+              />
+              <Button
+                variant="outline"
+                onClick={() => setTempPassword(generateTempPassword())}
+              >
+                Generar
+              </Button>
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      )}
+    </Dialog>
   );
 }

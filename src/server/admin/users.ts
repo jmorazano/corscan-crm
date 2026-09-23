@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
@@ -204,4 +204,105 @@ export async function resetUserPassword(
     .where(eq(schema.session.userId, input.userId));
 
   return { ok: true };
+}
+
+export type RemoveOrganizationUserInput = {
+  organizationId: string;
+  userId: string;
+  /** Email del super admin que opera: puede quitarse a sí mismo, jamás a
+   * otro super admin (misma regla que el reset de contraseña). */
+  operatorEmail: string;
+};
+
+export type RemoveOrganizationUserResult =
+  | { ok: true; accountDeleted: boolean }
+  | {
+      ok: false;
+      code: "not_found" | "not_member" | "last_owner" | "forbidden";
+      message: string;
+    };
+
+/**
+ * Quitar un usuario de una empresa (019, FR-004): borra la membresía. Si
+ * la persona queda sin ninguna empresa, se elimina la cuenta (sesiones y
+ * credenciales caen en cascada): una cuenta sin empresas no puede operar
+ * en esta instancia y dejarla viva solo bloquearía el correo. Excepciones:
+ * el último propietario de la empresa no se puede quitar (409), un super
+ * admin ajeno no se toca (403) y una cuenta de plataforma nunca se elimina
+ * aunque quede sin membresías (su sombrero no depende de una empresa).
+ */
+export async function removeOrganizationUser(
+  input: RemoveOrganizationUserInput,
+  db: AdminDbConn = getDb()
+): Promise<RemoveOrganizationUserResult> {
+  const users = await db
+    .select({ id: schema.user.id, email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.id, input.userId));
+  const target = users[0];
+  if (!target) {
+    return { ok: false, code: "not_found", message: "El usuario no existe" };
+  }
+
+  const targetEmail = target.email.trim().toLowerCase();
+  const targetIsSuperAdmin = isSuperAdminEmail(targetEmail);
+  if (
+    targetIsSuperAdmin &&
+    targetEmail !== input.operatorEmail.trim().toLowerCase()
+  ) {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "No se puede quitar a otro super admin",
+    };
+  }
+
+  const memberships = await db
+    .select({
+      id: schema.member.id,
+      organizationId: schema.member.organizationId,
+      role: schema.member.role,
+    })
+    .from(schema.member)
+    .where(eq(schema.member.userId, input.userId));
+  const membership = memberships.find(
+    (m) => m.organizationId === input.organizationId
+  );
+  if (!membership) {
+    return {
+      ok: false,
+      code: "not_member",
+      message: "Esa cuenta no es miembro de esta empresa",
+    };
+  }
+
+  if (membership.role === "owner") {
+    const owners = await db
+      .select({ id: schema.member.id })
+      .from(schema.member)
+      .where(
+        and(
+          eq(schema.member.organizationId, input.organizationId),
+          eq(schema.member.role, "owner")
+        )
+      );
+    if (owners.length <= 1) {
+      return {
+        ok: false,
+        code: "last_owner",
+        message:
+          "Es el único propietario de la empresa: nombrá otro propietario antes de quitarlo",
+      };
+    }
+  }
+
+  await db.delete(schema.member).where(eq(schema.member.id, membership.id));
+
+  const remaining = memberships.length - 1;
+  if (remaining === 0 && !targetIsSuperAdmin) {
+    // Cascada en BD: sesiones, cuentas (credenciales) y membresías.
+    await db.delete(schema.user).where(eq(schema.user.id, input.userId));
+    return { ok: true, accountDeleted: true };
+  }
+  return { ok: true, accountDeleted: false };
 }

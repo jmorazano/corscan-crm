@@ -270,6 +270,15 @@ export type AdminOrganization = {
   members: { userId: string; name: string; email: string; role: string }[];
 };
 
+/** 019: una empresa del listado de plataforma (mismo DTO); null si no existe. */
+export async function getOrganization(
+  organizationId: string,
+  db: AdminDbConn = getDb()
+): Promise<AdminOrganization | null> {
+  const all = await listOrganizations(db);
+  return all.find((o) => o.id === organizationId) ?? null;
+}
+
 /**
  * Listado de plataforma para Administración (FR-014): empresas con sus
  * usuarios y estados. Deliberadamente SIN scoped(): es el sombrero super

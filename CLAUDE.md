@@ -33,7 +33,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
 | UI | `src/components/` + `src/app/(app)/` |
-| Administración (super admin: empresas/usuarios) | `src/server/admin/` + `src/app/api/admin/` + `src/app/(app)/admin/` (gate: `SUPER_ADMIN_EMAILS` + `withSuperAdmin`) |
+| Administración (super admin: empresas/usuarios) | `src/server/admin/` + `src/app/api/admin/` + `src/app/(app)/admin/` (gate: `SUPER_ADMIN_EMAILS` + `withSuperAdmin`) · 019: `/admin` con pestañas «Empresas» (tabla navegable + alta en diálogo, `admin-client.tsx`) y «Conectores MCP» (`?tab=mcp`, panel de 016) · detalle por empresa `/admin/organizations/[id]` (`organization-detail-client.tsx`: usuarios alta/sumar existente/reset/quitar + tarjeta MCP) · `GET /api/admin/organizations/[id]` (`getOrganization`) · quitar usuario `DELETE …/users/[userId]` (`removeOrganizationUser`: borra la membresía; sin más empresas y no plataforma → elimina la cuenta; 409 `last_owner`, 403 super admin ajeno) |
 | Config de IA por empresa (token cifrado + modelos) | `src/server/ai/credentials.ts` + `/api/settings/ai` + Ajustes → Inteligencia artificial |
 | Campañas (runner, cupo 24h, elegibilidad) | `src/server/campaigns/` (runner at-most-once + quota con reserva + recipients) + `/api/campaigns` + `src/components/campaigns/` |
 | Import de contactos / tags / opt-out | `src/server/contacts-import.ts` + `src/lib/phone.ts` (wa_id, regla AR del 9) + `src/lib/import-columns.ts` + wizard en `src/components/contacts/` |
@@ -155,11 +155,10 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **018-workspaces** (espacios de trabajo: un usuario
-miembro de varias empresas cambia entre ellas desde un rail estilo Slack
-con no leídos en rojo, atajos ⌘/Ctrl+1…9, sección en «Más» en móvil, y
-Administración / Ajustes → Equipo pueden sumar una cuenta existente a otra
-empresa; supersede el supuesto «1 usuario = 1 empresa» de 003) — spec,
-plan y tasks en [specs/018-workspaces/](specs/018-workspaces/spec.md).
-Anterior: 017-whatsapp-history (en producción, 0370b30).
+Feature en curso: **019-admin-organizations** (Administración ordenada:
+pestañas «Empresas | Conectores MCP», tabla de empresas con página de
+detalle por empresa y baja de usuarios con guardas de último propietario y
+cuenta de plataforma) — spec, plan y tasks en
+[specs/019-admin-organizations/](specs/019-admin-organizations/spec.md).
+Anterior: 018-workspaces (en producción, d1756b6).
 <!-- SPECKIT END -->
