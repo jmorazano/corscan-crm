@@ -39,6 +39,10 @@ type WaMockState = {
   syncRequests: { phoneNumberId: string; syncType: string; at: string }[];
   /** Knob 017: el próximo sync de historial devuelve «rechazado» (2593109). */
   historyDeclined: boolean;
+  /** Knob 020: la próxima descarga de un adjunto falla con 404. */
+  mediaDownloadFails: boolean;
+  /** Knob 020: el próximo adjunto se declara más grande que el tope. */
+  mediaTooLarge: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -53,6 +57,8 @@ export function getWaMockState(): WaMockState {
       failNextSend: false,
       syncRequests: [],
       historyDeclined: false,
+      mediaDownloadFails: false,
+      mediaTooLarge: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
@@ -67,6 +73,12 @@ export function getWaMockState(): WaMockState {
   }
   if (globalForMock.__waMockState.failNextSend === undefined) {
     globalForMock.__waMockState.failNextSend = false;
+  }
+  if (globalForMock.__waMockState.mediaDownloadFails === undefined) {
+    globalForMock.__waMockState.mediaDownloadFails = false;
+  }
+  if (globalForMock.__waMockState.mediaTooLarge === undefined) {
+    globalForMock.__waMockState.mediaTooLarge = false;
   }
   return globalForMock.__waMockState;
 }
@@ -84,6 +96,8 @@ export function resetWaMockState(): void {
     failNextSend: false,
     syncRequests: [],
     historyDeclined: false,
+    mediaDownloadFails: false,
+    mediaTooLarge: false,
   };
 }
 

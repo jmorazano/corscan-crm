@@ -1,6 +1,7 @@
 import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
 import { MCP_MARKER } from "@/server/mcp/markers";
+import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -12,12 +13,24 @@ import { MCP_MARKER } from "@/server/mcp/markers";
 /** 015: el contenido puede venir en partes (texto + input_audio). */
 type InContent =
   | string
-  | { type: string; text?: string; input_audio?: { data: string; format: string } }[];
+  | {
+      type: string;
+      text?: string;
+      input_audio?: { data: string; format: string };
+      image_url?: { url: string };
+    }[];
 type InMessage = { role: string; content: InContent };
 
 /** Transcripción fija que devuelve el mock ante cualquier `input_audio`. */
 export const MOCK_TRANSCRIPTION =
   "Cuando pregunten por precio de mensura decí que arranca en ciento cincuenta mil pesos";
+
+/** 020: transcripción fija de una nota de voz de un CLIENTE (no del dueño). */
+export const MOCK_INBOUND_TRANSCRIPTION =
+  "Hola, quería saber si tenés algo disponible para cuatro personas el fin de semana que viene";
+
+/** 020: descripción fija que devuelve el mock ante cualquier `image_url`. */
+export const MOCK_IMAGE_SUMMARY = "un comprobante de transferencia bancaria";
 
 function textOf(c: InContent | undefined): string {
   if (!c) return "";
@@ -32,6 +45,10 @@ function hasAudio(c: InContent | undefined): boolean {
   return Array.isArray(c) && c.some((p) => p.type === "input_audio");
 }
 
+function hasImage(c: InContent | undefined): boolean {
+  return Array.isArray(c) && c.some((p) => p.type === "image_url");
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   // 015: nota de voz → transcripción en texto plano (no JSON). Un `format`
@@ -40,7 +57,18 @@ export function aiMockCompletion(messages: InMessage[]): string {
     const parts = lastUserMsg.content as Exclude<InContent, string>;
     const audio = parts.find((p) => p.type === "input_audio")?.input_audio;
     if (audio?.format === "flac") return "[SIN_CONTENIDO]";
-    return MOCK_TRANSCRIPTION;
+    // 020: el audio de un cliente (ogg, el formato de WhatsApp) trae una
+    // consulta de alojamiento; el del entrenador (m4a/wav) enseña al agente.
+    return audio?.format === "ogg" ? MOCK_INBOUND_TRANSCRIPTION : MOCK_TRANSCRIPTION;
+  }
+
+  // 020: imagen → descripción en una línea (texto plano, no JSON). Un PNG
+  // dispara el sentinel de "no se entiende" para el camino infeliz.
+  if (lastUserMsg && hasImage(lastUserMsg.content)) {
+    const parts = lastUserMsg.content as Exclude<InContent, string>;
+    const url = parts.find((p) => p.type === "image_url")?.image_url?.url ?? "";
+    if (url.startsWith("data:image/png")) return "[SIN_CONTENIDO]";
+    return MOCK_IMAGE_SUMMARY;
   }
 
   const system = textOf(messages.find((m) => m.role === "system")?.content);
@@ -79,6 +107,39 @@ export function aiMockCompletion(messages: InMessage[]): string {
   }
 
   const text = lastUser.toLowerCase();
+
+  // 020: adjunto del cliente. Va PRIMERO entre las ramas del agente: sin
+  // esto el self-test no puede distinguir «el agente vio la foto» de «el
+  // agente respondió cualquier cosa», que es justo lo que hay que probar.
+  if (lastUser.includes(ATTACHMENT_MARKER)) {
+    if (/comprobante|transferencia|pago/i.test(lastUser)) {
+      // Redactado a propósito para NO prometer una reserva: la guarda de 016
+      // reemplaza «te confirmamos la reserva», y hace bien — el negocio no
+      // confirma nada hasta que el alojamiento verifica el pago.
+      return JSON.stringify({
+        action: "reply",
+        text:
+          "Recibí el comprobante, gracias. Una vez que verifiquemos que el pago ingresó, " +
+          "te enviamos la confirmación por correo.",
+      });
+    }
+    if (/no se pudo transcribir/i.test(lastUser)) {
+      return JSON.stringify({
+        action: "reply",
+        text: "Perdón, no pude escuchar el audio. ¿Me lo escribís así te ayudo?",
+      });
+    }
+    if (/no se pudo ver/i.test(lastUser)) {
+      return JSON.stringify({
+        action: "reply",
+        text: "No pude abrir la imagen. ¿Me contás de qué se trata?",
+      });
+    }
+    return JSON.stringify({
+      action: "reply",
+      text: "Recibí lo que me mandaste. ¿Me contás de qué se trata así te ayudo?",
+    });
+  }
 
   // Persona pide_humano (el regex de respaldo captura la frase canónica; esta
   // rama cubre variantes que llegan al modelo).

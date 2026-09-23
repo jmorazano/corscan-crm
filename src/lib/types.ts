@@ -42,9 +42,14 @@ export type MessageDto = {
   aiGenerated: boolean;
   /** 014: null salvo mensajes originados por la API pública. */
   via: MessageVia | null;
-  /** 015: nota de voz adjunta (type="audio"); `text` es la transcripción,
-   * `status` su estado (pending → delivered | failed) y `error` el motivo. */
+  /** 015: nota de voz adjunta (type="audio"); `text` es la transcripción.
+   * 020: también la imagen o el audio que mandó el cliente. */
   media: MessageMediaDto | null;
+  /** 020: estado del adjunto, independiente del estado de entrega. NULL =
+   * el mensaje no tiene nada que procesar. */
+  mediaState: "pending" | "ready" | "failed" | null;
+  /** 020: descripción de la imagen generada por IA (nunca texto del cliente). */
+  mediaSummary: string | null;
   /** 017: `history` = importado del celular; `phone` = eco de la app del celular. */
   source: "cloud" | "history" | "phone";
   createdAt: string;

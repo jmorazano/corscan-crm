@@ -19,6 +19,7 @@ import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { cn } from "@/lib/utils";
 import { useLongPress } from "@/components/gestures";
 import { ActionSheet } from "@/components/ui/action-sheet";
+import { Dialog } from "@/components/ui/dialog";
 import { mediaLabel } from "./helpers";
 
 function StatusTicks({
@@ -267,9 +268,27 @@ export function MessageThread({
  * es el estado de la transcripción, no de la entrega.
  */
 function AudioNote({ message: m }: { message: MessageDto }) {
-  const media = m.media!;
+  // 020: `mediaState` (no `status`) — en un entrante `status` ya vale
+  // "delivered" desde la ingesta y no puede contar dos historias.
+  const state = m.mediaState ?? (m.text ? "ready" : "pending");
+  const media = m.media;
+  // Sin binario (la descarga falló) no hay reproductor, pero el equipo tiene
+  // que ver que el cliente mandó un audio y por qué no se pudo leer.
+  if (!media) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-text-3"
+        data-testid="audio-message"
+        data-status={state}
+      >
+        <Mic className="h-3.5 w-3.5" strokeWidth={1.7} />
+        {state === "pending" ? "Descargando nota de voz…" : "Nota de voz"}
+        {state === "failed" && m.error ? ` — ${m.error}` : ""}
+      </span>
+    );
+  }
   return (
-    <div className="min-w-[220px]" data-testid="audio-message" data-status={m.status}>
+    <div className="min-w-[220px]" data-testid="audio-message" data-status={state}>
       <div className="flex items-center gap-2">
         <audio
           controls
@@ -288,15 +307,15 @@ function AudioNote({ message: m }: { message: MessageDto }) {
         data-testid="audio-transcription"
         className={cn(
           "mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[13px] leading-snug",
-          m.status === "failed" ? "text-destructive" : "text-text-2"
+          state === "failed" ? "text-destructive" : "text-text-2"
         )}
       >
-        {m.status === "pending" ? (
+        {state === "pending" ? (
           <>
             <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
             <span>Transcribiendo…</span>
           </>
-        ) : m.status === "failed" ? (
+        ) : state === "failed" ? (
           <>
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
             <span>{m.error ?? "No pude transcribir el audio"}</span>
@@ -308,6 +327,67 @@ function AudioNote({ message: m }: { message: MessageDto }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Imagen que mandó el cliente (020). Antes de esta feature la bandeja
+ * mostraba un clip que decía «Imagen» y nada más: el comprobante de una
+ * transferencia era invisible para el equipo, que es justamente quien tiene
+ * que verlo para dar de alta la reserva.
+ */
+function ImageAttachment({ message: m }: { message: MessageDto }) {
+  const [open, setOpen] = useState(false);
+  const media = m.media;
+  const state = m.mediaState;
+
+  if (!media) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-text-3">
+        <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />
+        {state === "pending" ? "Descargando imagen…" : "Imagen no disponible"}
+        {state === "failed" && m.error ? ` — ${m.error}` : ""}
+      </span>
+    );
+  }
+
+  return (
+    <div className="min-w-[180px]" data-testid="image-message" data-status={state ?? "ready"}>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="block overflow-hidden rounded-md border border-brand-soft/60"
+        data-testid="image-thumb"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.url}
+          alt={m.mediaSummary ?? "Imagen enviada por el cliente"}
+          className="max-h-[240px] w-full max-w-[260px] object-cover"
+          loading="lazy"
+        />
+      </button>
+      {m.text && (
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+      )}
+      {m.mediaSummary && (
+        <div
+          data-testid="image-summary"
+          className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-text-3"
+        >
+          <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-brand" strokeWidth={1.7} />
+          <span className="break-words">{m.mediaSummary}</span>
+        </div>
+      )}
+      <Dialog open={open} onClose={() => setOpen(false)} size="lg" title="Imagen del cliente">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.url}
+          alt={m.mediaSummary ?? "Imagen enviada por el cliente"}
+          className="max-h-[75vh] w-full object-contain"
+        />
+      </Dialog>
     </div>
   );
 }
@@ -347,8 +427,10 @@ function Bubble({
       >
         {m.type === "text" || m.type === "template" ? (
           <span className="whitespace-pre-wrap break-words">{m.text}</span>
-        ) : m.type === "audio" && m.media ? (
+        ) : m.type === "audio" ? (
           <AudioNote message={m} />
+        ) : m.type === "image" ? (
+          <ImageAttachment message={m} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />

@@ -17,10 +17,12 @@ import { getEnv } from "@/lib/env";
 /** Formatos de audio que OpenRouter acepta en `input_audio` (docs, sep-2026). */
 export type AudioFormat = "wav" | "mp3" | "aiff" | "aac" | "ogg" | "flac" | "m4a";
 
-/** Parte de contenido multimodal (015): texto o audio base64. */
+/** Parte de contenido multimodal (015 audio, 020 imagen). */
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "input_audio"; input_audio: { data: string; format: AudioFormat } };
+  | { type: "input_audio"; input_audio: { data: string; format: AudioFormat } }
+  /** 020: la imagen viaja como data URI (`data:image/jpeg;base64,…`). */
+  | { type: "image_url"; image_url: { url: string } };
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -285,6 +287,99 @@ export async function transcribeAudio(
         }
       }
       if (attempt < TRANSCRIBE_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
+  return { ok: false, error: "provider_error", detail: lastDetail };
+}
+
+export type DescribeImageResult =
+  | { ok: true; text: string }
+  | {
+      ok: false;
+      error: "not_configured" | "unsupported_image" | "provider_error" | "empty";
+      detail: string;
+    };
+
+const DESCRIBE_MAX_ATTEMPTS = 2;
+export const DESCRIBE_TIMEOUT_MS = 60_000;
+export const DEFAULT_MAX_TOKENS_DESCRIBE = 256;
+/** Una línea: lo que entra al contexto del agente, no un informe. */
+const DESCRIBE_MAX_CHARS = 400;
+
+/**
+ * Descripción en UNA línea de una imagen que mandó un cliente (020, D8).
+ * Usa el MISMO modelo multimodal que la transcripción.
+ *
+ * El prompt prohíbe copiar datos sensibles del comprobante (CBU, alias,
+ * importe, titular, documento): es la defensa de ORIGEN. Si el dato nunca
+ * entra al contexto, el agente no puede repetírselo al cliente ni queda
+ * guardado en la conversación. No se delega esa garantía al prompt del
+ * agente, que es mucho más fácil de desviar.
+ */
+export async function describeImage(
+  config: AiConfig,
+  image: { bytes: Buffer | Uint8Array; mimeType: string },
+  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+): Promise<DescribeImageResult> {
+  if (!config.token.trim()) {
+    return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
+  }
+  const model = (opts?.model ?? config.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL).trim();
+  if (!model) {
+    return { ok: false, error: "not_configured", detail: "Sin modelo multimodal" };
+  }
+
+  const dataUri = `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`;
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: [
+        "Describís en UNA sola oración corta, en español rioplatense, qué es la imagen que un cliente le mandó por WhatsApp a un negocio.",
+        "Decí el TIPO de imagen y para qué parece servir. Ejemplos: «un comprobante de transferencia bancaria», «la captura de la ficha de una propiedad del sitio», «una foto de un documento de identidad», «una selfie».",
+        "PROHIBIDO copiar datos sensibles aunque se lean con claridad: nunca escribas números de CBU, CVU, alias, número de cuenta, tarjeta, importes, nombres de titulares, DNI ni códigos de operación.",
+        "Sin comillas, sin preámbulo, sin markdown. Si la imagen no se entiende, devolvé exactamente " + EMPTY_SENTINEL + ".",
+      ].join(" "),
+    },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "¿Qué es esta imagen?" },
+        { type: "image_url", image_url: { url: dataUri } },
+      ],
+    },
+  ];
+
+  let lastDetail = "";
+  for (let attempt = 1; attempt <= DESCRIBE_MAX_ATTEMPTS; attempt++) {
+    try {
+      const raw = await callProvider(
+        config.token,
+        model,
+        messages,
+        opts?.maxTokens ?? DEFAULT_MAX_TOKENS_DESCRIBE,
+        opts?.timeoutMs ?? DESCRIBE_TIMEOUT_MS,
+        { temperature: 0 }
+      );
+      const text = cleanTranscription(raw);
+      if (!text || /^\[?\s*sin[_ ]contenido\s*\]?$/i.test(text)) {
+        return { ok: false, error: "empty", detail: "imagen sin contenido reconocible" };
+      }
+      return { ok: true, text: text.slice(0, DESCRIBE_MAX_CHARS) };
+    } catch (err) {
+      lastDetail = err instanceof Error ? err.message : String(err);
+      if (err instanceof ProviderHttpError) {
+        const { status } = err;
+        if (
+          [400, 404, 415, 422].includes(status) &&
+          /image|imagen|modalit|vision|not support|unsupported|no soport/i.test(lastDetail)
+        ) {
+          return { ok: false, error: "unsupported_image", detail: lastDetail };
+        }
+        if (status >= 400 && status < 500 && status !== 429) {
+          return { ok: false, error: "provider_error", detail: lastDetail };
+        }
+      }
+      if (attempt < DESCRIBE_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
     }
   }
   return { ok: false, error: "provider_error", detail: lastDetail };

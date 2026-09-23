@@ -16,6 +16,10 @@ const bodySchema = z.object({
   failNextSend: z.boolean().optional(),
   /** 017: el próximo sync de historial llega rechazado. */
   historyDeclined: z.boolean().optional(),
+  /** 020: la próxima descarga de un adjunto falla con 404. */
+  mediaDownloadFails: z.boolean().optional(),
+  /** 020: el próximo adjunto se declara más grande que el tope. */
+  mediaTooLarge: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -35,9 +39,17 @@ export async function POST(req: Request) {
   if (body.data.historyDeclined !== undefined) {
     state.historyDeclined = body.data.historyDeclined;
   }
+  if (body.data.mediaDownloadFails !== undefined) {
+    state.mediaDownloadFails = body.data.mediaDownloadFails;
+  }
+  if (body.data.mediaTooLarge !== undefined) {
+    state.mediaTooLarge = body.data.mediaTooLarge;
+  }
   return Response.json({
     failUploads: state.failUploads,
     failNextSend: state.failNextSend,
     historyDeclined: state.historyDeclined,
+    mediaDownloadFails: state.mediaDownloadFails,
+    mediaTooLarge: state.mediaTooLarge,
   });
 }

@@ -14,8 +14,13 @@ import { serializeMessage } from "@/server/inbox/ingest";
  * Notas de voz del entrenador (015, US3): el audio se guarda en Postgres
  * (message_media, 1:1 con el mensaje), se transcribe en segundo plano por el
  * proveedor OpenRouter (modelo multimodal) y la transcripción entra al turno
- * como si el dueño la hubiera escrito. El mensaje nace `pending`; pasa a
- * `delivered` con la transcripción en `text`, o a `failed` con el motivo.
+ * como si el dueño la hubiera escrito.
+ *
+ * 020: el estado de la transcripción vive en `media_state`
+ * (`pending → ready | failed`), no en `status`. `status` volvió a significar
+ * una sola cosa en todo el repo —el estado de ENTREGA— cuando los mensajes
+ * ENTRANTES empezaron a traer adjuntos: ahí `status` ya valía `delivered` y
+ * no podía servir de doble uso.
  */
 
 export const TRANSCRIPTION_ERRORS = {
@@ -45,7 +50,8 @@ export async function createVoiceNote(input: {
         direction: "out",
         type: "audio",
         text: null,
-        status: "pending",
+        status: "delivered",
+        mediaState: "pending",
         aiGenerated: false,
         waTimestamp: now,
       })
@@ -81,7 +87,7 @@ export async function createVoiceNote(input: {
 
 /**
  * Transcribe en segundo plano y dispara el turno. Nunca lanza: todo camino
- * termina en un mensaje `delivered` o `failed` con motivo legible.
+ * termina con `media_state` en `ready` o `failed` con motivo legible.
  */
 export async function transcribeVoiceNote(input: {
   organizationId: string;
@@ -113,7 +119,11 @@ export async function transcribeVoiceNote(input: {
     durationMs: media.durationMs,
   };
 
-  const finish = async (patch: { text?: string; status: "delivered" | "failed"; error?: string }) => {
+  const finish = async (patch: {
+    text?: string;
+    mediaState: "ready" | "failed";
+    error?: string;
+  }) => {
     const updated = await db
       .update(schema.message)
       .set({ ...patch })
@@ -130,7 +140,7 @@ export async function transcribeVoiceNote(input: {
 
   const config = await getAiConfig(input.organizationId);
   if (!config) {
-    await finish({ status: "failed", error: TRANSCRIPTION_ERRORS.not_configured });
+    await finish({ mediaState: "failed", error: TRANSCRIPTION_ERRORS.not_configured });
     return;
   }
 
@@ -142,7 +152,7 @@ export async function transcribeVoiceNote(input: {
     });
   } catch (err) {
     console.error("[entrenador] transcripción falló:", err instanceof Error ? err.message : err);
-    await finish({ status: "failed", error: TRANSCRIPTION_ERRORS.provider });
+    await finish({ mediaState: "failed", error: TRANSCRIPTION_ERRORS.provider });
     return;
   }
 
@@ -158,10 +168,10 @@ export async function transcribeVoiceNote(input: {
           : result.error === "not_configured"
             ? TRANSCRIPTION_ERRORS.not_configured
             : TRANSCRIPTION_ERRORS.provider;
-    await finish({ status: "failed", error });
+    await finish({ mediaState: "failed", error });
     return;
   }
 
-  await finish({ status: "delivered", text: result.text });
+  await finish({ mediaState: "ready", text: result.text });
   scheduleTrainerTurn(input.conversationId);
 }

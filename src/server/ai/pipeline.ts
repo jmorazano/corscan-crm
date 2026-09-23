@@ -18,6 +18,7 @@ import {
   type AgentActionType,
 } from "@/server/ai/actions";
 import { stripBookingPromise } from "@/lib/promise-guard";
+import { agentTextFor } from "@/lib/inbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
@@ -296,12 +297,24 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         mcpOverridesKb: mcpSection !== null,
       }),
     },
+    // 020: un entrante sin texto (una foto, un audio que no se pudo
+    // transcribir) ya no desaparece del historial: `agentTextFor` le da una
+    // línea con qué mandó el cliente. Sin esto el agente contestaba el
+    // mensaje anterior o, peor, quedaba mudo.
     ...history
-      .filter((m) => m.text)
       .map((m) => ({
         role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
-        content: m.text!,
-      })),
+        content:
+          m.direction === "in"
+            ? agentTextFor({
+                type: m.type,
+                mediaState: m.mediaState,
+                text: m.text,
+                mediaSummary: m.mediaSummary,
+              })
+            : m.text,
+      }))
+      .filter((m): m is { role: "user" | "assistant"; content: string } => !!m.content),
   ];
 
   const result = await chatJson(aiConfig, AgentAction, messages);

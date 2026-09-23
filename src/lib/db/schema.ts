@@ -293,6 +293,19 @@ export const message = pgTable(
       .notNull()
       .default("pending"),
     error: text("error"),
+    /**
+     * 020: estado del ADJUNTO, separado del estado de entrega (`status`).
+     * NULL = el mensaje no tiene adjunto que procesar. Un mensaje entrante
+     * ya nace `delivered`; sin esta columna el estado de la transcripción
+     * pisaba el de entrega, que leen el push, los ticks y la bandeja.
+     */
+    mediaState: text("media_state", { enum: ["pending", "ready", "failed"] }),
+    /**
+     * 020: descripción de la imagen GENERADA POR IA. Deliberadamente fuera
+     * de `text`: el texto es lo que escribió (o dijo) la persona, y una
+     * descripción no lo es. La transcripción de un audio SÍ va en `text`.
+     */
+    mediaSummary: text("media_summary"),
     aiGenerated: boolean("ai_generated").notNull().default(false),
     waTimestamp: timestamp("wa_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

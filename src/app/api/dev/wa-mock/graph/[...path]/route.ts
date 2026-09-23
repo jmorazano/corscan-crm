@@ -1,4 +1,6 @@
 import { mockGuard } from "@/lib/dev-guard";
+import { getEnv } from "@/lib/env";
+import { isMockMediaId, mockMediaFor } from "@/server/dev/wa-mock-media";
 import { scheduleSyncDelivery } from "@/server/dev/wa-mock-history";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import {
@@ -100,6 +102,26 @@ export async function GET(req: Request, ctx: Params) {
           verified_name: "Número de prueba Vocero",
         },
       ],
+    });
+  }
+
+  // GET {mediaId} → handle del adjunto (020). El binario NO vive acá: el
+  // real está en lookaside.fbcdn.net, así que se devuelve una URL a la ruta
+  // /media del propio mock, igual que hace Meta con su CDN.
+  if (path.length === 1 && isMockMediaId(path[0]!)) {
+    const id = path[0]!;
+    const media = mockMediaFor(id);
+    const state = getWaMockState();
+    const tooLarge = state.mediaTooLarge;
+    if (tooLarge) state.mediaTooLarge = false;
+    const base = getEnv().APP_BASE_URL.replace(/\/$/, "");
+    return Response.json({
+      messaging_product: "whatsapp",
+      id,
+      url: `${base}/api/dev/wa-mock/media/${id}`,
+      mime_type: media.mimeType,
+      sha256: "mock",
+      file_size: tooLarge ? 64 * 1024 * 1024 : media.bytes.byteLength,
     });
   }
 
