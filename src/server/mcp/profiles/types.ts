@@ -165,6 +165,13 @@ export type McpProfile = {
   linkHosts: readonly string[];
   /** Acciones que el perfil habilita ([] = el agente no recibe herramientas). */
   agentActions: readonly McpAgentActionKind[];
+  /**
+   * 021: el negocio NO escribe importes por WhatsApp (los valores se ven al
+   * entrar a la ficha). Es una regla comercial del proveedor, no del CRM,
+   * por eso vive en el perfil: el próximo PMS decide la suya. Con `true`, el
+   * pipeline pasa el texto saliente por `stripPrices`.
+   */
+  hidePricesInReply?: boolean;
 
   parseCatalog(raw: unknown): StayCatalog | null;
   renderSection(input: SectionInput): string | null;

@@ -1,0 +1,1 @@
+ALTER TABLE "contact" ADD COLUMN "name_edited_at" timestamp;

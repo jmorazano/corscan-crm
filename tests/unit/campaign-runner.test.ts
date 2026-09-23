@@ -21,6 +21,7 @@ const base = {
   organizationId: "org_1",
   phone: "5493516882200",
   name: "Cliente",
+  nameEditedAt: null,
   notes: null,
   tags: ["vip"],
   consentSource: "import" as const,

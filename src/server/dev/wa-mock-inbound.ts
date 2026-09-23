@@ -26,6 +26,15 @@ export async function deliverToWebhook(payload: unknown): Promise<Response> {
   return fetch(url, { method: "POST", headers, body: raw });
 }
 
+const MEDIA_KEYS = new Set(["image", "audio", "video", "document", "sticker"]);
+const DEFAULT_MEDIA_MIME: Record<string, string> = {
+  image: "image/jpeg",
+  audio: "audio/ogg",
+  video: "video/mp4",
+  document: "application/pdf",
+  sticker: "image/webp",
+};
+
 export function buildInboundPayload(input: {
   wabaId: string;
   phoneNumberId: string;
@@ -33,6 +42,9 @@ export function buildInboundPayload(input: {
   name?: string;
   type?: string;
   text?: string;
+  /** 020: id del binario que sirve el propio mock (`mediamock_*`). */
+  mediaId?: string;
+  mediaMime?: string;
   waMessageId?: string;
   timestamp?: number;
 }) {
@@ -44,6 +56,15 @@ export function buildInboundPayload(input: {
     type,
   };
   if (type === "text") message.text = { body: input.text ?? "hola" };
+  // 020: el sobre del adjunto va en la clave del tipo, igual que el real.
+  if (MEDIA_KEYS.has(type)) {
+    message[type] = {
+      id: input.mediaId ?? `mediamock_${type}_${nextN()}`,
+      mime_type: input.mediaMime ?? DEFAULT_MEDIA_MIME[type] ?? "application/octet-stream",
+      sha256: "mock",
+      ...(input.text ? { caption: input.text } : {}),
+    };
+  }
 
   return {
     object: "whatsapp_business_account",

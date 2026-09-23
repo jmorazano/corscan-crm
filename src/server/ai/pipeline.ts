@@ -18,6 +18,10 @@ import {
   type AgentActionType,
 } from "@/server/ai/actions";
 import { stripBookingPromise } from "@/lib/promise-guard";
+import { safePriceReply, stripPrices } from "@/lib/price-guard";
+import { normalizeContactName } from "@/lib/contact-name";
+import { canOverwriteContactName } from "@/lib/history-import";
+import { agentTextFor } from "@/lib/inbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
@@ -279,7 +283,29 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         `[agente] promesa de reserva suprimida en ${conversation.id}: ${guarded.match ?? "?"}`
       );
     }
-    await deliverConversationalReply(conversation, guarded.text, lastInbound.id);
+    // 021: la guarda de precios corre DESPUÉS de la de promesas. Si aquella
+    // reemplazó el mensaje, su frase segura no tiene importes y esta no
+    // hace nada; al revés, una frase de precio recortada podría dejar una
+    // promesa intacta.
+    let finalText = guarded.text;
+    let fallback: string | null = null;
+    if (mcp.profile.hidePricesInReply) {
+      const priced = stripPrices(finalText, { link: lastStayLink });
+      if (priced.replaced) {
+        console.warn(
+          `[agente] importe suprimido en ${conversation.id}: ${priced.match ?? "?"}`
+        );
+        // Sacarle los precios a una respuesta puede dejarla IGUAL a la
+        // anterior (el modelo repitió la lista para contestar «¿cuánto
+        // sale?»), y entonces la guarda anti-duplicado de 011 la silencia.
+        // Silencio ante una pregunta directa es lo peor de los dos mundos:
+        // si pasa, se manda la frase de los valores, que sí es información
+        // nueva para quien preguntó.
+        fallback = safePriceReply(lastStayLink);
+      }
+      finalText = priced.text;
+    }
+    await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback);
   };
 
   const messages: ChatMessage[] = [
@@ -296,12 +322,24 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         mcpOverridesKb: mcpSection !== null,
       }),
     },
+    // 020: un entrante sin texto (una foto, un audio que no se pudo
+    // transcribir) ya no desaparece del historial: `agentTextFor` le da una
+    // línea con qué mandó el cliente. Sin esto el agente contestaba el
+    // mensaje anterior o, peor, quedaba mudo.
     ...history
-      .filter((m) => m.text)
       .map((m) => ({
         role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
-        content: m.text!,
-      })),
+        content:
+          m.direction === "in"
+            ? agentTextFor({
+                type: m.type,
+                mediaState: m.mediaState,
+                text: m.text,
+                mediaSummary: m.mediaSummary,
+              })
+            : m.text,
+      }))
+      .filter((m): m is { role: "user" | "assistant"; content: string } => !!m.content),
   ];
 
   const result = await chatJson(aiConfig, AgentAction, messages);
@@ -494,6 +532,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     }
   }
 
+  // 021: el nombre que el huésped dijo en el chat. Va junto a la respuesta,
+  // así que se aplica ANTES de contestar: si el modelo ya lo usa en el texto
+  // («¡Gracias, Santiago!»), la bandeja no queda contando otra historia.
+  if (action.action === "reply" || action.action === "update_lead") {
+    await learnContactName(organizationId, conversation.contactId, action.contact_name);
+  }
+
   switch (action.action) {
     case "none":
       return;
@@ -567,6 +612,10 @@ async function loadContact(
   name: string;
   phone: string;
   optedOutAt: Date | null;
+  /** 021: los tres campos que deciden si el agente puede renombrar. */
+  consentSource: string | null;
+  nameEditedAt: Date | null;
+  isTest: boolean;
 } | null> {
   const db = getDb();
   const rows = await db
@@ -575,11 +624,46 @@ async function loadContact(
       name: schema.contact.name,
       phone: schema.contact.phone,
       optedOutAt: schema.contact.optedOutAt,
+      consentSource: schema.contact.consentSource,
+      nameEditedAt: schema.contact.nameEditedAt,
+      isTest: schema.contact.isTest,
     })
     .from(schema.contact)
     .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Guarda el nombre que el huésped dijo en la conversación (021, FR-007..009).
+ *
+ * Dos filtros, los dos capaces de descartar en silencio:
+ * 1. `normalizeContactName`: lo propuesto tiene que PARECER un nombre.
+ * 2. `canOverwriteContactName`: lo que cargó una persona del equipo manda —
+ *    un import, un alta manual o un nombre editado a mano no se pisan nunca.
+ */
+async function learnContactName(
+  organizationId: string,
+  contactId: string,
+  proposed: string | undefined
+): Promise<void> {
+  if (!proposed) return;
+  const name = normalizeContactName(proposed);
+  if (!name) return;
+
+  const contact = await loadContact(organizationId, contactId);
+  if (!contact || contact.isTest) return;
+  if (contact.name === name) return;
+  if (!canOverwriteContactName(contact)) return;
+
+  await getDb()
+    .update(schema.contact)
+    .set({ name, updatedAt: new Date() })
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)));
+  publish(organizationId, {
+    type: "conversations.updated",
+    data: { conversationIds: [] },
+  });
 }
 
 export type ReplyDecision = "send" | "stale" | "duplicate";
@@ -617,7 +701,13 @@ export function conversationalReplyDecision(input: {
 async function deliverConversationalReply(
   conversation: Conversation,
   text: string,
-  turnInboundId: string
+  turnInboundId: string,
+  /**
+   * 021: qué mandar si `text` resultó ser un duplicado. Lo usa la guarda de
+   * precios, que puede dejar una respuesta idéntica a la anterior después de
+   * quitarle los importes.
+   */
+  fallbackOnDuplicate: string | null = null
 ): Promise<void> {
   if (!conversation.isTest) {
     const db = getDb();
@@ -643,6 +733,14 @@ async function deliverConversationalReply(
       return;
     }
     if (decision === "duplicate") {
+      const lastOut = recent.find((m) => m.direction === "out")?.text ?? null;
+      if (fallbackOnDuplicate && fallbackOnDuplicate.trim() !== (lastOut ?? "").trim()) {
+        console.warn(
+          `[agente] respuesta idéntica en ${conversation.id}: se manda la alternativa`
+        );
+        await deliverReply(conversation, fallbackOnDuplicate);
+        return;
+      }
       console.warn(
         `[agente] respuesta idéntica suprimida en ${conversation.id}`
       );

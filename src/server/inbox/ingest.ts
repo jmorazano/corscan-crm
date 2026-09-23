@@ -5,7 +5,9 @@ import type { MessageDto, MessageMediaDto, MessageVia } from "@/lib/types";
 import { publish } from "@/server/events/bus";
 import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
-import type { WebhookValue } from "@/server/inbox/webhook";
+import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
+import { planInboundMedia } from "@/lib/inbound-media";
+import { processInboundMedia } from "@/server/inbox/media";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import {
@@ -128,16 +130,26 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
     const profileName = value.contacts?.find(
       (c) => c.wa_id === msg.from
     )?.profile?.name;
+    const attachment = attachmentOf(msg);
     await ingestInboundMessage({
       organizationId,
       from: msg.from,
       profileName: profileName ?? null,
       waMessageId: msg.id,
       type: msg.type,
-      text: msg.text?.body ?? null,
+      // 020: el epígrafe de una imagen o el nombre de un documento SON del
+      // cliente; van a `text` como cualquier mensaje escrito.
+      text: msg.text?.body ?? attachment?.caption ?? attachment?.filename ?? null,
+      mediaId: attachment?.id ?? null,
+      mediaMime: attachment?.mime_type ?? null,
       timestamp: msg.timestamp,
     });
   }
+}
+
+/** El sobre del adjunto vive en una clave distinta según el tipo. */
+function attachmentOf(msg: WebhookMessage) {
+  return msg.image ?? msg.audio ?? msg.video ?? msg.document ?? msg.sticker ?? null;
 }
 
 export async function ingestInboundMessage(input: {
@@ -147,6 +159,9 @@ export async function ingestInboundMessage(input: {
   waMessageId: string;
   type: string;
   text: string | null;
+  /** 020: id del binario en Meta, cuando el mensaje trae adjunto. */
+  mediaId?: string | null;
+  mediaMime?: string | null;
   timestamp: string;
 }): Promise<void> {
   const db = getDb();
@@ -164,6 +179,10 @@ export async function ingestInboundMessage(input: {
 
   const waTimestamp = toDate(input.timestamp);
 
+  // 020: qué hacer con el adjunto. `process` nace `pending` y retiene el
+  // turno del agente hasta que el binario esté resuelto (D5).
+  const plan = planInboundMedia(input.type, input.mediaId);
+
   // Idempotencia dura POR TENANT: mismo (organization_id, wa_message_id) →
   // sin efectos adicionales. El scope evita que un wamid de la org A condicione
   // la ingesta de la org B (US2, mismo contrato que applyStatusUpdate).
@@ -178,6 +197,7 @@ export async function ingestInboundMessage(input: {
       type: input.type,
       text: input.text,
       status: "delivered",
+      mediaState: plan.kind === "process" ? "pending" : null,
       waTimestamp,
     })
     .onConflictDoNothing({
@@ -235,9 +255,26 @@ export async function ingestInboundMessage(input: {
   // 011 (FR-007): el mensaje de baja no merece respuesta del agente — el
   // side-effect ya marcó la baja; responder sería insistirle a quien pidió
   // no recibir más.
-  if (!isOptOutMessage(input.type, input.text)) {
-    await maybeRunAgentTurn(organizationId, conversation.id);
+  if (isOptOutMessage(input.type, input.text)) return;
+
+  // 020 (D5): con un adjunto procesable el turno NO sale acá. Lo dispara
+  // `processInboundMedia` cuando el binario está resuelto — listo o
+  // fallido. Si saliera ahora, el agente contestaría el mensaje anterior:
+  // el historial del pipeline filtra los mensajes sin texto.
+  if (plan.kind === "process") {
+    void processInboundMedia({
+      organizationId,
+      conversationId: conversation.id,
+      messageId: message.id,
+      isTest: conversation.isTest,
+      mediaId: input.mediaId!,
+      declaredMime: input.mediaMime ?? null,
+      plan,
+    });
+    return;
   }
+
+  await maybeRunAgentTurn(organizationId, conversation.id);
 }
 
 function toDate(timestamp: string): Date {
@@ -264,6 +301,8 @@ export function serializeMessage(
     aiGenerated: m.aiGenerated,
     via,
     media,
+    mediaState: m.mediaState ?? null,
+    mediaSummary: m.mediaSummary ?? null,
     source: m.source ?? "cloud",
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };

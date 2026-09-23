@@ -71,14 +71,39 @@ export const REQUIRED_TOOLS = ALLOWED_TOOLS;
 export const LINK_HOSTS = ["altosdecalamuchita.com"] as const;
 
 /**
- * Corrección #53: 2 propiedades, no 3. WhatsApp previsualiza solo el primer
- * enlace y el resto queda como un muro; además cada propiedad cruda pesa
- * 1.300-2.500 B de copy de marketing (§8).
+ * Cuántas opciones VE EL MODELO. 021 sube de 2 a 5.
+ *
+ * La corrección #53 bajó esto a 2 por la previsualización de WhatsApp: tres
+ * enlaces seguidos quedan como un muro. Pero eso es un límite de cuántos
+ * ENLACES se mandan, no de cuántas opciones puede mirar el agente — y con 2
+ * de 6 a la vista no hay forma de contestar «¿cuál es la más económica?» ni
+ * «¿alguna más chica?», que son de las preguntas más frecuentes de los
+ * huéspedes reales (incluido el reproche literal «¿por qué no me ofreciste
+ * antes esas 2 casas?»).
+ *
+ * La regla de UN SOLO ENLACE por mensaje sigue intacta: vive en el texto de
+ * cierre del render, no acá.
  */
-export const MAX_PROPERTIES_FOR_MODEL = 2;
+export const MAX_PROPERTIES_FOR_MODEL = 5;
 
 /** Tope de características por propiedad en el texto condensado. */
 const MAX_FACILITIES_PER_PROPERTY = 6;
+/**
+ * 021: destacados de `details` por propiedad en la BÚSQUEDA. Son pares
+ * `{name, value}` cortos y de altísima señal («Arrollo a 300 metros»): es lo
+ * que convierte un «no tengo esa información» en una respuesta útil cuando
+ * preguntan por el entorno.
+ */
+const MAX_HIGHLIGHTS_IN_SEARCH = 3;
+/** Destacados en la FICHA de una sola propiedad: ahí entran todos. */
+const MAX_HIGHLIGHTS_IN_DETAIL = 8;
+const MAX_HIGHLIGHT_NAME_CHARS = 60;
+const MAX_HIGHLIGHT_VALUE_CHARS = 120;
+/**
+ * 021: la `description` mide 1.300-2.500 B. En la búsqueda NO va (5 × 2 KB
+ * arruinan el presupuesto que §8 bajó un 90 %); en la ficha va recortada.
+ */
+const MAX_DESCRIPTION_CHARS = 600;
 /** Ejemplos de características que se listan en el prompt (son 82, §8). */
 const MAX_FACILITY_EXAMPLES = 10;
 /** Tope del catálogo guardado (defensa contra un catálogo inflado). */
@@ -395,7 +420,11 @@ function renderSection(input: SectionInput): string | null {
     );
   }
   lines.push(
-    `- Los precios salen en ${catalog?.currency === "ARS" || !catalog ? "pesos argentinos" : catalog.currency} y valen para las fechas y la cantidad de personas EXACTAS que consultes.`
+    `- Los precios salen en ${catalog?.currency === "ARS" || !catalog ? "pesos argentinos" : catalog.currency}, valen para las fechas y personas EXACTAS que consultes, y son para tu uso interno.`,
+    // 021: sin esto el modelo no sabe que puede hablar del barrio ni del
+    // entorno, y contesta «no tengo esa información» a preguntas que sí
+    // puede responder con lo que le devuelve la herramienta.
+    "- De cada alojamiento te devuelvo también el BARRIO y sus DETALLES (arroyo cerca, vista, campo de lavandas). Usalos para responder por zona y entorno; no inventes ninguno."
   );
   if (!catalog) {
     lines.push(
@@ -429,7 +458,11 @@ function renderSection(input: SectionInput): string | null {
   lines.push(
     "",
     "Reglas duras de alojamientos:",
-    "- Para dar precios o disponibilidad SIEMPRE usás search_stays primero. NUNCA inventes precios, noches mínimas, fotos ni propiedades: solo existe lo que te devuelve la herramienta.",
+    // 021: la regla del negocio. El agente anterior del cliente la tenía y
+    // el dueño la mantuvo: los valores se ven al entrar a la ficha, que es
+    // donde además se reserva.
+    "- NUNCA escribas importes: ni precios, ni totales, ni valor por noche, ni seña. Los montos son SOLO PARA VOS, para ordenar y para poder decir cuál es la más económica sin decir cuánto sale. Si te piden el precio, decí que está en el enlace, discriminado.",
+    "- Para saber precios o disponibilidad SIEMPRE usás search_stays primero. NUNCA inventes precios, noches mínimas, fotos ni propiedades: solo existe lo que te devuelve la herramienta.",
     "- Necesitás fecha de entrada, fecha de salida y cuántas personas son. Si falta alguno de los tres, PREGUNTÁ una sola cosa a la vez antes de consultar.",
     // Corrección #50.
     "- Cuentan TODAS las personas que se alojan, los chicos también: si te dicen «somos 4 y dos nenes», son 6 huéspedes.",
@@ -648,6 +681,8 @@ function validate(
  * (c) Condensado de `check-availability` — una línea por propiedad
  * ============================================================ */
 
+export type Highlight = { name: string; value: string };
+
 export type CondensedProperty = {
   code: string | null;
   name: string | null;
@@ -655,8 +690,14 @@ export type CondensedProperty = {
   bedrooms: number | null;
   bathrooms: number | null;
   city: string | null;
+  /** 021: los huéspedes preguntan por barrio («¿en Bosque Douglas tenés?»). */
+  neighborhood: string | null;
   types: string[];
   facilities: string[];
+  /** 021: `details` del proveedor, ya saneados. */
+  highlights: Highlight[];
+  /** 021: copy del proveedor, recortado. Solo se usa en la ficha. */
+  description: string | null;
   url: string | null;
   currency: string;
   total: number | null;
@@ -666,6 +707,25 @@ export type CondensedProperty = {
   nights: number | null;
   minStay: number | null;
 };
+
+/**
+ * `details` crudos → destacados saneados. El proveedor los manda como
+ * `[{name, value}]`; lo que se guarda es texto AJENO, así que pasa por el
+ * mismo saneo que el resto (016, §G.2): es DATO, nunca instrucción.
+ */
+export function condenseHighlights(raw: unknown): Highlight[] {
+  const out: Highlight[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const o = asRecord(item);
+    if (!o) continue;
+    const name = sanitizeForeignText(o.name, MAX_HIGHLIGHT_NAME_CHARS).trim();
+    if (!name) continue;
+    const value = sanitizeForeignText(o.value, MAX_HIGHLIGHT_VALUE_CHARS).trim();
+    out.push({ name, value });
+    if (out.length >= MAX_HIGHLIGHTS_IN_DETAIL) break;
+  }
+  return out;
+}
 
 /** Extrae de una propiedad cruda (1.300-2.500 B) solo lo que se usa. */
 export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): CondensedProperty | null {
@@ -681,6 +741,7 @@ export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): Conden
     bedrooms: readNumber(o, "bedrooms"),
     bathrooms: readNumber(o, "bathrooms"),
     city: sanitizeForeignText(o.city, 60) || null,
+    neighborhood: sanitizeForeignText(o.neighborhood, 60) || null,
     types: readArray(o, "types")
       .map((t) => sanitizeForeignText(t, 40))
       .filter((t) => t !== "")
@@ -689,6 +750,8 @@ export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): Conden
       .map((f) => sanitizeForeignText(f, 40))
       .filter((f) => f !== "")
       .slice(0, MAX_FACILITIES_PER_PROPERTY),
+    highlights: condenseHighlights(o.details),
+    description: sanitizeForeignText(o.description, MAX_DESCRIPTION_CHARS) || null,
     url: safeLink(o.url, LINK_HOSTS),
     currency,
     total: readNumber(pricing, "total"),
@@ -702,9 +765,14 @@ export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): Conden
 }
 
 /**
- * La línea condensada medida en research §8 (-90,6 % contra el crudo):
- * `- Casa Camiare (AC-004) — hasta 8 personas, 3 hab, 3 baños, Potrero de
- *    Garay. Total $600.000 ($300.000/noche, seña $60.000). <url>`
+ * La línea condensada. Nace en research §8 (-90,6 % contra el crudo) y 021
+ * le suma el barrio y los destacados: sin eso el agente no podía contestar
+ * «¿en Bosque Douglas tenés algo?» ni «¿alguna con arroyo?», que son dos de
+ * las preguntas más frecuentes de los huéspedes.
+ *
+ * El precio va etiquetado como INTERNO (021): el modelo lo necesita para
+ * ordenar y para decir cuál es la más barata, pero el negocio no escribe
+ * importes por WhatsApp — se ven al entrar al enlace.
  */
 export function renderPropertyLine(p: CondensedProperty): string {
   const label = [p.name ?? "Alojamiento", p.code ? `(${p.code})` : null]
@@ -714,7 +782,8 @@ export function renderPropertyLine(p: CondensedProperty): string {
   if (p.capacity !== null) specs.push(`hasta ${p.capacity} personas`);
   if (p.bedrooms !== null) specs.push(`${p.bedrooms} hab`);
   if (p.bathrooms !== null) specs.push(`${p.bathrooms} ${p.bathrooms === 1 ? "baño" : "baños"}`);
-  if (p.city) specs.push(p.city);
+  const place = [p.neighborhood, p.city].filter(Boolean).join(", ");
+  if (place) specs.push(place);
 
   const total = formatAmount(p.total, p.currency);
   const perNight = formatAmount(p.pricePerNight, p.currency);
@@ -723,15 +792,30 @@ export function renderPropertyLine(p: CondensedProperty): string {
     .filter(Boolean)
     .join(", ");
   const price = total
-    ? `Total ${total}${detail ? ` (${detail})` : ""}.`
+    ? `${INTERNAL_PRICE_LABEL} total ${total}${detail ? ` (${detail})` : ""}.`
     : "Precio no publicado para esas fechas.";
+
+  const highlights = p.highlights
+    .slice(0, MAX_HIGHLIGHTS_IN_SEARCH)
+    .map((h) => h.name)
+    .join(" · ");
 
   return [
     `- ${label}${specs.length > 0 ? ` — ${specs.join(", ")}.` : "."}`,
+    highlights ? `${highlights}.` : null,
     price,
     p.url ?? "(sin enlace disponible)",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
+
+/**
+ * Etiqueta del precio en el texto de herramienta. Se repite por línea a
+ * propósito: la regla general vive en la sección del prompt, pero el modelo
+ * lee estas líneas mucho más cerca del momento de escribir la respuesta.
+ */
+const INTERNAL_PRICE_LABEL = "Valor INTERNO (no se lo escribas al cliente):";
 
 /* ============================================================
  * (f) Errores del proveedor → texto que permite autocorregirse (§10)
@@ -823,7 +907,12 @@ function renderSearch(
     .filter((p): p is CondensedProperty => p !== null);
   const shown = all.slice(0, MAX_PROPERTIES_FOR_MODEL);
   const availableCount = readNumber(root, "available_count") ?? all.length;
-  const searchUrl = safeLink(root.search_url, LINK_HOSTS) ?? catalog?.searchBase ?? null;
+  // 021 (D4): sin `search_url` NO se cae a `catalog.searchBase`. Ese enlace
+  // es el buscador VACÍO: si el huésped pidió «con bajada al río», le
+  // mostraría propiedades sin río. Es peor que no mandar enlace, y es
+  // justo lo que el agente anterior tenía prohibido. Cuando no hay enlace
+  // de búsqueda reproducible, se manda el de la propiedad.
+  const searchUrl = safeLink(root.search_url, LINK_HOSTS);
 
   const excluded = asRecord(root.excluded_by_min_stay);
   const excludedCount = readNumber(excluded, "count") ?? 0;
@@ -867,9 +956,18 @@ function renderSearch(
   }
   if (searchUrl) lines.push(`Ver todas y reservar: ${searchUrl}`);
   lines.push(
-    // Corrección #53: 2 opciones y UN enlace. WhatsApp previsualiza solo el
-    // primero y el resto queda como un muro.
-    `Ofrecele al cliente estas ${shown.length === 1 ? "opción" : "opciones"} con el precio TOTAL, repetí las fechas, las noches y cuántas personas consultaste, y pasá UN SOLO enlace (el de la búsqueda, o el de una propiedad si te preguntó por esa). No prometas reservas: la reserva la completa la persona en el enlace.`
+    // Corrección #53: UN enlace por mensaje. WhatsApp previsualiza solo el
+    // primero y el resto queda como un muro. 021: la cantidad de opciones
+    // que VE el modelo subió a 5, pero el enlace sigue siendo uno.
+    `Ofrecele al cliente las opciones que le sirvan, repetí las fechas, las noches y cuántas personas consultaste, y pasá UN SOLO enlace${
+      searchUrl
+        ? " (el de la búsqueda de arriba, o el de una propiedad si te preguntó por esa)"
+        : ": como esta búsqueda no tiene enlace de listado, pasá el enlace DIRECTO de la propiedad que le recomendás — nunca un enlace general, que le mostraría alojamientos sin lo que pidió"
+    }.`,
+    // 021: la regla del negocio, repetida acá porque es donde el modelo la
+    // lee justo antes de escribir la respuesta.
+    "NO escribas importes: ni el total, ni el valor por noche, ni la seña. Los precios de arriba son SOLO PARA VOS (para ordenar y para poder decir cuál es la más económica). El cliente los ve al entrar al enlace.",
+    "No prometas reservas: la reserva la completa la persona en el enlace."
   );
 
   return {
@@ -905,15 +1003,18 @@ function buildSearchSummary(
   // Sin enlace de la allowlist no hay nada útil (ni seguro) que mandar solo.
   if (!ctx.searchUrl || shown.length === 0) return null;
 
+  // 021: sin importes. Este texto sale TAL CUAL a un cliente real cuando el
+  // modelo se cuelga, así que es el último lugar donde puede escaparse un
+  // precio — y acá no hay guarda que lo salve, porque no pasa por el modelo.
   const pieces = shown.map((p) => {
     const name = safeName(p.name);
     const specs = [
       p.bedrooms !== null ? `${p.bedrooms} ${p.bedrooms === 1 ? "dormitorio" : "dormitorios"}` : null,
       p.capacity !== null ? `hasta ${p.capacity} personas` : null,
+      safeName(p.neighborhood),
     ].filter(Boolean);
     const label = name ?? (specs.length > 0 ? "un alojamiento" : "una opción");
-    const total = formatAmount(p.total, p.currency);
-    return `${label}${specs.length > 0 ? ` (${specs.join(", ")})` : ""}${total ? ` ${total} en total` : ""}`;
+    return `${label}${specs.length > 0 ? ` (${specs.join(", ")})` : ""}`;
   });
 
   const when =
@@ -923,7 +1024,7 @@ function buildSearchSummary(
   const who = ctx.guests !== null ? ` y ${ctx.guests} personas` : "";
   const howLong = ctx.nights !== null && ctx.nights > 0 ? ` (${ctx.nights} noches)` : "";
 
-  return `${when}${who}${howLong} tengo: ${pieces.join(", y ")}. Podés ver fotos y reservar acá: ${ctx.searchUrl}`;
+  return `${when}${who}${howLong} tengo: ${pieces.join(", y ")}. Podés ver las fotos, los valores y reservar acá: ${ctx.searchUrl}`;
 }
 
 /** (e) Detalle de una propiedad: cierra avisando que NO trae precio (#52). */
@@ -940,13 +1041,25 @@ function renderShow(root: Record<string, unknown>, catalog: StayCatalog | null):
   const label = [p.name ?? "Alojamiento", p.code ? `(${p.code})` : null].filter(Boolean).join(" ");
   const specs: string[] = [];
   if (p.types.length > 0) specs.push(p.types.join("/"));
-  if (p.city) specs.push(`en ${p.city}`);
+  const place = [p.neighborhood, p.city].filter(Boolean).join(", ");
+  if (place) specs.push(`en ${place}`);
   if (p.capacity !== null) specs.push(`hasta ${p.capacity} personas`);
   if (p.bedrooms !== null) specs.push(`${p.bedrooms} hab`);
   if (p.bathrooms !== null) specs.push(`${p.bathrooms} ${p.bathrooms === 1 ? "baño" : "baños"}`);
 
   const lines = [`${TOOL_MARKER_LITERAL} ${lab}PROPIEDAD ${label} — ${specs.join(", ")}.`];
   if (p.facilities.length > 0) lines.push(`Tiene: ${p.facilities.join(", ")}.`);
+  // 021: acá SÍ entran los detalles completos y la descripción — es UNA
+  // propiedad, no cinco, así que el presupuesto de contexto lo permite. Es
+  // lo que le deja contestar por el entorno («bajada al río», «vista»).
+  if (p.highlights.length > 0) {
+    lines.push(
+      `Detalles: ${p.highlights
+        .map((h) => (h.value ? `${h.name} (${h.value})` : h.name))
+        .join("; ")}.`
+    );
+  }
+  if (p.description) lines.push(`Descripción del sitio: ${p.description}`);
   if (p.minStay !== null && p.minStay > 1) lines.push(`Estadía mínima: ${p.minStay} noches.`);
   if (p.url) lines.push(`Enlace: ${p.url}`);
   // Corrección #52: sin esta línea el modelo completa el precio de memoria.
@@ -1072,6 +1185,8 @@ export const altos: McpProfile = {
   catalogTool: TOOL_LIST_SEARCH_OPTIONS,
   linkHosts: LINK_HOSTS,
   agentActions: ["search_stays", "show_stay"],
+  // 021: decisión del dueño — se mantiene la regla del agente anterior.
+  hidePricesInReply: true,
   parseCatalog,
   renderSection,
   validate,

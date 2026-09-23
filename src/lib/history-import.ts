@@ -117,15 +117,30 @@ export function clampDays(days: unknown): number {
   return Math.min(HISTORY_IMPORT_MAX_DAYS, Math.max(1, Math.trunc(n)));
 }
 
-/** ¿El nombre actual es "reemplazable" por el de la agenda del celular? */
-export function shouldAdoptAddressBookName(contact: {
+/**
+ * ¿Se puede reemplazar el nombre actual del contacto por uno mejor?
+ *
+ * Lo usan los dos caminos que aprenden un nombre sin que nadie lo escriba a
+ * mano: la sync de la agenda del celular (017) y el agente cuando el huésped
+ * dice cómo se llama (021).
+ *
+ * La regla: manda SIEMPRE lo que cargó una persona del equipo.
+ * - Nombre vacío o igual al teléfono → nunca hubo nombre: se reemplaza.
+ * - `name_edited_at` con fecha → alguien del equipo lo corrigió a mano en el
+ *   CRM: NO se toca. (021: sin este campo, un contacto nacido de un entrante
+ *   seguía marcado `consent_source = 'inbound'` aunque el operador hubiera
+ *   arreglado el nombre, y la sync de 017 se lo pisaba igual.)
+ * - Creado por un entrante: el nombre es el del PERFIL de WhatsApp, que lo
+ *   eligió el cliente; se reemplaza por uno más útil.
+ * - Import / alta manual / API: lo cargó el operador, se conserva.
+ */
+export function canOverwriteContactName(contact: {
   name: string;
   phone: string;
   consentSource: string | null;
+  nameEditedAt?: Date | null;
 }): boolean {
   if (!contact.name.trim() || contact.name.trim() === contact.phone) return true;
-  // Creado por un entrante: su nombre es el perfil de WhatsApp (elegido por el
-  // cliente); el de la agenda del negocio es más útil. Importados/manuales/API
-  // conservan lo que el operador cargó.
+  if (contact.nameEditedAt) return false;
   return contact.consentSource === "inbound" || contact.consentSource === null;
 }

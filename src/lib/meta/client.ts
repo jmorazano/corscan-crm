@@ -1,4 +1,4 @@
-import { getEnv } from "@/lib/env";
+import { getEnv, isMockEnabled } from "@/lib/env";
 
 /**
  * Cliente propio de la Graph API de Meta (WhatsApp Cloud API).
@@ -240,6 +240,133 @@ export async function uploadResumable(input: {
     });
   }
   return handle;
+}
+
+/* ============================================================
+ * Descarga de adjuntos entrantes (020)
+ * ============================================================ */
+
+export type MediaHandle = {
+  url: string;
+  mimeType: string;
+  /** Bytes declarados por Meta: permite rechazar ANTES de bajar el cuerpo. */
+  fileSize: number | null;
+};
+
+/**
+ * Paso 1 de la descarga: el `media_id` del webhook se canjea por una URL
+ * temporal. El binario NO vive en la Graph API sino en la CDN de Meta, así
+ * que esta llamada solo trae el handle.
+ */
+export async function fetchMediaHandle(
+  mediaId: string,
+  token: string
+): Promise<MediaHandle> {
+  const res = await graphRequest<{
+    url?: string;
+    mime_type?: string;
+    file_size?: number | string;
+  }>(mediaId, { token });
+  if (!res.url) {
+    throw new MetaApiError("Meta no devolvió la URL del archivo", {
+      status: 0,
+      details: res,
+    });
+  }
+  const size = Number(res.file_size);
+  return {
+    url: res.url,
+    mimeType: (res.mime_type ?? "").split(";")[0]!.trim().toLowerCase(),
+    fileSize: Number.isFinite(size) && size > 0 ? size : null,
+  };
+}
+
+/**
+ * Hosts de los que aceptamos bajar un binario. La URL sale de una respuesta
+ * de Meta que a su vez sale de un webhook: es un dato EXTERNO que termina en
+ * un `fetch` del servidor, el mismo riesgo que cerró el guard anti-SSRF de
+ * 016. Sin allowlist, un webhook falsificado apunta el fetch a donde quiera.
+ */
+function isAllowedMediaHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === "lookaside.facebook.com" || h === "lookaside.fbsbx.com") return true;
+  if (h === "fbcdn.net" || h.endsWith(".fbcdn.net")) return true;
+  // Self-test: el wa-mock sirve el binario desde su propio host. Solo con el
+  // gate de mocks activo — en producción esta rama no existe.
+  if (isMockEnabled()) {
+    try {
+      const mockHost = new URL(getEnv().META_GRAPH_BASE_URL).hostname.toLowerCase();
+      if (h === mockHost) return true;
+    } catch {
+      // base mal formada: no habilita nada
+    }
+  }
+  return false;
+}
+
+/**
+ * Paso 2: los bytes. No pasa por `graphRequest` porque la URL es absoluta y
+ * de otro host. Meta exige un `User-Agent` explícito: sin él la CDN responde
+ * 403 aunque el token sea válido.
+ */
+export async function downloadMediaBinary(
+  url: string,
+  token: string,
+  maxBytes: number
+): Promise<{ bytes: Buffer; contentType: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new MetaApiError("La URL del archivo no es válida", { status: 0 });
+  }
+  if (parsed.protocol !== "https:" && !isMockEnabled()) {
+    throw new MetaApiError("La URL del archivo no usa HTTPS", { status: 0 });
+  }
+  if (!isAllowedMediaHost(parsed.hostname)) {
+    throw new MetaApiError(
+      `La URL del archivo apunta a un host no permitido (${parsed.hostname})`,
+      { status: 0 }
+    );
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(parsed.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "Vocero-CRM/1.0",
+      },
+      redirect: "follow",
+    });
+  } catch (cause) {
+    throw new MetaApiError("No se pudo descargar el archivo de Meta", {
+      status: 0,
+      details: cause,
+    });
+  }
+  if (!res.ok) {
+    throw new MetaApiError(`Meta respondió ${res.status} al descargar el archivo`, {
+      status: res.status,
+    });
+  }
+
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new MetaApiError("El archivo supera el tamaño máximo aceptado", {
+      status: 413,
+    });
+  }
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.byteLength > maxBytes) {
+    throw new MetaApiError("El archivo supera el tamaño máximo aceptado", {
+      status: 413,
+    });
+  }
+  return {
+    bytes,
+    contentType: (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase(),
+  };
 }
 
 /**

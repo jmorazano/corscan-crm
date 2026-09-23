@@ -170,7 +170,11 @@ describe("altos.renderSection", () => {
     expect(text).toContain("82 en total");
     // Las características completas serían 16 KB (research §8).
     expect(text).not.toContain("Tostadora Eléctrica");
-    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(4_000);
+    // 021: 4.000 → 4.500. Las reglas nuevas (no escribir importes, usar el
+    // barrio y los detalles) suman ~440 B. Lo que este tope cuida —que el
+    // catálogo entero NO entre al prompt— lo sigue verificando la línea de
+    // arriba.
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(4_500);
   });
 
   it("explica el AND/OR, el conteo de huéspedes y la prohibición de reservar", () => {
@@ -365,25 +369,52 @@ describe("altos.render de check-availability (research §8)", () => {
       .filter((p): p is NonNullable<typeof p> => p !== null)
       .map(renderPropertyLine);
     expect(lines).toHaveLength(5);
+    // 021: la línea suma el BARRIO y los DETALLES (sin ellos el agente no
+    // podía contestar por zona ni por entorno), y el precio queda marcado
+    // como interno porque este negocio no escribe importes por WhatsApp.
     expect(lines[0]).toBe(
-      "- Casa Camiare (AC-004) — hasta 8 personas, 3 hab, 3 baños, Potrero de Garay. Total $600.000 ($300.000/noche, seña $60.000). https://altosdecalamuchita.com/alquiler/alquiler-temporario-casa-camiare-potrero-de-garay?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
+      "- Casa Camiare (AC-004) — hasta 8 personas, 3 hab, 3 baños, Camiare, Potrero de Garay. Arrollo a 300 metros · Campo de lavandas. Valor INTERNO (no se lo escribas al cliente): total $600.000 ($300.000/noche, seña $60.000). https://altosdecalamuchita.com/alquiler/alquiler-temporario-casa-camiare-potrero-de-garay?in=2026-09-25&out=2026-09-27&c=4&cid=cv_demo123"
     );
-    // -90 % contra los 19 KB crudos (research §8): condensar no es opcional.
+    // Sigue siendo una fracción de los 19 KB crudos (research §8): enriquecer
+    // el condensado no es volver a mandar el JSON entero.
     const condensed = Buffer.byteLength(lines.join("\n"), "utf8");
-    expect(condensed).toBeLessThan(1_600);
-    expect(condensed).toBeLessThan(Buffer.byteLength(availability.raw, "utf8") * 0.12);
+    expect(condensed).toBeLessThan(2_400);
+    expect(condensed).toBeLessThan(Buffer.byteLength(availability.raw, "utf8") * 0.15);
   });
 
-  it("le pasa al modelo 2 propiedades como máximo (#53) y dice cuántas quedaron", () => {
-    expect(MAX_PROPERTIES_FOR_MODEL).toBe(2);
+  it("021: le pasa al modelo 5 opciones, pero sigue mandando UN SOLO enlace", () => {
+    // El límite de #53 era de ENLACES (WhatsApp previsualiza uno), no de
+    // opciones: con 2 de 6 a la vista el agente no podía contestar «¿cuál
+    // es la más económica?» ni «¿alguna más chica?».
+    expect(MAX_PROPERTIES_FOR_MODEL).toBe(5);
     const lines = result.toolText.split("\n").filter((l) => l.startsWith("- "));
-    expect(lines).toHaveLength(2);
-    expect(result.toolText).toContain("5 disponibles, te paso 2");
-    expect(result.toolText).toContain("Hay 3 opciones más");
+    expect(lines).toHaveLength(5);
+    expect(result.toolText).toContain("5 disponibles, te paso 5");
     expect(result.toolText).toContain("Ver todas y reservar: https://altosdecalamuchita.com/buscar");
     expect(result.toolText).toContain("UN SOLO enlace");
+    expect(result.toolText).toContain("NO escribas importes");
     expect(result.toolText).toContain("No prometas reservas");
-    expect(Buffer.byteLength(result.toolText, "utf8")).toBeLessThan(1_400);
+    expect(Buffer.byteLength(result.toolText, "utf8")).toBeLessThan(3_200);
+  });
+
+  it("021: sin search_url NO manda un enlace general, pide el de la propiedad", () => {
+    // El fallback anterior era `catalog.searchBase`: el buscador VACÍO. Si el
+    // huésped pidió «con bajada al río», ese enlace le muestra propiedades
+    // sin río — peor que no mandar nada.
+    const sinEnlace = altos.render(
+      search(),
+      { ...(availability.json as Record<string, unknown>), search_url: null },
+      CATALOG
+    );
+    expect(sinEnlace.toolText).not.toContain("Ver todas y reservar");
+    expect(sinEnlace.toolText).not.toContain(CATALOG!.searchBase!);
+    expect(sinEnlace.toolText).toContain("enlace DIRECTO de la propiedad");
+    // Sin enlace de listado tampoco hay resumen al cliente que mandar solo.
+    expect(sinEnlace.clientSummary).toBeNull();
+  });
+
+  it("021: el perfil declara que este negocio no escribe importes", () => {
+    expect(altos.hidePricesInReply).toBe(true);
   });
 
   it("repite fechas, noches y personas, y muestra la seña sin calcularla (§14)", () => {
@@ -412,7 +443,9 @@ describe("altos.render de check-availability (research §8)", () => {
     const summary = result.clientSummary as string;
     expect(summary).toContain("Para el 25/09 al 27/09 y 4 personas (2 noches)");
     expect(summary).toContain("Casa Camiare");
-    expect(summary).toContain("$600.000 en total");
+    // 021: este texto sale TAL CUAL a un cliente real cuando el modelo se
+    // cuelga, y es el único lugar donde un importe no pasa por la guarda.
+    expect(summary).not.toMatch(/\$|pesos/);
     expect(summary).toContain("https://altosdecalamuchita.com/buscar");
     expect(summary).not.toContain("Alquiler Temporario");
     expect(summary.match(/https?:\/\//g)).toHaveLength(1);
@@ -456,13 +489,20 @@ describe("altos.render de show-property (#52)", () => {
 
   it("condensa la ficha y cierra avisando que NO trae precio", () => {
     expect(result.toolText).toContain("PROPIEDAD Casa Perla Negra (AC-003)");
-    expect(result.toolText).toContain("Casa, en Potrero de Garay, hasta 10 personas, 5 hab, 3 baños");
+    // 021: el barrio entra en la ficha.
+    expect(result.toolText).toContain("Casa, en Villa del Condor, Potrero de Garay, hasta 10 personas, 5 hab, 3 baños");
     expect(result.toolText).toContain("Este detalle NO trae precio");
     expect(result.toolText).toContain("search_stays");
-    expect(result.toolText).not.toContain("Descubrí a Perla Negra");
+    // 021: acá SÍ entran los detalles y la descripción — es UNA propiedad.
+    // Es lo que le deja contestar por el entorno («bajada al río», «vista»).
+    expect(result.toolText).toContain("Detalles: Salamandra Interior");
+    expect(result.toolText).toContain("Cochera Techada (Si tiene la hicimos nueva)");
+    expect(result.toolText).toContain("Descripción del sitio: Descubrí a Perla Negra");
+    // …pero recortada: el copy crudo son 1.300-2.500 B.
+    expect(result.toolText).not.toContain("Reservá tu estadía");
     // 32 características crudas → 6.
     expect(result.toolText.split("Tiene: ")[1]?.split(".")[0]?.split(", ")).toHaveLength(6);
-    expect(Buffer.byteLength(result.toolText, "utf8")).toBeLessThan(700);
+    expect(Buffer.byteLength(result.toolText, "utf8")).toBeLessThan(1_900);
   });
 
   it("el resumen al cliente lleva el enlace de la propiedad y ningún precio", () => {
