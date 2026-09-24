@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, ownerOnlyError, parseBody, withAuth } from "@/lib/api";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError, sendText } from "@/server/inbox/send";
 import { postTrainerMessage, TrainerError } from "@/server/ai/trainer";
+import { canManageConfig } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,8 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   // del dueño se persiste y dispara el turno del entrenador.
   const row = await getConversation(session.organizationId, id);
   if (row?.conversation.kind === "trainer") {
+    // 022: entrenar al agente es configuración — solo el propietario.
+    if (!canManageConfig(session.role)) return ownerOnlyError();
     try {
       const result = await postTrainerMessage({
         conversationId: id,

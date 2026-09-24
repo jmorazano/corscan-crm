@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/components/use-media";
+import { navItemsFor } from "@/lib/roles";
 
 const TABS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
@@ -27,13 +28,21 @@ const TABS = [
  * 012 (FR-015): bajo 768 px la columna se vuelve una tira horizontal
  * desplazable; en escritorio sigue siendo la columna de siempre.
  */
-export function SettingsNav({ demoTools = false }: { demoTools?: boolean }) {
+export function SettingsNav({
+  demoTools = false,
+  role = "owner",
+}: {
+  demoTools?: boolean;
+  /** 022: un miembro solo ve Notificaciones y Mi contraseña. */
+  role?: string;
+}) {
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const activeRef = useRef<HTMLAnchorElement>(null);
-  const tabs = demoTools
-    ? [...TABS, { href: "/settings/datos", label: "Datos" } as const]
-    : TABS;
+  const tabs = navItemsFor(
+    role,
+    demoTools ? [...TABS, { href: "/settings/datos", label: "Datos" } as const] : TABS
+  );
 
   // En la tira, la pestaña activa entra en vista al montar y al cambiar de
   // ruta (solo móvil: en escritorio la columna se ve entera).

@@ -74,6 +74,8 @@ type CoalesceEntry = {
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
   pending: boolean;
+  /** 022: espera de ESTA empresa (ms), resuelta al agendar. */
+  delayMs: number;
 };
 
 const globalForAgent = globalThis as unknown as {
@@ -87,14 +89,21 @@ function coalesceMap(): Map<string, CoalesceEntry> {
   return globalForAgent.__agentCoalesce;
 }
 
-/** Punto de entrada con debounce (mensajes entrantes reales). */
-export function scheduleAgentTurn(conversationId: string): void {
+/**
+ * Punto de entrada con debounce (mensajes entrantes reales). 022: la espera
+ * la resuelve el llamador POR EMPRESA (`maybeRunAgentTurn`); sin valor rige
+ * el default de instancia. La entrada del coalesce recuerda la última
+ * espera para re-esperar lo mismo tras un turno.
+ */
+export function scheduleAgentTurn(conversationId: string, delayMs?: number): void {
   const map = coalesceMap();
   const entry = map.get(conversationId) ?? {
     timer: null,
     running: false,
     pending: false,
+    delayMs: getEnv().AGENT_COALESCE_MS,
   };
+  if (delayMs !== undefined) entry.delayMs = delayMs;
   map.set(conversationId, entry);
 
   if (entry.running) {
@@ -102,11 +111,10 @@ export function scheduleAgentTurn(conversationId: string): void {
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
-  const delay = getEnv().AGENT_COALESCE_MS;
   entry.timer = setTimeout(() => {
     entry.timer = null;
     void executeTurn(conversationId);
-  }, delay);
+  }, entry.delayMs);
 }
 
 async function executeTurn(conversationId: string): Promise<void> {
@@ -129,7 +137,7 @@ async function executeTurn(conversationId: string): Promise<void> {
       entry.timer = setTimeout(() => {
         entry.timer = null;
         void executeTurn(conversationId);
-      }, getEnv().AGENT_COALESCE_MS);
+      }, entry.delayMs);
     } else {
       map.delete(conversationId);
     }

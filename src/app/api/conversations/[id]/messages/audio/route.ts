@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import { validateVoiceNote, VOICE_NOTE_MAX_BYTES, VOICE_NOTE_MAX_MS } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
 import { getConversation } from "@/server/inbox/queries";
@@ -16,7 +16,7 @@ const durationSchema = z.coerce.number().int().min(0).max(VOICE_NOTE_MAX_MS + 50
  * `file` (+ `durationMs`). Solo conversaciones `trainer`. El mensaje nace
  * `pending`; la transcripción llega por SSE `message.updated`.
  */
-export const POST = withAuth(async (session, req: Request, ctx: Params) => {
+export const POST = withOwner(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const row = await getConversation(session.organizationId, id);
   if (!row) return apiError(404, "not_found", "Conversación no encontrada");

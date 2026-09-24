@@ -380,6 +380,9 @@ export const aiCredentials = pgTable(
      * entrenador; NULL = default de producto (nunca el del agente: puede no
      * aceptar audio). */
     transcriptionModel: text("transcription_model"),
+    /** 022: modelo con entrada de imagen (visión) para las imágenes del
+     * Entrenador y las de los clientes (020); NULL = default de producto. */
+    visionModel: text("vision_model"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -399,6 +402,9 @@ export const agentProfile = pgTable(
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
     greeting: text("greeting"),
+    /** 022: espera (ms) desde el último mensaje del cliente antes de que el
+     * agente responda; NULL = default de instancia (`AGENT_COALESCE_MS`). */
+    replyDelayMs: integer("reply_delay_ms"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

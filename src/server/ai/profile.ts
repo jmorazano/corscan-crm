@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { REPLY_DELAY_MAX_MS, REPLY_DELAY_MIN_MS } from "@/lib/agent-timing";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { DbOrTx } from "@/server/kb/service";
@@ -27,6 +28,14 @@ export const profileUpdateSchema = z.object({
   instructions: z.string().max(PROFILE_LIMITS.instructions).nullable().optional(),
   escalationRules: z.string().max(PROFILE_LIMITS.escalationRules).nullable().optional(),
   greeting: z.string().max(PROFILE_LIMITS.greeting).nullable().optional(),
+  /** 022: espera antes de responder (ms); null = default de instancia. */
+  replyDelayMs: z
+    .number()
+    .int()
+    .min(REPLY_DELAY_MIN_MS)
+    .max(REPLY_DELAY_MAX_MS)
+    .nullable()
+    .optional(),
 });
 export type ProfilePatch = z.infer<typeof profileUpdateSchema>;
 

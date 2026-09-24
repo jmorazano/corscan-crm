@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import { isEmbeddedSignupConfigured } from "@/lib/env";
 import { completeEmbeddedSignup } from "@/server/whatsapp/embedded-signup";
 
@@ -17,7 +17,7 @@ const postSchema = z.object({
  * Cierra el Embedded Signup del lado servidor. El browser nunca ve el token:
  * manda el `code` de un solo uso y aquí se intercambia, valida y cifra.
  */
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = withOwner(async (session, req: Request) => {
   if (!isEmbeddedSignupConfigured()) {
     return apiError(
       503,

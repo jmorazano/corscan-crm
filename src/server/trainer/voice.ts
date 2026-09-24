@@ -6,7 +6,7 @@ import { transcribeAudio } from "@/lib/ai";
 import type { MessageMediaDto } from "@/lib/types";
 import { audioFormatForMime, type VoiceMime } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
-import { scheduleTrainerTurn } from "@/server/ai/trainer";
+import { forceTrainerTurn } from "@/server/ai/trainer";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
 
@@ -173,5 +173,7 @@ export async function transcribeVoiceNote(input: {
   }
 
   await finish({ mediaState: "ready", text: result.text });
-  scheduleTrainerTurn(input.conversationId);
+  // 022: forzado — si el dueño escribió mientras se transcribía, el turno
+  // intermedio no debe tragarse la nota de voz.
+  forceTrainerTurn(input.conversationId);
 }

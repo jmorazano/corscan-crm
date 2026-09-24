@@ -2,6 +2,8 @@ import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
 import { MCP_MARKER } from "@/server/mcp/markers";
 import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
+import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
+import { TRAINER_IMAGE_MARKER } from "@/lib/trainer-image";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -31,6 +33,10 @@ export const MOCK_INBOUND_TRANSCRIPTION =
 
 /** 020: descripción fija que devuelve el mock ante cualquier `image_url`. */
 export const MOCK_IMAGE_SUMMARY = "un comprobante de transferencia bancaria";
+
+/** 022: lectura fija de una imagen que el DUEÑO le manda a su agente. */
+export const MOCK_TRAINER_IMAGE_READING =
+  "LISTA DE PRECIOS 2026\nMensura: precio desde $150.000\nRelevamiento con dron: $90.000 por hectárea\nSeña: 30% al confirmar\n\nEs la foto de una lista de precios impresa del negocio.";
 
 function textOf(c: InContent | undefined): string {
   if (!c) return "";
@@ -68,6 +74,10 @@ export function aiMockCompletion(messages: InMessage[]): string {
     const parts = lastUserMsg.content as Exclude<InContent, string>;
     const url = parts.find((p) => p.type === "image_url")?.image_url?.url ?? "";
     if (url.startsWith("data:image/png")) return "[SIN_CONTENIDO]";
+    // 022: la imagen del dueño en el Entrenador se LEE completa (precios
+    // incluidos); la del cliente (020) se describe en una línea.
+    const sys = textOf(messages.find((m) => m.role === "system")?.content);
+    if (sys.includes(TRAINER_IMAGE_READ_MARKER)) return MOCK_TRAINER_IMAGE_READING;
     return MOCK_IMAGE_SUMMARY;
   }
 
@@ -205,6 +215,23 @@ export function aiMockCompletion(messages: InMessage[]): string {
 function dispatchTrainer(system: string, lastUser: string): string {
   const text = lastUser.toLowerCase();
   const ids = [...system.matchAll(/\[(kb_[0-9a-z]+)\]/g)].map((m) => m[1]!);
+
+  // 022: imagen del dueño. Leída → un bloque de conocimiento con lo que se
+  // leyó (un modelo real agruparía en P/R); fallida → pedir el texto.
+  if (lastUser.startsWith(TRAINER_IMAGE_MARKER)) {
+    if (/no se pudo leer/i.test(lastUser)) {
+      return JSON.stringify({
+        action: "reply",
+        text: "No pude leer la imagen. ¿Me lo escribís por acá?",
+      });
+    }
+    const body = lastUser.split("\n").slice(1).join("\n").split("\n\nEpígrafe:")[0]!.trim();
+    return JSON.stringify({
+      action: "apply",
+      changes: [{ op: "kb_add", kind: "block", content: body }],
+      reply: "Leí la imagen y guardé lo que dice como conocimiento.",
+    });
+  }
 
   if (/[?¿]/.test(lastUser) && !/precio|cuesta/.test(text)) {
     return JSON.stringify({

@@ -337,10 +337,15 @@ function AudioNote({ message: m }: { message: MessageDto }) {
  * transferencia era invisible para el equipo, que es justamente quien tiene
  * que verlo para dar de alta la reserva.
  */
-function ImageAttachment({ message: m }: { message: MessageDto }) {
+function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "whatsapp" | "trainer" }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const media = m.media;
   const state = m.mediaState;
+  // 022: en el hilo del entrenador la imagen la manda el DUEÑO y el agente
+  // la LEE (la lectura puede ser larga: una lista de precios entera).
+  const ownerImage = kind === "trainer" && m.direction === "out";
+  const alt = ownerImage ? "Imagen que le mandaste a tu agente" : "Imagen enviada por el cliente";
 
   if (!media) {
     return (
@@ -351,6 +356,10 @@ function ImageAttachment({ message: m }: { message: MessageDto }) {
       </span>
     );
   }
+
+  const summary = m.mediaSummary?.trim() ?? "";
+  const long = summary.length > 280;
+  const shown = long && !expanded ? `${summary.slice(0, 280).trimEnd()}…` : summary;
 
   return (
     <div className="min-w-[180px]" data-testid="image-message" data-status={state ?? "ready"}>
@@ -363,7 +372,7 @@ function ImageAttachment({ message: m }: { message: MessageDto }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={media.url}
-          alt={m.mediaSummary ?? "Imagen enviada por el cliente"}
+          alt={summary || alt}
           className="max-h-[240px] w-full max-w-[260px] object-cover"
           loading="lazy"
         />
@@ -371,22 +380,54 @@ function ImageAttachment({ message: m }: { message: MessageDto }) {
       {m.text && (
         <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
       )}
-      {m.mediaSummary && (
+      {ownerImage && state === "pending" && (
+        <div
+          data-testid="image-reading"
+          className="mt-1.5 flex items-center gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] text-text-3"
+        >
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
+          <span>Leyendo la imagen…</span>
+        </div>
+      )}
+      {ownerImage && state === "failed" && (
+        <div
+          data-testid="image-error"
+          className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-destructive"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+          <span>{m.error ?? "No se pudo leer la imagen"}</span>
+        </div>
+      )}
+      {summary && (
         <div
           data-testid="image-summary"
           className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-text-3"
         >
           <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-brand" strokeWidth={1.7} />
-          <span className="break-words">{m.mediaSummary}</span>
+          <span className="min-w-0 break-words">
+            {ownerImage && <span className="font-medium text-text-2">Lo que leyó: </span>}
+            <span className="whitespace-pre-wrap">{shown}</span>
+            {long && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="ml-1 font-medium text-brand-text underline underline-offset-2"
+                data-testid="image-summary-toggle"
+              >
+                {expanded ? "Ver menos" : "Ver todo"}
+              </button>
+            )}
+          </span>
         </div>
       )}
-      <Dialog open={open} onClose={() => setOpen(false)} size="lg" title="Imagen del cliente">
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        size="lg"
+        title={ownerImage ? "Imagen para tu agente" : "Imagen del cliente"}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={media.url}
-          alt={m.mediaSummary ?? "Imagen enviada por el cliente"}
-          className="max-h-[75vh] w-full object-contain"
-        />
+        <img src={media.url} alt={summary || alt} className="max-h-[75vh] w-full object-contain" />
       </Dialog>
     </div>
   );
@@ -430,7 +471,7 @@ function Bubble({
         ) : m.type === "audio" ? (
           <AudioNote message={m} />
         ) : m.type === "image" ? (
-          <ImageAttachment message={m} />
+          <ImageAttachment message={m} kind={kind} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />

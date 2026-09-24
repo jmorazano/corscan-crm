@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { McpClient } from "@/components/integrations/mcp-client";
-import { getSessionOrNull } from "@/lib/auth/session";
+import { requireOwnerPage } from "@/lib/auth/owner-page";
 import { getMcpIntegrationView } from "@/server/mcp/integration";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,8 @@ export const dynamic = "force-dynamic";
  * la que de verdad protege — es el `404 not_enabled` de cada endpoint.
  */
 export default async function McpIntegrationPage() {
-  const session = await getSessionOrNull();
-  if (!session) redirect("/login");
+  // 022: configuración de la empresa — solo el propietario.
+  const session = await requireOwnerPage();
   const view = await getMcpIntegrationView(session.organizationId);
   if (!view) notFound();
 

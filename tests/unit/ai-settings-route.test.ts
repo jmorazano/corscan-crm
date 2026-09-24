@@ -84,6 +84,8 @@ describe("GET /api/settings/ai", () => {
       model: DEFAULT_AGENT_MODEL,
       judgeModel: DEFAULT_JUDGE_MODEL,
       transcriptionModel: "google/gemini-2.5-flash",
+      // 022: modelo de visión aparte (Entrenador + imágenes de clientes).
+      visionModel: "google/gemini-2.5-flash",
     });
   });
 

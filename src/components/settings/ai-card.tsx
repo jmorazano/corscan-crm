@@ -29,8 +29,14 @@ type AiSettingsResponse = {
     model: string | null;
     judgeModel: string | null;
     transcriptionModel: string | null;
+    visionModel: string | null;
   } | null;
-  defaults: { model: string; judgeModel: string; transcriptionModel: string };
+  defaults: {
+    model: string;
+    judgeModel: string;
+    transcriptionModel: string;
+    visionModel: string;
+  };
 };
 
 export function AiCard() {
@@ -40,11 +46,13 @@ export function AiCard() {
     model: "",
     judgeModel: "",
     transcriptionModel: "",
+    visionModel: "",
   });
   const [token, setToken] = useState("");
   const [model, setModel] = useState("");
   const [judgeModel, setJudgeModel] = useState("");
   const [transcriptionModel, setTranscriptionModel] = useState("");
+  const [visionModel, setVisionModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -59,6 +67,7 @@ export function AiCard() {
     setModel(data.config?.model ?? "");
     setJudgeModel(data.config?.judgeModel ?? "");
     setTranscriptionModel(data.config?.transcriptionModel ?? "");
+    setVisionModel(data.config?.visionModel ?? "");
     setLoaded(true);
   }, []);
 
@@ -78,6 +87,7 @@ export function AiCard() {
         model: model.trim() || undefined,
         judgeModel: judgeModel.trim() || undefined,
         transcriptionModel: transcriptionModel.trim() || undefined,
+        visionModel: visionModel.trim() || undefined,
       }),
     }).catch(() => null);
     setSaving(false);
@@ -196,21 +206,37 @@ export function AiCard() {
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ai-transcription-model">
-              Modelo de transcripción de notas de voz (opcional)
-            </Label>
-            <Input
-              id="ai-transcription-model"
-              value={transcriptionModel}
-              onChange={(e) => setTranscriptionModel(e.target.value)}
-              placeholder={defaults.transcriptionModel || "default de producto"}
-            />
-            <p className="text-xs text-muted-foreground">
-              Modelo con entrada de audio (p. ej. google/gemini-2.5-flash). Lo
-              usa la conversación con tu agente para transcribir lo que le
-              decís por voz.
-            </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-transcription-model">
+                Modelo de transcripción de notas de voz (opcional)
+              </Label>
+              <Input
+                id="ai-transcription-model"
+                value={transcriptionModel}
+                onChange={(e) => setTranscriptionModel(e.target.value)}
+                placeholder={defaults.transcriptionModel || "default de producto"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Modelo con entrada de audio (p. ej. google/gemini-2.5-flash).
+                Transcribe las notas de voz que le mandás a tu agente y las
+                que mandan tus clientes.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-vision-model">Modelo de visión para imágenes (opcional)</Label>
+              <Input
+                id="ai-vision-model"
+                value={visionModel}
+                onChange={(e) => setVisionModel(e.target.value)}
+                placeholder={defaults.visionModel || "default de producto"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Modelo que acepta imágenes. Lee las que le adjuntás a tu agente
+                para entrenarlo (listas de precios, fotos de productos) y
+                describe las que mandan tus clientes.
+              </p>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             Vacíos usan los defaults de producto que ves de guía. El token no

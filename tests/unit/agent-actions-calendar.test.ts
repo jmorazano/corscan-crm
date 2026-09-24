@@ -19,6 +19,7 @@ const profile = {
   instructions: null,
   escalationRules: null,
   greeting: null,
+  replyDelayMs: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

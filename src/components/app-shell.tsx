@@ -17,6 +17,7 @@ import {
   Ellipsis,
   FlaskConical,
   Inbox,
+  KeyRound,
   Kanban,
   LogOut,
   Megaphone,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { type Branding, resolveInitials } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
+import { canManageConfig, navItemsFor } from "@/lib/roles";
 import { modifierLabel, workspaceShortcut } from "@/lib/gestures";
 import { signOut } from "@/lib/auth/client";
 import {
@@ -134,6 +136,18 @@ const MORE: ReadonlyArray<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/settings/notifications", label: "Notificaciones", icon: Bell },
   { href: "/settings", label: "Ajustes", icon: Settings },
 ];
+
+/**
+ * 022: ítems de «Más» por rol. El miembro pierde la configuración de la
+ * empresa y gana el acceso directo a su contraseña (que el propietario ya
+ * tiene dentro de Ajustes).
+ */
+function moreItemsFor(role: string) {
+  const items = navItemsFor(role, MORE);
+  return canManageConfig(role)
+    ? items
+    : [...items, { href: "/change-password", label: "Mi contraseña", icon: KeyRound }];
+}
 
 /**
  * Web Push (013, FR-010): registra el service worker, re-sincroniza en
@@ -366,8 +380,11 @@ function MobileTabBar({
     setMoreOpen(false);
   }, [pathname]);
 
+  // 022: la hoja «Más» depende del rol — un miembro ve Notificaciones y su
+  // contraseña; el propietario, todo.
+  const more = useMemo(() => moreItemsFor(role), [role]);
   const moreActive =
-    MORE.some((m) => isActive(pathname, m.href)) || isActive(pathname, "/admin");
+    more.some((m) => isActive(pathname, m.href)) || isActive(pathname, "/admin");
 
   const itemClass = (active: boolean) =>
     cn(
@@ -503,7 +520,7 @@ function MobileTabBar({
         )}
         <ul className="-mx-1 flex flex-col">
           {[
-            ...MORE,
+            ...more,
             ...(isSuperAdmin
               ? [{ href: "/admin", label: "Administración", icon: Shield }]
               : []),

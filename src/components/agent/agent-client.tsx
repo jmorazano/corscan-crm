@@ -9,6 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  REPLY_DELAY_MAX_MS,
+  replyDelayMsToSeconds,
+  replyDelaySecondsToMs,
+} from "@/lib/agent-timing";
 
 type Profile = {
   enabled: boolean;
@@ -17,6 +22,8 @@ type Profile = {
   instructions: string | null;
   escalationRules: string | null;
   greeting: string | null;
+  /** 022: espera antes de responder (ms); null = default de instancia. */
+  replyDelayMs: number | null;
 };
 
 type KbEntry = {
@@ -31,6 +38,7 @@ type KbEntry = {
 
 export function AgentClient() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [defaultReplyDelayMs, setDefaultReplyDelayMs] = useState(20000);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
@@ -45,6 +53,7 @@ export function AgentClient() {
     if (p) {
       setProfile(p.profile);
       setAiConfigured(p.aiConfigured);
+      if (typeof p.defaultReplyDelayMs === "number") setDefaultReplyDelayMs(p.defaultReplyDelayMs);
     }
     if (kb) setEntries(kb.entries);
     if (size) setKbSize(size);
@@ -120,7 +129,14 @@ export function AgentClient() {
       )}
 
       <div className="grid gap-6 p-4 md:p-6 lg:grid-cols-2">
-        <ProfileSection profile={profile} onSave={saveProfile} />
+        <div className="space-y-6">
+          <ProfileSection profile={profile} onSave={saveProfile} />
+          <DelaySection
+            replyDelayMs={profile.replyDelayMs}
+            defaultMs={defaultReplyDelayMs}
+            onSave={saveProfile}
+          />
+        </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
     </div>
@@ -193,6 +209,83 @@ function ProfileSection({
           />
         </div>
         <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 022: espera antes de responder, POR EMPRESA. El agente no contesta al
+ * primer mensaje: espera a que el cliente termine de escribir y responde una
+ * vez con todo. Vacío = el default de la instancia.
+ */
+function DelaySection({
+  replyDelayMs,
+  defaultMs,
+  onSave,
+}: {
+  replyDelayMs: number | null;
+  defaultMs: number;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  const [raw, setRaw] = useState(
+    replyDelayMs === null ? "" : String(replyDelayMsToSeconds(replyDelayMs))
+  );
+  useEffect(() => {
+    setRaw(replyDelayMs === null ? "" : String(replyDelayMsToSeconds(replyDelayMs)));
+  }, [replyDelayMs]);
+  const parsed = replyDelaySecondsToMs(raw);
+  const invalid = parsed === "invalid";
+  const defaultSeconds = replyDelayMsToSeconds(defaultMs);
+  const effective = parsed === "invalid" || parsed === null ? defaultSeconds : parsed / 1000;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Espera antes de responder</CardTitle>
+        <CardDescription>
+          Cuántos segundos espera el agente desde el último mensaje del cliente
+          antes de contestar. Con más espera absorbe a quien escribe en varios
+          mensajes seguidos y responde una sola vez; con menos, contesta más
+          rápido pero puede interrumpir.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-reply-delay">Segundos</Label>
+            <Input
+              id="agent-reply-delay"
+              inputMode="numeric"
+              className="w-28"
+              placeholder={String(defaultSeconds)}
+              value={raw}
+              aria-invalid={invalid || undefined}
+              data-testid="reply-delay-input"
+              onChange={(e) => setRaw(e.target.value)}
+            />
+          </div>
+          <Button
+            disabled={invalid}
+            data-testid="reply-delay-save"
+            onClick={() => void onSave({ replyDelayMs: parsed === "invalid" ? null : parsed })}
+          >
+            Guardar espera
+          </Button>
+        </div>
+        {invalid ? (
+          <p className="text-xs text-destructive" data-testid="reply-delay-error">
+            Ingresá un número entero entre 0 y {REPLY_DELAY_MAX_MS / 1000} segundos.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-testid="reply-delay-hint">
+            {raw.trim() === ""
+              ? `Vacío: usa el valor por defecto de la instancia (${defaultSeconds} s).`
+              : effective === 0
+                ? "Responde apenas llega cada mensaje: puede interrumpir a quien escribe de a varios."
+                : `El agente espera ${effective} s de silencio del cliente antes de responder.`}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

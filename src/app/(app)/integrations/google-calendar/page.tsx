@@ -1,9 +1,12 @@
+import { requireOwnerPage } from "@/lib/auth/owner-page";
 import Link from "next/link";
 import { GoogleCalendarClient } from "@/components/integrations/google-calendar-client";
 
 export const dynamic = "force-dynamic";
 
-export default function GoogleCalendarIntegrationPage() {
+export default async function GoogleCalendarIntegrationPage() {
+  // 022: configuración de la empresa — solo el propietario.
+  await requireOwnerPage();
   return (
     <div className="flex h-full flex-col">
       <header className="border-b px-4 py-3 md:px-6 md:py-4">

@@ -124,6 +124,8 @@ describe("config de IA por empresa (US3)", () => {
       judgeModel: "z/juez",
       // 015: el modelo de transcripción cae al default (nunca al del agente).
       transcriptionModel: "google/gemini-2.5-flash",
+      // 022: el de visión también (aparte, elegible por empresa).
+      visionModel: "google/gemini-2.5-flash",
     });
   });
 

@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/session";
 import { bearerFromHeader, looksLikeApiKey } from "@/lib/api-keys";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { canManageConfig } from "@/lib/roles";
 import { touchApiKey, verifyApiKey } from "@/server/api-keys/keys";
 
 /** Respuesta de error estándar de la API interna (contrato api.md). */
@@ -56,6 +57,26 @@ export function withAuth<Args extends unknown[]>(
       return apiError(500, "internal", "Error interno");
     }
   };
+}
+
+/**
+ * 022: escrituras de CONFIGURACIÓN de la empresa (agente, conocimiento,
+ * plantillas, WhatsApp, envíos, Laboratorio, Entrenador): sesión válida Y
+ * rol `owner`. Un miembro recibe 403 `forbidden` con el mismo mensaje en
+ * todos lados. Las lecturas que la operación necesita siguen en `withAuth`.
+ */
+export function withOwner<Args extends unknown[]>(
+  handler: (session: SessionContext, ...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return withAuth(async (session, ...args: Args) => {
+    if (!canManageConfig(session.role)) return ownerOnlyError();
+    return handler(session, ...args);
+  });
+}
+
+/** 403 estándar cuando un miembro intenta configurar la empresa. */
+export function ownerOnlyError(): Response {
+  return apiError(403, "forbidden", "Solo el propietario de la empresa puede hacer esto");
 }
 
 /**

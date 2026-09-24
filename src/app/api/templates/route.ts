@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withAuth, withOwner } from "@/lib/api";
 import { HEADER_IMAGE_MAX_BYTES } from "@/lib/template-header";
 import {
   createTemplate,
@@ -28,7 +28,7 @@ const fieldsSchema = z.object({
  * `headerImage` opcional (File JPEG/PNG ≤5MB). El único consumidor es el
  * propio CRM, migrado en esta misma feature.
  */
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = withOwner(async (session, req: Request) => {
   let form: FormData;
   try {
     form = await req.formData();

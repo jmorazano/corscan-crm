@@ -469,6 +469,33 @@ export function InboxClient() {
     [refetchMessages, refetchConversations, startThinking]
   );
 
+  // 022: imagen al entrenador (multipart). Mismo circuito que la nota de
+  // voz: llega por SSE en `pending` y su lectura por `message.updated`.
+  const sendTrainerImage = useCallback(
+    async (file: File, meta: { caption: string | null }): Promise<string | null> => {
+      if (!selectedIdRef.current) return "Sin conversación seleccionada";
+      const form = new FormData();
+      form.append("file", file);
+      if (meta.caption) form.append("caption", meta.caption);
+      const res = await fetch(
+        `/api/conversations/${selectedIdRef.current}/messages/image`,
+        { method: "POST", body: form }
+      ).catch(() => null);
+      if (!res) return "Sin conexión con el servidor";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo enviar la imagen";
+      }
+      if (selectedIdRef.current) void refetchMessages(selectedIdRef.current);
+      void refetchConversations();
+      if (selectedRef.current?.kind === "trainer") startThinking();
+      return null;
+    },
+    [refetchMessages, refetchConversations, startThinking]
+  );
+
   const patchConversation = useCallback(
     async (patch: {
       aiEnabled?: boolean;
@@ -799,6 +826,7 @@ export function InboxClient() {
               conversation={selected}
               onSend={sendText}
               onSendAudio={selected.kind === "trainer" ? sendVoiceNote : undefined}
+              onSendImage={selected.kind === "trainer" ? sendTrainerImage : undefined}
               onSent={() => {
                 if (selectedIdRef.current)
                   void refetchMessages(selectedIdRef.current);

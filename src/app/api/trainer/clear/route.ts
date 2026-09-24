@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import { publish } from "@/server/events/bus";
 import { getConversation, serializeConversation } from "@/server/inbox/queries";
 import { clearTrainerConversation } from "@/server/ai/trainer";
@@ -7,7 +7,7 @@ import { getTrainerConversation } from "@/server/trainer/conversation";
 export const dynamic = "force-dynamic";
 
 /** Vacía el hilo con el agente; la auditoría de cambios se conserva. */
-export const POST = withAuth(async (session) => {
+export const POST = withOwner(async (session) => {
   const trainer = await getTrainerConversation(session.organizationId);
   if (!trainer) return apiError(404, "not_found", "No hay conversación con el agente");
   const deleted = await clearTrainerConversation(

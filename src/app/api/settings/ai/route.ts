@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_JUDGE_MODEL,
   DEFAULT_TRANSCRIPTION_MODEL,
+  DEFAULT_VISION_MODEL,
   deleteAiConfig,
   getAiSettings,
   saveAiConfig,
@@ -29,12 +30,14 @@ export const GET = withAuth(async (session) => {
           model: settings.model,
           judgeModel: settings.judgeModel,
           transcriptionModel: settings.transcriptionModel,
+          visionModel: settings.visionModel,
         }
       : null,
     defaults: {
       model: DEFAULT_AGENT_MODEL,
       judgeModel: DEFAULT_JUDGE_MODEL,
       transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
+      visionModel: DEFAULT_VISION_MODEL,
     },
   });
 });
@@ -47,6 +50,8 @@ const putSchema = z.object({
   judgeModel: z.string().trim().min(1).max(200).optional(),
   /** 015: modelo con entrada de audio (notas de voz del entrenador). */
   transcriptionModel: z.string().trim().min(1).max(200).optional(),
+  /** 022: modelo con entrada de imagen (Entrenador y clientes). */
+  visionModel: z.string().trim().min(1).max(200).optional(),
 });
 
 export const PUT = withAuth(async (session, req: Request) => {
@@ -66,6 +71,7 @@ export const PUT = withAuth(async (session, req: Request) => {
     model: body.data.model ?? null,
     judgeModel: body.data.judgeModel ?? null,
     transcriptionModel: body.data.transcriptionModel ?? null,
+    visionModel: body.data.visionModel ?? null,
   });
   // 015: la conversación con el agente aparece/desaparece con la config.
   publish(session.organizationId, {

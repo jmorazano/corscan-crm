@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseBody, withAuth } from "@/lib/api";
+import { parseBody, withAuth, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { getQuotaUsage } from "@/server/campaigns/quota";
@@ -21,7 +21,7 @@ const putSchema = z.object({
   dailyInitiatedLimit: z.number().int().min(1).max(100000),
 });
 
-export const PUT = withAuth(async (session, req: Request) => {
+export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 

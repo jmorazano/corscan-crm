@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withAuth, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAiConfigured } from "@/server/ai/credentials";
@@ -40,7 +40,7 @@ export const GET = withAuth(async (session) => {
   });
 });
 
-export const POST = withAuth(async (session) => {
+export const POST = withOwner(async (session) => {
   // Gate por empresa (US3/FR-010): la corrida no arranca sin config de IA —
   // el corte es ANTES del proveedor, con error claro y accionable.
   if (!(await isAiConfigured(session.organizationId))) {

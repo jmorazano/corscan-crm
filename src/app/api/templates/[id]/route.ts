@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import {
   deleteTemplate,
   serializeTemplate,
@@ -14,7 +14,7 @@ type Params = { params: Promise<{ id: string }> };
  * Borra la plantilla (en Meta y localmente). 409 `in_use` si alguna campaña
  * la referencia; 404 si no es de esta empresa.
  */
-export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+export const DELETE = withOwner(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   try {
     const template = await deleteTemplate(session.organizationId, id);

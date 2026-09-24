@@ -1,8 +1,11 @@
+import { requireOwnerPage } from "@/lib/auth/owner-page";
 import { IntegrationsIndex } from "@/components/integrations/integrations-index";
 
 export const dynamic = "force-dynamic";
 
-export default function IntegrationsPage() {
+export default async function IntegrationsPage() {
+  // 022: configuración de la empresa — solo el propietario.
+  await requireOwnerPage();
   return (
     <div className="flex h-full flex-col">
       <header className="border-b px-4 py-3 md:px-6 md:py-4">

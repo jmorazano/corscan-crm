@@ -1,4 +1,5 @@
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withAuth, withOwner } from "@/lib/api";
+import { getEnv } from "@/lib/env";
 import { isAiConfigured } from "@/server/ai/credentials";
 import {
   getProfile,
@@ -20,12 +21,15 @@ export const GET = withAuth(async (session) => {
       instructions: p.instructions,
       escalationRules: p.escalationRules,
       greeting: p.greeting,
+      // 022: null = usa el default de instancia que va abajo.
+      replyDelayMs: p.replyDelayMs,
     },
+    defaultReplyDelayMs: getEnv().AGENT_COALESCE_MS,
     aiConfigured: await isAiConfigured(session.organizationId),
   });
 });
 
-export const PUT = withAuth(async (session, req: Request) => {
+export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, profileUpdateSchema);
   if (!body.ok) return body.response;
   try {

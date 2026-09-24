@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { Clock3, Mic, Paperclip, Send, X, Zap } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { filterQuickReplies, quickReplyQuery } from "@/lib/gestures";
 import { composerMode } from "@/lib/trainer";
 import { fileNameFor, formatElapsed } from "@/lib/audio-record";
 import { VOICE_NOTE_MAX_BYTES, VOICE_NOTE_MAX_MS } from "@/lib/voice-note";
+import { looksLikeTrainerImage, TRAINER_IMAGE_MAX_BYTES } from "@/lib/trainer-image";
 import { useIsMobile } from "@/components/use-media";
 import { formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
@@ -20,16 +21,25 @@ export type SendAudio = (
   meta: { durationMs: number | null }
 ) => Promise<string | null>;
 
+/** 022: envío de una imagen al entrenador; devuelve un error o null. */
+export type SendImage = (
+  file: File,
+  meta: { caption: string | null }
+) => Promise<string | null>;
+
 export function Composer({
   conversation,
   onSend,
   onSendAudio,
+  onSendImage,
   onSent,
 }: {
   conversation: ConversationDto;
   onSend: (text: string) => Promise<string | null>;
   /** 015: solo la conversación con el agente acepta notas de voz. */
   onSendAudio?: SendAudio;
+  /** 022: solo la conversación con el agente acepta imágenes. */
+  onSendImage?: SendImage;
   onSent: () => void;
 }) {
   const isMobile = useIsMobile();
@@ -58,7 +68,10 @@ export function Composer({
       return "La nota de voz supera el máximo de 8 MB (unos 3 minutos)";
     }
     if (file.type && !file.type.startsWith("audio/") && !file.type.startsWith("video/mp4")) {
-      return "El archivo no es un audio válido (.m4a, .ogg, .wav, .mp3)";
+      // 022: con imágenes habilitadas, el mensaje nombra las dos familias.
+      return onSendImage
+        ? "El archivo tiene que ser una imagen (JPEG, PNG, WebP) o un audio (.m4a, .ogg, .wav, .mp3)"
+        : "El archivo no es un audio válido (.m4a, .ogg, .wav, .mp3)";
     }
     return null;
   }
@@ -76,18 +89,75 @@ export function Composer({
     return err;
   }
 
+  // 022: imagen al entrenador. El texto del composer viaja como epígrafe y
+  // se limpia al enviar. Rechazo local antes de subir; el servidor revalida
+  // por firma binaria.
+  const [sendingImage, setSendingImage] = useState(false);
+  async function sendImageFile(file: File): Promise<string | null> {
+    if (!onSendImage) {
+      const msg = "Esta conversación no acepta imágenes";
+      setError(msg);
+      return msg;
+    }
+    if (file.size === 0) {
+      setError("La imagen está vacía");
+      return "La imagen está vacía";
+    }
+    if (file.size > TRAINER_IMAGE_MAX_BYTES) {
+      const msg = "La imagen supera el máximo de 5 MB";
+      setError(msg);
+      return msg;
+    }
+    if (!looksLikeTrainerImage(file)) {
+      const msg = "El archivo no es una imagen JPEG, PNG o WebP";
+      setError(msg);
+      return msg;
+    }
+    setError(null);
+    setSendingImage(true);
+    const caption = text.trim() || null;
+    const err = await onSendImage(file, { caption });
+    setSendingImage(false);
+    if (err) {
+      setError(err);
+      return err;
+    }
+    setText("");
+    if (taRef.current) taRef.current.style.height = "auto";
+    return null;
+  }
+
+  /** Un archivo del clip, del drop o del portapapeles: imagen o audio según el tipo. */
+  function sendPickedFile(file: File) {
+    if (looksLikeTrainerImage(file)) {
+      void sendImageFile(file);
+      return;
+    }
+    void sendAudioFile(file, null);
+  }
+
   function onPickFile(list: FileList | null) {
     const file = list?.[0];
     if (!file) return;
-    void sendAudioFile(file, null);
+    sendPickedFile(file);
     if (fileRef.current) fileRef.current.value = "";
   }
 
   function onDrop(e: DragEvent) {
-    if (!onSendAudio) return;
+    if (!onSendAudio && !onSendImage) return;
     e.preventDefault();
     setDragging(false);
     onPickFile(e.dataTransfer.files);
+  }
+
+  // 022: pegar una captura (⌘V) en el hilo del entrenador la adjunta.
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (!onSendImage) return;
+    const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
+    const file = item?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    void sendImageFile(file);
   }
 
   // Respuestas rápidas (012, FR-008): `/` abre el selector; el rayo también.
@@ -175,8 +245,10 @@ export function Composer({
   }
 
   const canRecord = isTrainer && Boolean(onSendAudio);
+  const canAttachImage = isTrainer && Boolean(onSendImage);
+  const canAttach = canRecord || canAttachImage;
   const recording = recorder.state === "recording" || recorder.state === "requesting";
-  const uploading = recorder.state === "uploading";
+  const uploading = recorder.state === "uploading" || sendingImage;
   const showMic = canRecord && recorder.supported && text.trim().length === 0;
 
   return (
@@ -186,18 +258,21 @@ export function Composer({
         dragging && "bg-brand-tint"
       )}
       onDragOver={(e) => {
-        if (!canRecord) return;
+        if (!canAttach) return;
         e.preventDefault();
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
-      {canRecord && (
+      {canAttach && (
         <input
           ref={fileRef}
           type="file"
-          accept="audio/*,.wav,.m4a,.mp3,.ogg,.aac,.flac"
+          accept={[
+            ...(canRecord ? ["audio/*", ".wav", ".m4a", ".mp3", ".ogg", ".aac", ".flac"] : []),
+            ...(canAttachImage ? ["image/jpeg", "image/png", "image/webp", ".jpg", ".jpeg", ".png", ".webp"] : []),
+          ].join(",")}
           hidden
           data-testid="audio-file"
           onChange={(e) => onPickFile(e.target.files)}
@@ -217,7 +292,9 @@ export function Composer({
           </button>
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[22px] border bg-background px-3 py-2.5 text-sm md:rounded-md">
             {uploading ? (
-              <span className="text-text-2">Enviando nota de voz…</span>
+              <span className="text-text-2">
+                {sendingImage ? "Enviando imagen…" : "Enviando nota de voz…"}
+              </span>
             ) : (
               <>
                 <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-destructive" aria-hidden />
@@ -266,16 +343,22 @@ export function Composer({
         </div>
       )}
       <div className={cn("flex items-end gap-1.5 md:gap-2", (recording || uploading) && "hidden")}>
-        {canRecord && (
+        {canAttach && (
+          // 022: visible también en móvil — desde el celular la imagen sale
+          // de la cámara o la galería, y es el caso típico del dueño.
           <button
             type="button"
-            aria-label="Adjuntar audio"
-            title="Adjuntar un archivo de audio"
+            aria-label={canAttachImage ? "Adjuntar imagen o audio" : "Adjuntar audio"}
+            title={
+              canAttachImage
+                ? "Adjuntar una imagen (JPEG, PNG, WebP) o un archivo de audio"
+                : "Adjuntar un archivo de audio"
+            }
             data-testid="audio-attach"
             onClick={() => fileRef.current?.click()}
-            className="hidden h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent md:flex"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent md:h-[34px] md:w-[34px]"
           >
-            <Paperclip className="h-4 w-4" strokeWidth={1.7} />
+            <Paperclip className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
           </button>
         )}
         {!isTrainer && (
@@ -314,6 +397,7 @@ export function Composer({
               setText(e.target.value);
               autogrow();
             }}
+            onPaste={onPaste}
             onKeyDown={(e) => {
               if (qrOpen) {
                 if (e.key === "ArrowDown") {
@@ -390,7 +474,9 @@ export function Composer({
         )}
         <p className="text-[11px] text-text-3">
           {isTrainer
-            ? "Los cambios se aplican al instante y se pueden deshacer"
+            ? canAttachImage
+              ? "Podés adjuntar o pegar imágenes · los cambios se pueden deshacer"
+              : "Los cambios se aplican al instante y se pueden deshacer"
             : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
         </p>
       </div>

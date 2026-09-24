@@ -11,6 +11,7 @@ import { kbSize, listEntries } from "@/server/kb/service";
 import { getProfile } from "@/server/ai/profile";
 import { TrainerAction, type TrainerActionType } from "@/server/ai/trainer-actions";
 import { buildTrainerSystemPrompt } from "@/server/ai/trainer-prompts";
+import { trainerImageContext } from "@/lib/trainer-image";
 import { applyTrainerChanges, type ApplyOutcome } from "@/server/trainer/changes";
 
 /**
@@ -153,6 +154,34 @@ export function scheduleTrainerTurn(conversationId: string): void {
   }, TRAINER_DEBOUNCE_MS);
 }
 
+/**
+ * 022: un adjunto (nota de voz o imagen) que termina de procesarse DESPUÉS
+ * de que un turno cubrió mensajes posteriores del dueño quedaría sin
+ * respuesta: la marca de cobertura diría «ya respondí hasta acá». Se pone
+ * la marca en cero para que el próximo turno sí corra, y se agenda.
+ */
+export function forceTrainerTurn(conversationId: string): void {
+  covered().set(conversationId, 0);
+  scheduleTrainerTurn(conversationId);
+}
+
+/**
+ * Cómo entra cada mensaje del hilo al modelo: el texto (o la transcripción
+ * de una nota de voz, que va en `text`), o la lectura de una imagen con su
+ * marcador. Devuelve null si no hay nada que decir todavía (imagen
+ * pendiente, audio sin transcripción).
+ */
+export function trainerMessageContent(m: {
+  type: string;
+  text: string | null;
+  mediaState: "pending" | "ready" | "failed" | null;
+  mediaSummary: string | null;
+  error: string | null;
+}): string | null {
+  if (m.type === "image") return trainerImageContext(m);
+  return m.text?.trim() ? m.text : null;
+}
+
 async function executeTrainerTurn(conversationId: string): Promise<void> {
   const map = locks();
   const entry = map.get(conversationId);
@@ -231,12 +260,16 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
         warnAt: size.warnAt,
       }),
     },
-    ...history
-      .filter((m) => m.text)
-      .map((m) => ({
-        role: m.direction === "out" ? ("user" as const) : ("assistant" as const),
-        content: m.text!,
-      })),
+    ...history.flatMap((m) => {
+      const content = trainerMessageContent(m);
+      if (!content) return [];
+      return [
+        {
+          role: m.direction === "out" ? ("user" as const) : ("assistant" as const),
+          content,
+        },
+      ];
+    }),
   ];
 
   const result = await chatJson(aiConfig, TrainerAction, messages, {

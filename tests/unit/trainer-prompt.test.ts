@@ -40,6 +40,7 @@ const profile = {
   instructions: null,
   escalationRules: "Si piden factura A",
   greeting: null,
+  replyDelayMs: null,
   createdAt: now,
   updatedAt: now,
 };

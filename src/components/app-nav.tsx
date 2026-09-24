@@ -17,6 +17,7 @@ import {
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
+import { navItemsFor, settingsHomeFor } from "@/lib/roles";
 
 const NAV = [
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
@@ -52,6 +53,9 @@ export function AppNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // 022: un miembro no ve Agente, Laboratorio ni Integraciones; su
+  // «Ajustes» cae en Notificaciones. La guarda real vive en cada página.
+  const nav = navItemsFor(role, NAV);
 
   return (
     <aside className="hidden w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4 md:flex">
@@ -77,7 +81,7 @@ export function AppNav({
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -137,7 +141,7 @@ export function AppNav({
       )}
 
       <Link
-        href="/settings"
+        href={settingsHomeFor(role)}
         className={cn(
           "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
           pathname.startsWith("/settings")

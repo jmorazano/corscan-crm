@@ -8,6 +8,7 @@ import { decodeCursor, parseLimit } from "@/lib/pagination";
 import { listConversationsPage, serializeConversation } from "@/server/inbox/queries";
 import { ensureTrainerConversation } from "@/server/trainer/conversation";
 import { trainerVisible } from "@/lib/trainer";
+import { canManageConfig } from "@/lib/roles";
 import { getOrCreateConversation } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send";
 import { isWindowOpen } from "@/server/inbox/window";
@@ -54,7 +55,8 @@ export const GET = withAuth(async (session, req: Request) => {
   // 015: la conversación fija con el agente va fuera del keyset (solo en la
   // primera página) y su no leído suma al badge de la pestaña aunque los
   // filtros la oculten de la lista.
-  if (!cursor && !contactId) {
+  // 022: el Entrenador es configuración — un miembro no lo ve ni lo crea.
+  if (!cursor && !contactId && canManageConfig(session.role)) {
     const trainerRow = await ensureTrainerConversation(session.organizationId);
     if (trainerRow) {
       page.unreadMessages += trainerRow.conversation.unreadCount;

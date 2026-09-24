@@ -58,6 +58,7 @@ function promptOf(seed: SeedFile): string {
       instructions: seed.profile.instructions ?? null,
       escalationRules: seed.profile.escalationRules ?? null,
       greeting: seed.profile.greeting ?? null,
+      replyDelayMs: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },

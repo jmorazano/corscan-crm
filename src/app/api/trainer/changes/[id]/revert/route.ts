@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
@@ -22,7 +22,7 @@ const STATUS: Record<ChangeError["code"], number> = {
  * Deshace un cambio del entrenador (015, FR-008): restaura el estado
  * anterior y deja constancia en el hilo («Deshice: …»).
  */
-export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
+export const POST = withOwner(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   let change;
   try {

@@ -34,6 +34,12 @@ export type ChatMessage = {
  * audio; NUNCA se cae al modelo del agente (puede no aceptarla).
  */
 export const DEFAULT_TRANSCRIPTION_MODEL = "google/gemini-2.5-flash";
+/**
+ * Modelo de visión por defecto (022): acepta `image_url`. Lo usan las
+ * imágenes del Entrenador y las de los clientes (020). Aparte del de
+ * transcripción para que cada empresa pueda elegir uno distinto.
+ */
+export const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
 
 /** Config de IA resuelta por empresa (defaults de producto ya aplicados). */
 export type AiConfig = {
@@ -42,6 +48,8 @@ export type AiConfig = {
   judgeModel: string;
   /** 015: modelo con entrada de audio; ausente = DEFAULT_TRANSCRIPTION_MODEL. */
   transcriptionModel?: string;
+  /** 022: modelo con entrada de imagen; ausente = DEFAULT_VISION_MODEL. */
+  visionModel?: string;
 };
 
 export type ChatJsonResult<T> =
@@ -308,7 +316,8 @@ const DESCRIBE_MAX_CHARS = 400;
 
 /**
  * Descripción en UNA línea de una imagen que mandó un cliente (020, D8).
- * Usa el MISMO modelo multimodal que la transcripción.
+ * 022: usa el modelo de VISIÓN de la empresa (antes tomaba prestado el de
+ * transcripción).
  *
  * El prompt prohíbe copiar datos sensibles del comprobante (CBU, alias,
  * importe, titular, documento): es la defensa de ORIGEN. Si el dato nunca
@@ -324,9 +333,9 @@ export async function describeImage(
   if (!config.token.trim()) {
     return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
   }
-  const model = (opts?.model ?? config.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL).trim();
+  const model = (opts?.model ?? config.visionModel ?? DEFAULT_VISION_MODEL).trim();
   if (!model) {
-    return { ok: false, error: "not_configured", detail: "Sin modelo multimodal" };
+    return { ok: false, error: "not_configured", detail: "Sin modelo de visión" };
   }
 
   const dataUri = `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`;
@@ -380,6 +389,98 @@ export async function describeImage(
         }
       }
       if (attempt < DESCRIBE_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
+  return { ok: false, error: "provider_error", detail: lastDetail };
+}
+
+/** Marcador del prompt de lectura del Entrenador: el ai-mock despacha por él. */
+export const TRAINER_IMAGE_READ_MARKER = "[IMAGEN_ENTRENADOR]";
+
+const READ_MAX_ATTEMPTS = 2;
+export const READ_IMAGE_TIMEOUT_MS = 90_000;
+export const DEFAULT_MAX_TOKENS_READ_IMAGE = 1500;
+/** Lo que entra al turno del Entrenador: una lectura completa, no un informe. */
+const READ_IMAGE_MAX_CHARS = 3000;
+
+/**
+ * Lectura COMPLETA de una imagen que el dueño le manda a su agente en el
+ * Entrenador (022). A diferencia de `describeImage` (020), acá la imagen es
+ * material de estudio —una lista de precios, la foto de un producto, una
+ * captura de la web— y se transcribe todo lo legible, importes incluidos:
+ * los mandó el dueño para que el agente los sepa. La salida sigue siendo
+ * DATO para el turno (entra con marcador), nunca instrucción.
+ */
+export async function readTrainerImage(
+  config: AiConfig,
+  image: { bytes: Buffer | Uint8Array; mimeType: string; caption?: string | null },
+  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+): Promise<DescribeImageResult> {
+  if (!config.token.trim()) {
+    return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
+  }
+  const model = (opts?.model ?? config.visionModel ?? DEFAULT_VISION_MODEL).trim();
+  if (!model) {
+    return { ok: false, error: "not_configured", detail: "Sin modelo de visión" };
+  }
+
+  const dataUri = `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`;
+  const caption = image.caption?.trim();
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: [
+        `${TRAINER_IMAGE_READ_MARKER} Leés imágenes que el dueño o la dueña de un negocio le manda a su asistente de WhatsApp para que aprenda de ellas (una lista de precios, un menú, la foto de un producto, una captura de su sitio, un folleto).`,
+        "Devolvé en español rioplatense, en texto plano sin markdown: primero, TODO el texto legible de la imagen, transcripto fielmente (nombres, precios, importes, horarios, condiciones, teléfonos, direcciones), respetando el orden y agrupando por secciones si las hay; después, en una o dos oraciones, qué se ve (tipo de imagen y para qué sirve).",
+        "No inventes ni completes lo que no se lee: si un dato está cortado o borroso, decilo. No agregues consejos ni comentarios.",
+        `Si la imagen no se entiende o no tiene contenido útil, devolvé exactamente ${EMPTY_SENTINEL}.`,
+      ].join(" "),
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: caption
+            ? `Leé esta imagen. El dueño la mandó con este comentario: «${caption}».`
+            : "Leé esta imagen.",
+        },
+        { type: "image_url", image_url: { url: dataUri } },
+      ],
+    },
+  ];
+
+  let lastDetail = "";
+  for (let attempt = 1; attempt <= READ_MAX_ATTEMPTS; attempt++) {
+    try {
+      const raw = await callProvider(
+        config.token,
+        model,
+        messages,
+        opts?.maxTokens ?? DEFAULT_MAX_TOKENS_READ_IMAGE,
+        opts?.timeoutMs ?? READ_IMAGE_TIMEOUT_MS,
+        { temperature: 0 }
+      );
+      const text = cleanTranscription(raw);
+      if (!text || /^\[?\s*sin[_ ]contenido\s*\]?$/i.test(text)) {
+        return { ok: false, error: "empty", detail: "imagen sin contenido reconocible" };
+      }
+      return { ok: true, text: text.slice(0, READ_IMAGE_MAX_CHARS) };
+    } catch (err) {
+      lastDetail = err instanceof Error ? err.message : String(err);
+      if (err instanceof ProviderHttpError) {
+        const { status } = err;
+        if (
+          [400, 404, 415, 422].includes(status) &&
+          /image|imagen|modalit|vision|not support|unsupported|no soport/i.test(lastDetail)
+        ) {
+          return { ok: false, error: "unsupported_image", detail: lastDetail };
+        }
+        if (status >= 400 && status < 500 && status !== 429) {
+          return { ok: false, error: "provider_error", detail: lastDetail };
+        }
+      }
+      if (attempt < READ_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
     }
   }
   return { ok: false, error: "provider_error", detail: lastDetail };

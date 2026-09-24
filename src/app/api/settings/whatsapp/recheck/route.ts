@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import { getCredentialsByOrg, markConnected } from "@/server/whatsapp/credentials";
 import { testConnection } from "@/server/whatsapp/connect";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * cuando un error no-auth de Graph (100/200) marcó la conexión por error, o
  * cuando el operador re-otorgó permisos desde Meta.
  */
-export const POST = withAuth(async (session) => {
+export const POST = withOwner(async (session) => {
   const creds = await getCredentialsByOrg(session.organizationId);
   if (!creds) return apiError(404, "not_connected", "No hay un número conectado");
 

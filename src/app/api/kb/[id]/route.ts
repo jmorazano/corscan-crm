@@ -1,4 +1,4 @@
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import {
   deleteEntry,
   KbError,
@@ -16,7 +16,7 @@ const KB_ERROR_STATUS: Record<KbError["code"], number> = {
   invalid: 422,
 };
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = withOwner(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, kbPatchSchema);
   if (!body.ok) return body.response;
@@ -31,7 +31,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   }
 });
 
-export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+export const DELETE = withOwner(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   try {
     await deleteEntry(session.organizationId, id);

@@ -2,7 +2,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { scoped } from "@/lib/db/tenant";
-import { DEFAULT_TRANSCRIPTION_MODEL, type AiConfig } from "@/lib/ai";
+import { DEFAULT_TRANSCRIPTION_MODEL, DEFAULT_VISION_MODEL, type AiConfig } from "@/lib/ai";
 
 /**
  * Config de IA POR EMPRESA (US3, contrato ai-settings.md) — patrón calcado de
@@ -18,7 +18,7 @@ import { DEFAULT_TRANSCRIPTION_MODEL, type AiConfig } from "@/lib/ai";
  */
 export const DEFAULT_AGENT_MODEL = "anthropic/claude-sonnet-4.5";
 export const DEFAULT_JUDGE_MODEL = "anthropic/claude-haiku-4.5";
-export { DEFAULT_TRANSCRIPTION_MODEL };
+export { DEFAULT_TRANSCRIPTION_MODEL, DEFAULT_VISION_MODEL };
 
 /** Lo que la UI puede ver de la config (jamás el token completo). */
 export type AiSettings = {
@@ -28,6 +28,8 @@ export type AiSettings = {
   judgeModel: string | null;
   /** 015: modelo con entrada de audio para notas de voz; null = default. */
   transcriptionModel: string | null;
+  /** 022: modelo con entrada de imagen; null = default. */
+  visionModel: string | null;
 };
 
 /**
@@ -59,6 +61,7 @@ export async function getAiConfig(
     model: row.model ?? DEFAULT_AGENT_MODEL,
     judgeModel: row.judgeModel ?? row.model ?? DEFAULT_JUDGE_MODEL,
     transcriptionModel: row.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL,
+    visionModel: row.visionModel ?? DEFAULT_VISION_MODEL,
   };
 }
 
@@ -98,6 +101,7 @@ export async function getAiSettings(
     model: row.model,
     judgeModel: row.judgeModel,
     transcriptionModel: row.transcriptionModel,
+    visionModel: row.visionModel,
   };
 }
 
@@ -108,6 +112,7 @@ export async function saveAiConfig(input: {
   model?: string | null;
   judgeModel?: string | null;
   transcriptionModel?: string | null;
+  visionModel?: string | null;
 }): Promise<void> {
   const db = getDb();
   const enc = encryptSecret(input.token);
@@ -122,6 +127,7 @@ export async function saveAiConfig(input: {
       model: input.model ?? null,
       judgeModel: input.judgeModel ?? null,
       transcriptionModel: input.transcriptionModel ?? null,
+      visionModel: input.visionModel ?? null,
     })
     .onConflictDoUpdate({
       target: [schema.aiCredentials.organizationId],
@@ -132,6 +138,7 @@ export async function saveAiConfig(input: {
         model: input.model ?? null,
         judgeModel: input.judgeModel ?? null,
         transcriptionModel: input.transcriptionModel ?? null,
+        visionModel: input.visionModel ?? null,
         updatedAt: new Date(),
       },
     });
