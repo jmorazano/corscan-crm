@@ -29,6 +29,7 @@ import {
   sanitizeForeignText,
 } from "@/server/mcp/sanitize";
 import type {
+  LinkHostOptions,
   McpAgentAction,
   McpProfile,
   McpTransportErrorCode,
@@ -67,8 +68,21 @@ export const ALLOWED_TOOLS = [
 /** Sin las tres, el handshake no valida: no es este proveedor. */
 export const REQUIRED_TOOLS = ALLOWED_TOOLS;
 
-/** FR-010: únicos dominios a los que se puede enlazar desde una respuesta. */
+/**
+ * FR-010: dominios PROPIOS del perfil a los que se puede enlazar.
+ *
+ * 022: este PMS atiende a varios negocios del mismo dueño, cada uno con su
+ * sitio («Altos de Calamuchita» en las sierras, «Altos de la Ciudad» en la
+ * ciudad). Los dominios del resto NO se cablean acá: los aporta el runtime
+ * desde el host del `endpoint_url`, que fija solo el super admin.
+ */
 export const LINK_HOSTS = ["altosdecalamuchita.com"] as const;
+
+/** Los del perfil más los de esta empresa. Sin duplicados ni vacíos. */
+export function linkHostsFor(opts?: LinkHostOptions): readonly string[] {
+  const extra = (opts?.linkHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return extra.length === 0 ? LINK_HOSTS : [...new Set([...LINK_HOSTS, ...extra])];
+}
 
 /**
  * Cuántas opciones VE EL MODELO. 021 sube de 2 a 5.
@@ -323,7 +337,7 @@ export function shortPropertyName(raw: unknown): string | null {
  * (d) Catálogo: `list-search-options` condensado
  * ============================================================ */
 
-function parseCatalog(raw: unknown): StayCatalog | null {
+function parseCatalog(raw: unknown, opts?: LinkHostOptions): StayCatalog | null {
   const root = asRecord(raw);
   if (!root) return null;
   if (root.success === false) return null;
@@ -359,7 +373,7 @@ function parseCatalog(raw: unknown): StayCatalog | null {
   const currency =
     currencyRaw && /^[A-Za-z]{3}$/.test(currencyRaw) ? currencyRaw.toUpperCase() : "ARS";
 
-  const searchBase = safeLink(readString(asRecord(root.search_link), "base"), LINK_HOSTS);
+  const searchBase = safeLink(readString(asRecord(root.search_link), "base"), linkHostsFor(opts));
 
   if (propertyTypes.length === 0 && cities.length === 0 && !window) return null;
 
@@ -513,7 +527,7 @@ function validate(
   action: McpAgentAction,
   catalog: StayCatalog | null,
   now: Date,
-  opts?: { conversationId?: string | null; timezone?: string | null }
+  opts?: { conversationId?: string | null; timezone?: string | null } & LinkHostOptions
 ): ValidateResult {
   const today = resolveToday(now, opts?.timezone, catalog);
   const conversationId = opts?.conversationId ?? null;
@@ -527,7 +541,7 @@ function validate(
     }
     // Si el modelo pasa una URL, tiene que ser del sitio del negocio: una URL
     // ajena acá sería un pedido nuestro a un tercero (FR-010).
-    if (/^https?:/i.test(raw) && !safeLink(raw, LINK_HOSTS)) {
+    if (/^https?:/i.test(raw) && !safeLink(raw, linkHostsFor(opts))) {
       return reject(
         "ENLACE RECHAZADO: ese enlace no es del sitio del negocio. Usá el código (AC-0XX), el slug o el enlace exacto que te devolví."
       );
@@ -728,7 +742,11 @@ export function condenseHighlights(raw: unknown): Highlight[] {
 }
 
 /** Extrae de una propiedad cruda (1.300-2.500 B) solo lo que se usa. */
-export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): CondensedProperty | null {
+export function condenseProperty(
+  raw: unknown,
+  fallbackCurrency = "ARS",
+  opts?: LinkHostOptions
+): CondensedProperty | null {
   const o = asRecord(raw);
   if (!o) return null;
   const pricing = asRecord(o.pricing);
@@ -752,7 +770,7 @@ export function condenseProperty(raw: unknown, fallbackCurrency = "ARS"): Conden
       .slice(0, MAX_FACILITIES_PER_PROPERTY),
     highlights: condenseHighlights(o.details),
     description: sanitizeForeignText(o.description, MAX_DESCRIPTION_CHARS) || null,
-    url: safeLink(o.url, LINK_HOSTS),
+    url: safeLink(o.url, linkHostsFor(opts)),
     currency,
     total: readNumber(pricing, "total"),
     pricePerNight: readNumber(pricing, "price_per_night"),
@@ -890,7 +908,8 @@ function isLabPayload(root: Record<string, unknown>): boolean {
 function renderSearch(
   action: SearchStaysAction,
   root: Record<string, unknown>,
-  catalog: StayCatalog | null
+  catalog: StayCatalog | null,
+  opts?: LinkHostOptions
 ): RenderResult {
   const query = asRecord(root.query);
   const checkIn =
@@ -903,7 +922,7 @@ function renderSearch(
   const fallbackCurrency = catalog?.currency ?? "ARS";
 
   const all = readArray(root, "properties")
-    .map((p) => condenseProperty(p, fallbackCurrency))
+    .map((p) => condenseProperty(p, fallbackCurrency, opts))
     .filter((p): p is CondensedProperty => p !== null);
   const shown = all.slice(0, MAX_PROPERTIES_FOR_MODEL);
   const availableCount = readNumber(root, "available_count") ?? all.length;
@@ -912,7 +931,7 @@ function renderSearch(
   // mostraría propiedades sin río. Es peor que no mandar enlace, y es
   // justo lo que el agente anterior tenía prohibido. Cuando no hay enlace
   // de búsqueda reproducible, se manda el de la propiedad.
-  const searchUrl = safeLink(root.search_url, LINK_HOSTS);
+  const searchUrl = safeLink(root.search_url, linkHostsFor(opts));
 
   const excluded = asRecord(root.excluded_by_min_stay);
   const excludedCount = readNumber(excluded, "count") ?? 0;
@@ -1028,8 +1047,12 @@ function buildSearchSummary(
 }
 
 /** (e) Detalle de una propiedad: cierra avisando que NO trae precio (#52). */
-function renderShow(root: Record<string, unknown>, catalog: StayCatalog | null): RenderResult {
-  const p = condenseProperty(root.property, catalog?.currency ?? "ARS");
+function renderShow(
+  root: Record<string, unknown>,
+  catalog: StayCatalog | null,
+  opts?: LinkHostOptions
+): RenderResult {
+  const p = condenseProperty(root.property, catalog?.currency ?? "ARS", opts);
   if (!p) {
     return {
       toolText: `${TOOL_MARKER_LITERAL} PROPIEDAD NO ENCONTRADA: el sistema no devolvió la ficha. Usá el código (AC-0XX) o el enlace que te devolví en la búsqueda.`,
@@ -1078,7 +1101,12 @@ function renderShow(root: Record<string, unknown>, catalog: StayCatalog | null):
   return { toolText: lines.join("\n"), clientSummary };
 }
 
-function render(action: McpAgentAction, payload: unknown, catalog: StayCatalog | null): RenderResult {
+function render(
+  action: McpAgentAction,
+  payload: unknown,
+  catalog: StayCatalog | null,
+  opts?: LinkHostOptions
+): RenderResult {
   const root = asRecord(payload);
   if (!root) {
     return { toolText: `${TOOL_MARKER_LITERAL} ${NOT_AVAILABLE_TEXT}`, clientSummary: null };
@@ -1088,8 +1116,8 @@ function render(action: McpAgentAction, payload: unknown, catalog: StayCatalog |
     return { toolText: renderProviderError(root.error), clientSummary: null };
   }
   return action.action === "show_stay"
-    ? renderShow(root, catalog)
-    : renderSearch(action, root, catalog);
+    ? renderShow(root, catalog, opts)
+    : renderSearch(action, root, catalog, opts);
 }
 
 /* ============================================================

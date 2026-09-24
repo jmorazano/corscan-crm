@@ -73,6 +73,8 @@ export const POST = withAuth(async (session, req: Request) => {
   if (!body.ok) return body.response;
 
   const catalog = getCatalogStaleWhileRevalidate(integration, { sandbox: false });
+  // 022: los dominios a los que puede enlazar ESTA empresa.
+  const previewLinkHosts = integration.endpointHost ? [integration.endpointHost] : [];
   const validated = integration.profile.validate(
     {
       action: "search_stays",
@@ -126,7 +128,9 @@ export const POST = withAuth(async (session, req: Request) => {
   const properties = rawProperties
     .slice(0, MAX_PREVIEW_PROPERTIES)
     .map((raw) => {
-      const condensed = condenseProperty(raw, fallbackCurrency);
+      const condensed = condenseProperty(raw, fallbackCurrency, {
+        linkHosts: previewLinkHosts,
+      });
       if (!condensed) return null;
       const pricing = asRecord(asRecord(raw)?.pricing);
       return {
@@ -154,7 +158,8 @@ export const POST = withAuth(async (session, req: Request) => {
 
   const availableCount = readNumber(root, "available_count") ?? properties.length;
   const searchUrl =
-    safeLink(root.search_url, integration.profile.linkHosts) ?? catalog?.searchBase ?? null;
+    // 022: el sitio del perfil MÁS el de esta empresa (ver `linkHostsFor`).
+    safeLink(root.search_url, previewLinkHosts) ?? catalog?.searchBase ?? null;
 
   const message =
     availableCount > 0

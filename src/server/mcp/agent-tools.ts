@@ -290,9 +290,14 @@ export async function executeMcpAction(
     // 1) Validación local: el reparto correcto es el de `check_availability`
     //    (Zod verifica la forma, el perfil verifica la semántica). Un campo
     //    faltante no puede costar tres POST al modelo y un handoff.
+    // 022: el sitio de ESTA empresa. El mismo PMS atiende a varios negocios
+    // del mismo dueño con dominios distintos; sin esto, el segundo pierde
+    // todos sus enlaces contra la allowlist del perfil.
+    const linkHosts = ctx.integration.endpointHost ? [ctx.integration.endpointHost] : [];
     const validated = profile.validate(action, catalog, ctx.now, {
       conversationId: options.conversationId,
       timezone: ctx.timezone,
+      linkHosts,
     });
     if (!validated.ok) {
       return { toolText: validated.toolText, clientSummary: null };
@@ -312,7 +317,7 @@ export async function executeMcpAction(
     });
 
     if (outcome.ok) {
-      const rendered = profile.render(action, outcome.data, catalog);
+      const rendered = profile.render(action, outcome.data, catalog, { linkHosts });
       return appendNotes(rendered, validated.notes);
     }
 
@@ -322,7 +327,9 @@ export async function executeMcpAction(
     if (outcome.code === "tool_error") {
       const error: Record<string, unknown> = { ...(outcome.details ?? {}) };
       if (outcome.providerCode) error.code = outcome.providerCode;
-      const rendered = profile.render(action, { success: false, error }, catalog);
+      const rendered = profile.render(action, { success: false, error }, catalog, {
+        linkHosts,
+      });
       return { toolText: rendered.toolText, clientSummary: null };
     }
 

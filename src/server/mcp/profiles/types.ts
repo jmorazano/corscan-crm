@@ -13,6 +13,15 @@
  * archivo nuevo y cero cambios en el pipeline.
  */
 
+/**
+ * 022: hosts extra permitidos para los enlaces de ESTA empresa. Los aporta
+ * el runtime desde `integration.endpointHost`; el perfil los une a los
+ * suyos. Sin esto, un segundo negocio del mismo PMS —con su propio
+ * dominio— pierde TODOS los enlaces: el agente describe las propiedades y
+ * no puede pasar dónde se reserva.
+ */
+export type LinkHostOptions = { linkHosts?: readonly string[] };
+
 /** Claves del enum `mcp_integration.profile`: son las de `PROFILES`. */
 export type McpProfileKey = "generic" | "altos_de_calamuchita";
 
@@ -173,7 +182,16 @@ export type McpProfile = {
    */
   hidePricesInReply?: boolean;
 
-  parseCatalog(raw: unknown): StayCatalog | null;
+  /**
+   * 022: dominios a los que se puede enlazar, ADEMÁS de `linkHosts`.
+   *
+   * El mismo PMS atiende a varios negocios, cada uno con su propio sitio: el
+   * perfil no puede traer cableados los dominios de todos. El host del
+   * `endpoint_url` de la integración es tan confiable como la allowlist del
+   * perfil, porque según 016 lo fija ÚNICAMENTE el super admin — así que se
+   * suma a ella. Sigue siendo una allowlist cerrada.
+   */
+  parseCatalog(raw: unknown, opts?: LinkHostOptions): StayCatalog | null;
   renderSection(input: SectionInput): string | null;
   /**
    * `opts.conversationId` viaja como `cid=` en `search_url` y en cada
@@ -184,9 +202,14 @@ export type McpProfile = {
     action: McpAgentAction,
     catalog: StayCatalog | null,
     now: Date,
-    opts?: { conversationId?: string | null; timezone?: string | null }
+    opts?: { conversationId?: string | null; timezone?: string | null } & LinkHostOptions
   ): ValidateResult;
-  render(action: McpAgentAction, payload: unknown, catalog: StayCatalog | null): RenderResult;
+  render(
+    action: McpAgentAction,
+    payload: unknown,
+    catalog: StayCatalog | null,
+    opts?: LinkHostOptions
+  ): RenderResult;
   /** Texto para un fallo del transporte o de los guardrails (§F.6). */
   renderTransportError?(code: McpTransportErrorCode): string;
   /** Fixtures deterministas del Laboratorio: `is_test` JAMÁS toca la red. */

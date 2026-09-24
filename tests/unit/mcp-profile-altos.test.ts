@@ -413,6 +413,106 @@ describe("altos.render de check-availability (research §8)", () => {
     expect(sinEnlace.clientSummary).toBeNull();
   });
 
+  it("022: un segundo negocio del mismo PMS conserva SUS enlaces", () => {
+    // «Altos de la Ciudad» es del mismo dueño y usa el mismo PMS, pero su
+    // sitio es otro. Sin el host de su integración, safeLink descartaba
+    // TODOS sus enlaces: el agente describía las propiedades y no podía
+    // decir dónde se reserva, que es su única función.
+    const ciudad = {
+      success: true,
+      query: { check_in: "2026-10-10", check_out: "2026-10-12", nights: 2, guests: 2 },
+      available_count: 1,
+      search_url: "https://altosdelaciudad.com/buscar?in=2026-10-10&out=2026-10-12&c=2",
+      properties: [
+        {
+          name: "Alquiler Temporario Monoambiente Nueva Córdoba",
+          code: "AC-101",
+          types: ["Departamento"],
+          capacity: 2,
+          bedrooms: 1,
+          bathrooms: 1,
+          city: "Córdoba",
+          neighborhood: "Nueva Córdoba",
+          facilities: ["Cochera", "Gimnasio"],
+          url: "https://altosdelaciudad.com/alquiler/monoambiente-nueva-cordoba",
+          pricing: { currency: "ARS", nights: 2, total: 100_000, deposit: 20_000 },
+        },
+      ],
+    };
+    const action: SearchStaysAction = {
+      action: "search_stays",
+      check_in: "2026-10-10",
+      check_out: "2026-10-12",
+      guests: 2,
+    };
+
+    // Sin el host de la empresa: se pierden (comportamiento viejo).
+    const sinHost = altos.render(action, ciudad, null);
+    expect(sinHost.toolText).toContain("(sin enlace disponible)");
+
+    // Con el host que fijó el super admin en la integración: llegan.
+    const conHost = altos.render(action, ciudad, null, {
+      linkHosts: ["altosdelaciudad.com"],
+    });
+    expect(conHost.toolText).toContain("https://altosdelaciudad.com/alquiler/monoambiente-nueva-cordoba");
+    expect(conHost.toolText).toContain("Ver todas y reservar: https://altosdelaciudad.com/buscar");
+    expect(conHost.clientSummary).toContain("https://altosdelaciudad.com/buscar");
+  });
+
+  it("022: el host de la empresa NO abre la mano para cualquier dominio", () => {
+    const action: SearchStaysAction = {
+      action: "search_stays",
+      check_in: "2026-10-10",
+      check_out: "2026-10-12",
+      guests: 2,
+    };
+    const ajeno = {
+      success: true,
+      available_count: 1,
+      search_url: "https://evil.example.com/buscar",
+      properties: [
+        {
+          name: "Trampa",
+          code: "XX-1",
+          url: "https://altosdelaciudad.com.evil.example/x",
+          pricing: { currency: "ARS", total: 1 },
+        },
+      ],
+    };
+    const out = altos.render(action, ajeno, null, { linkHosts: ["altosdelaciudad.com"] });
+    expect(out.toolText).not.toContain("evil.example");
+    expect(out.toolText).toContain("(sin enlace disponible)");
+  });
+
+  it("022: el catálogo y la validación usan los mismos hosts", () => {
+    const catalogo = altos.parseCatalog(
+      {
+        cities: ["Córdoba"],
+        property_types: ["Departamento"],
+        search_link: { base: "https://altosdelaciudad.com/buscar" },
+        currency: "ARS",
+      },
+      { linkHosts: ["altosdelaciudad.com"] }
+    );
+    expect(catalogo?.searchBase).toBe("https://altosdelaciudad.com/buscar");
+
+    // Un enlace del sitio de la empresa que el cliente pega en el chat.
+    const ok = altos.validate(
+      { action: "show_stay", property: "https://altosdelaciudad.com/alquiler/x" },
+      null,
+      new Date("2026-10-01T12:00:00Z"),
+      { linkHosts: ["altosdelaciudad.com"] }
+    );
+    expect(ok.ok).toBe(true);
+    // Sin el host, el mismo enlace se rechaza (comportamiento viejo).
+    const rechazado = altos.validate(
+      { action: "show_stay", property: "https://altosdelaciudad.com/alquiler/x" },
+      null,
+      new Date("2026-10-01T12:00:00Z")
+    );
+    expect(rechazado.ok).toBe(false);
+  });
+
   it("021: el perfil declara que este negocio no escribe importes", () => {
     expect(altos.hidePricesInReply).toBe(true);
   });
