@@ -573,8 +573,11 @@ export async function listMcpConnectors(
   // Empresas que comparten host (corrección #23): se arma UNA vez para toda
   // la lista en vez de una query por conector, como hacía `sharedWithFor`.
   const nameById = new Map(orgs.map((o) => [o.id, o.name]));
+  // Un conector deshabilitado no comparte nada (sin credencial, sin
+  // llamadas): no entra en el conteo por host.
   const byHost = new Map<string, string[]>();
   for (const row of integrations) {
+    if (row.status === "disabled") continue;
     const host = endpointHostOf(row.endpointUrl);
     if (!host) continue;
     const list = byHost.get(host) ?? [];

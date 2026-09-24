@@ -343,9 +343,13 @@ export async function listOrganizations(
     }
   };
   // Un host que aparece en más de una empresa: se avisa en la tarjeta,
-  // porque si además comparten credencial comparten la atribución.
+  // porque si además comparten credencial comparten la atribución. Un
+  // conector DESHABILITADO no cuenta: no tiene credencial y el agente
+  // jamás lo llama, así que no puede compartir nada (el aviso quedaba
+  // pegado tras apagar el conector en una empresa y encenderlo en otra).
   const hostCount = new Map<string, number>();
   for (const r of mcpRows) {
+    if (r.status === "disabled") continue;
     const h = hostOf(r.endpointUrl);
     hostCount.set(h, (hostCount.get(h) ?? 0) + 1);
   }

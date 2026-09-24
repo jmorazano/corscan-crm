@@ -338,6 +338,7 @@ async function sharedWithFor(row: Row): Promise<McpSharedWith[]> {
     .select({
       organizationId: schema.mcpIntegration.organizationId,
       endpointUrl: schema.mcpIntegration.endpointUrl,
+      status: schema.mcpIntegration.status,
       name: schema.organization.name,
     })
     .from(schema.mcpIntegration)
@@ -345,9 +346,13 @@ async function sharedWithFor(row: Row): Promise<McpSharedWith[]> {
       schema.organization,
       eq(schema.organization.id, schema.mcpIntegration.organizationId)
     );
+  // Un conector deshabilitado no comparte nada (sin credencial, sin llamadas).
   return rows
     .filter(
-      (r) => r.organizationId !== row.organizationId && endpointHostOf(r.endpointUrl) === host
+      (r) =>
+        r.organizationId !== row.organizationId &&
+        r.status !== "disabled" &&
+        endpointHostOf(r.endpointUrl) === host
     )
     .map((r) => ({ organizationId: r.organizationId, name: r.name }));
 }

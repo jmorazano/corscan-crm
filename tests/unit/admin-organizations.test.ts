@@ -347,6 +347,48 @@ describe("listOrganizations", () => {
     expect(byId.get("org_sin")?.mcp).toBeNull();
   });
 
+  it("un conector DESHABILITADO contra el mismo host no cuenta como «endpoint compartido»", async () => {
+    state.organization.push(
+      {
+        id: "org_oficial",
+        name: "Altos oficial",
+        slug: "oficial",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+      {
+        id: "org_principal",
+        name: "Principal (apagado)",
+        slug: "principal",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      }
+    );
+    state.mcpIntegration.push(
+      {
+        organizationId: "org_oficial",
+        profile: "altos_de_calamuchita",
+        status: "connected",
+        endpointUrl: "https://altosdecalamuchita.com/mcp/assistant",
+      },
+      {
+        // Deshabilitado: sin credencial y el agente jamás lo llama — no
+        // puede compartir la atribución con nadie.
+        organizationId: "org_principal",
+        profile: "altos_de_calamuchita",
+        status: "disabled",
+        endpointUrl: "https://altosdecalamuchita.com/mcp/assistant",
+      }
+    );
+
+    const orgs = await listOrganizations(stubDb());
+    const byId = new Map(orgs.map((o) => [o.id, o]));
+    expect(byId.get("org_oficial")?.mcp?.shared).toBe(false);
+    expect(byId.get("org_principal")?.mcp).toMatchObject({
+      enabled: false,
+      status: "disabled",
+      shared: false,
+    });
+  });
+
   it("016: `disabled` sigue siendo un conector existente, pero no habilitado", async () => {
     state.organization.push({
       id: "org_off",
