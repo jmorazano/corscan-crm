@@ -70,7 +70,11 @@ export function buildAgentSystemPrompt(input: {
       ].join("\n")
     : null;
   return [
-    `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
+    // "atendés el WhatsApp" y no "sos el asistente": hay negocios cuyo agente
+    // tiene un rol propio ("responsable de reservas") y a los que la palabra
+    // "asistente" les contradice sus propias instrucciones cuando el cliente
+    // pregunta quién es. Neutro, sirve para todos.
+    `Eres "${profile.name}" y atendés el WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules
