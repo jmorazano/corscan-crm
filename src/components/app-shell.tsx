@@ -27,7 +27,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { Branding } from "@/lib/branding";
+import { type Branding, resolveInitials } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { modifierLabel, workspaceShortcut } from "@/lib/gestures";
 import { signOut } from "@/lib/auth/client";
@@ -317,7 +317,7 @@ export function AppShell({
                 style={{ backgroundColor: ws.switching.accent }}
                 aria-hidden
               >
-                {initials(ws.switching.name)}
+                {resolveInitials(ws.switching)}
               </span>
               <span className="text-sm">
                 Cambiando a <strong>{ws.switching.name}</strong>…

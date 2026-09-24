@@ -1,6 +1,7 @@
 "use client";
 
-import { cn, initials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { resolveInitials } from "@/lib/branding";
 import type { WorkspaceDto } from "@/components/workspaces/use-workspaces";
 
 export function formatUnread(n: number): string {
@@ -19,7 +20,7 @@ export function WorkspaceAvatar({
   size = "md",
   className,
 }: {
-  workspace: Pick<WorkspaceDto, "name" | "accent">;
+  workspace: Pick<WorkspaceDto, "name" | "accent" | "initials">;
   active: boolean;
   size?: "md" | "sm";
   className?: string;
@@ -35,7 +36,7 @@ export function WorkspaceAvatar({
       )}
       style={{ backgroundColor: workspace.accent }}
     >
-      {initials(workspace.name)}
+      {resolveInitials(workspace)}
     </span>
   );
 }

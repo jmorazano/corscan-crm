@@ -1,7 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { DEFAULT_BRANDING } from "@/lib/branding";
-import { brandingFromMetadata } from "@/server/branding";
+import { brandingFromMetadata, hasSavedBranding } from "@/server/branding";
 import { unreadByOrganization } from "@/server/workspaces/unread";
 
 /**
@@ -15,10 +14,14 @@ export type Workspace = {
   name: string;
   slug: string;
   role: string;
-  /** Color del mosaico: el acento de la marca de esa empresa o, si dejó el
-   * acento por defecto, un color estable derivado de su id (para que dos
+  /** Color del mosaico: el acento de la marca de esa empresa si alguna vez
+   * la guardó (respeta EXACTAMENTE lo elegido en Ajustes → Marca) o, si
+   * nunca entró a Marca, un color estable derivado de su id (para que dos
    * empresas sin marca propia no se vean iguales en el rail). */
   accent: string;
+  /** Iniciales del mosaico: las personalizadas en Marca o, si no hay, las
+   * calculadas del nombre (`resolveInitials`, en el cliente). */
+  initials?: string;
   /** Mensajes sin leer de esa empresa (misma regla que el badge de Bandeja). */
   unread: number;
 };
@@ -62,8 +65,8 @@ const TILE_COLORS = [
   "#7a6a8a",
 ] as const;
 
-export function tileColor(organizationId: string, accent: string): string {
-  if (accent.toLowerCase() !== DEFAULT_BRANDING.accent) return accent;
+/** Color estable derivado del id (misma empresa → mismo color siempre). */
+export function tileColor(organizationId: string): string {
   let hash = 0;
   for (let i = 0; i < organizationId.length; i++) {
     hash = (hash * 31 + organizationId.charCodeAt(i)) >>> 0;
@@ -79,17 +82,21 @@ export async function listMembershipOrganizationIds(
   return rows.map((r) => r.organizationId);
 }
 
-/** Espacios con nombre, acento y no leídos (contrato `GET /api/workspaces`). */
+/** Espacios con nombre, acento, iniciales y no leídos (contrato `GET /api/workspaces`). */
 export async function listWorkspaces(userId: string): Promise<Workspace[]> {
   const rows = await listMembershipRows(userId);
   if (rows.length === 0) return [];
   const unread = await unreadByOrganization(rows.map((r) => r.organizationId));
-  return rows.map((r) => ({
-    id: r.organizationId,
-    name: r.name,
-    slug: r.slug ?? "",
-    role: r.role,
-    accent: tileColor(r.organizationId, brandingFromMetadata(r.metadata).accent),
-    unread: unread.get(r.organizationId) ?? 0,
-  }));
+  return rows.map((r) => {
+    const branding = brandingFromMetadata(r.metadata);
+    return {
+      id: r.organizationId,
+      name: r.name,
+      slug: r.slug ?? "",
+      role: r.role,
+      accent: hasSavedBranding(r.metadata) ? branding.accent : tileColor(r.organizationId),
+      initials: branding.initials,
+      unread: unread.get(r.organizationId) ?? 0,
+    };
+  });
 }

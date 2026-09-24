@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ACCENT_PRESETS, isValidHex, resolveAccentSet, type Branding } from "@/lib/branding";
+import {
+  ACCENT_PRESETS,
+  isValidHex,
+  MAX_INITIALS_LENGTH,
+  resolveAccentSet,
+  resolveInitials,
+  type Branding,
+} from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +20,7 @@ export function BrandingClient() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [accent, setAccent] = useState("#3f5972");
+  const [initials, setInitials] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +33,7 @@ export function BrandingClient() {
         if (d) {
           setName(d.branding.name);
           setAccent(d.branding.accent);
+          setInitials(d.branding.initials ?? "");
         }
         setLoaded(true);
       })
@@ -33,6 +42,8 @@ export function BrandingClient() {
 
   const isPreset = accent.toLowerCase() in ACCENT_PRESETS;
   const previewSet = resolveAccentSet(accent);
+  const previewName = name.trim() || "Vocero";
+  const tileInitials = resolveInitials({ name: previewName, initials });
 
   async function save() {
     setSaving(true);
@@ -41,7 +52,7 @@ export function BrandingClient() {
     const res = await fetch("/api/settings/branding", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), accent }),
+      body: JSON.stringify({ name: name.trim(), accent, initials: initials.trim() }),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -69,16 +80,51 @@ export function BrandingClient() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="space-y-1.5">
-            <Label htmlFor="brand-name">Nombre</Label>
-            <Input
-              id="brand-name"
-              maxLength={30}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Vocero"
-              className="max-w-xs"
-            />
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="brand-name">Nombre</Label>
+              <Input
+                id="brand-name"
+                maxLength={30}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Vocero"
+                className="max-w-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="brand-initials">Iniciales del espacio</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="brand-initials"
+                  maxLength={MAX_INITIALS_LENGTH}
+                  value={initials}
+                  onChange={(e) =>
+                    setInitials(
+                      e.target.value
+                        .toUpperCase()
+                        .replace(/[^\p{L}\d]/gu, "")
+                        .slice(0, MAX_INITIALS_LENGTH)
+                    )
+                  }
+                  placeholder={resolveInitials({ name: previewName })}
+                  className="w-20 text-center"
+                />
+                <span
+                  aria-hidden
+                  title="Así se ve en el selector de empresas"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[14px] font-semibold text-white"
+                  style={{ backgroundColor: previewSet.accent }}
+                >
+                  {tileInitials}
+                </span>
+              </div>
+              <p className="text-xs text-text-3">
+                Para distinguir esta empresa en el selector de la izquierda
+                cuando manejás más de una. Vacío = se calculan del nombre.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">

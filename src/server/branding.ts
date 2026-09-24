@@ -44,6 +44,16 @@ export function brandingFromMetadata(metadata: string | null): Branding {
   );
 }
 
+/**
+ * 018: si la empresa alguna vez guardó su propia marca (aunque no haya
+ * tocado el acento). Distingue "nunca entró a Marca" — donde el acento
+ * guardado es el default por ausencia, no por elección — de una empresa que
+ * SÍ pasó por Ajustes → Marca y dejó el acento por defecto a propósito.
+ */
+export function hasSavedBranding(metadata: string | null): boolean {
+  return parseMetadata(metadata).branding != null;
+}
+
 export async function getBranding(
   organizationId?: string | null
 ): Promise<Branding> {

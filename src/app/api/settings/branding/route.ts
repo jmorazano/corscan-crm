@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getSessionOrNull } from "@/lib/auth/session";
-import { isValidHex, resolveAccentSet } from "@/lib/branding";
+import { isValidHex, MAX_INITIALS_LENGTH, resolveAccentSet } from "@/lib/branding";
 import { getBranding, saveBranding } from "@/server/branding";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +16,16 @@ export async function GET() {
 const putSchema = z.object({
   name: z.string().trim().min(1).max(30),
   accent: z.string().refine(isValidHex, "Color hex inválido (#rrggbb)"),
+  // "" = sin personalizar (el mosaico calcula las iniciales del nombre).
+  initials: z
+    .string()
+    .trim()
+    .transform((s) => s.toUpperCase())
+    .refine(
+      (s) => s === "" || new RegExp(`^[\\p{L}\\d]{1,${MAX_INITIALS_LENGTH}}$`, "u").test(s),
+      `Máximo ${MAX_INITIALS_LENGTH} letras o números`
+    )
+    .optional(),
 });
 
 export const PUT = withAuth(async (session, req: Request) => {

@@ -9,6 +9,7 @@ export type WorkspaceDto = {
   slug: string;
   role: string;
   accent: string;
+  initials?: string;
   unread: number;
 };
 

@@ -4,6 +4,8 @@
  * hover/soft/tint/text y se garantiza contraste con texto blanco.
  */
 
+import { initials as computeInitials } from "@/lib/utils";
+
 export type AccentSet = {
   accent: string;
   hover: string;
@@ -15,9 +17,14 @@ export type AccentSet = {
 export type Branding = {
   name: string;
   accent: string; // hex del acento base elegido
+  /** Iniciales del mosaico en el rail de espacios (018); si falta, se
+   * calculan del nombre (ver `resolveInitials`). */
+  initials?: string;
 };
 
 export const DEFAULT_BRANDING: Branding = { name: "Vocero", accent: "#3f5972" };
+
+export const MAX_INITIALS_LENGTH = 3;
 
 /** Presets del handoff (valores exactos). */
 export const ACCENT_PRESETS: Record<string, { label: string; set: AccentSet }> = {
@@ -110,11 +117,24 @@ export function accentCssVariables(accentHex: string): string {
   return `:root{--accent:${s.accent};--accent-hover:${s.hover};--accent-soft:${s.soft};--accent-tint:${s.tint};--accent-text:${s.text};}`;
 }
 
+/** "" o ausente → sin personalizar (el mosaico calcula del nombre). */
+function normalizeInitials(raw: string | null | undefined): string | undefined {
+  const cleaned = raw?.trim().toUpperCase().slice(0, MAX_INITIALS_LENGTH);
+  return cleaned || undefined;
+}
+
 export function normalizeBranding(input: Partial<Branding> | null): Branding {
   const name = input?.name?.trim().slice(0, 30) || DEFAULT_BRANDING.name;
   const accent =
     input?.accent && isValidHex(input.accent)
       ? input.accent.toLowerCase()
       : DEFAULT_BRANDING.accent;
-  return { name, accent };
+  const initials = normalizeInitials(input?.initials);
+  return initials ? { name, accent, initials } : { name, accent };
+}
+
+/** Iniciales a mostrar en un mosaico: la personalizada o, si no hay, la
+ * calculada del nombre (misma regla que cualquier otro avatar del CRM). */
+export function resolveInitials(b: Pick<Branding, "name" | "initials">): string {
+  return b.initials || computeInitials(b.name);
 }
