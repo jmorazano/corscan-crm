@@ -106,34 +106,68 @@ async function runImport(organizationId: string, days: number): Promise<void> {
     const now = new Date();
     const oldest = now.getTime() - days * 86_400_000;
 
+    // Diagnóstico para el log (sin datos personales: solo conteos y forma).
+    const diag = {
+      pages: 0,
+      listed: 0,
+      outOfWindow: 0,
+      noCustomer: 0,
+      participantShapes: [] as string[],
+      readErrors: 0,
+      rawMessages: 0,
+      withDate: 0,
+      withFrom: 0,
+      withText: 0,
+      rows: 0,
+    };
+
     let after: string | null = null;
     let seen = 0;
     pages: do {
       const page = await listInstagramConversations(integration.token, { after, limit: 25 });
+      diag.pages += 1;
+      diag.listed += page.conversations.length;
       for (const conv of page.conversations) {
         if (++seen > INSTAGRAM_HISTORY_MAX_CONVERSATIONS) break pages;
         const updated = parseMetaTime(conv.updatedTime);
         // Vienen de la más reciente a la más vieja: la primera fuera de la
         // ventana corta todo el recorrido.
-        if (updated && updated.getTime() < oldest) break pages;
+        if (updated && updated.getTime() < oldest) {
+          diag.outOfWindow += 1;
+          break pages;
+        }
 
         const customer = customerOf(conv.participants, integration);
-        if (!customer) continue;
+        if (!customer) {
+          diag.noCustomer += 1;
+          if (diag.participantShapes.length < 3) {
+            diag.participantShapes.push(
+              `${conv.participants.length} part.; cuenta_por_id=${conv.participants.some((p) => p.id === integration.igUserId)}; cuenta_por_usuario=${conv.participants.some((p) => !!integration.username && p.username?.toLowerCase() === integration.username.toLowerCase())}; con_usuario=${conv.participants.filter((p) => p.username).length}`
+            );
+          }
+          continue;
+        }
 
         let raw;
         try {
           raw = await getInstagramConversationMessages(integration.token, conv.id);
         } catch (err) {
+          diag.readErrors += 1;
           console.warn(
             `[instagram] historial: no se pudo leer una conversación:`,
             err instanceof Error ? err.message : err
           );
           continue;
         }
+        diag.rawMessages += raw.length;
+        diag.withDate += raw.filter((m) => m.createdTime).length;
+        diag.withFrom += raw.filter((m) => m.from).length;
+        diag.withText += raw.filter((m) => m.text).length;
         const rows = raw
           .map((m) => mapInstagramHistoryMessage(m, { customerId: customer.id, days, now }))
           .filter((r): r is NonNullable<typeof r> => r !== null)
           .sort((a, b) => a.at.getTime() - b.at.getTime());
+        diag.rows += rows.length;
         if (rows.length === 0) continue;
 
         const contact = await getOrCreateInstagramContact(integration, customer.id, {
@@ -150,6 +184,14 @@ async function runImport(organizationId: string, days: number): Promise<void> {
       }
       after = page.next;
     } while (after);
+
+    console.log(
+      `[instagram] historial de ${organizationId}: páginas=${diag.pages} listadas=${diag.listed} ` +
+        `fuera_de_ventana=${diag.outOfWindow} sin_cliente=${diag.noCustomer} errores_lectura=${diag.readErrors} ` +
+        `mensajes_crudos=${diag.rawMessages} con_fecha=${diag.withDate} con_from=${diag.withFrom} ` +
+        `con_texto=${diag.withText} filas=${diag.rows} importados=${messages}` +
+        (diag.participantShapes.length ? ` | participantes: ${diag.participantShapes.join(" / ")}` : "")
+    );
 
     // El resumen muestra el TOTAL importado (una reimportación que no trae
     // nada nuevo no debe decir «0 mensajes»).
