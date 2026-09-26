@@ -23,6 +23,8 @@ export const GET = withAuth(async (session) => {
       greeting: p.greeting,
       // 022: null = usa el default de instancia que va abajo.
       replyDelayMs: p.replyDelayMs,
+      // 025: con esto el agente no le contesta a conocidos del celular.
+      sharedPersonalNumber: p.sharedPersonalNumber,
     },
     defaultReplyDelayMs: getEnv().AGENT_COALESCE_MS,
     aiConfigured: await isAiConfigured(session.organizationId),

@@ -84,7 +84,51 @@ export const AgentAction = z.discriminatedUnion("action", [
     /** Código (AC-003), slug o enlace de la ficha. */
     property: z.string().trim().min(1),
   }),
+  /**
+   * Publicaciones de Mercado Libre (025): consultas sobre el SNAPSHOT local
+   * de la empresa (nunca la red en el turno). Solo se ofrecen en el prompt
+   * cuando la empresa tiene publicaciones sincronizadas. Todos los filtros
+   * son opcionales: un modelo que omite uno recibe más resultados, no un
+   * error.
+   */
+  z.object({
+    action: z.literal("search_listings"),
+    operation: z.string().trim().max(40).optional(),
+    property_type: z.string().trim().max(40).optional(),
+    zone: z.string().trim().max(80).optional(),
+    bedrooms_min: z.coerce.number().int().min(0).max(20).optional(),
+    rooms_min: z.coerce.number().int().min(0).max(20).optional(),
+    price_min: z.coerce.number().min(0).optional(),
+    price_max: z.coerce.number().min(0).optional(),
+    currency: z.string().trim().max(10).optional(),
+    query: z.string().trim().max(120).optional(),
+  }),
+  z.object({
+    action: z.literal("show_listing"),
+    /** Id de ML (MLA123…), enlace de la ficha o parte del título. */
+    listing: z.string().trim().min(1).max(512),
+  }),
+  /**
+   * Pedido de visita (025): TERMINAL. El servidor anota la propiedad y la
+   * disponibilidad en el contacto, mueve el lead a una etapa de visita si
+   * existe, manda `reply` y escala a una persona (motivo `visita`) para que
+   * confirme el horario. El agente jamás confirma una visita por su cuenta.
+   */
+  z.object({
+    action: z.literal("request_visit"),
+    listing: z.string().trim().max(512).optional(),
+    when: z.string().trim().max(200).optional(),
+    reply: z.string().optional(),
+    contact_name: z.string().trim().optional(),
+  }),
 ]);
+
+/** Consultas de publicaciones (025): las despacha el pipeline. */
+export function isListingsAction(
+  action: AgentActionType
+): action is Extract<AgentActionType, { action: "search_listings" | "show_listing" }> {
+  return action.action === "search_listings" || action.action === "show_listing";
+}
 
 /** Acciones-herramienta del conector MCP (016): las despacha el pipeline. */
 export function isMcpAction(

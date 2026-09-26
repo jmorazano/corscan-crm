@@ -1,6 +1,7 @@
 import {
   boolean,
   customType,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -155,6 +156,15 @@ export const contact = pgTable(
      * aunque el operador haya corregido el nombre, y la sync se lo pisaba.
      */
     nameEditedAt: timestamp("name_edited_at"),
+    /**
+     * 025: cuándo supimos que el DUEÑO ya conocía este contacto desde su
+     * celular (coexistence): está en la agenda del teléfono (state sync),
+     * tiene historial importado, o el dueño le escribió primero desde el
+     * celular (eco). Con «Este WhatsApp también es mi número personal»
+     * (`agent_profile.shared_personal_number`) el agente NO le responde:
+     * son amigos, familia y conocidos del dueño, no leads nuevos.
+     */
+    knownFromPhoneAt: timestamp("known_from_phone_at"),
     notes: text("notes"),
     /** Etiquetas de segmentación (004): saneadas (trim, lower, únicas). */
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
@@ -250,7 +260,9 @@ export const conversation = pgTable(
     aiEnabled: boolean("ai_enabled").notNull().default(true),
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
-      enum: ["cliente", "modelo", "error", "ventana"],
+      // 025: `visita` = el agente juntó un pedido de visita a una propiedad
+      // y se lo pasa a una persona para que confirme el horario.
+      enum: ["cliente", "modelo", "error", "ventana", "visita"],
     }),
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
@@ -418,6 +430,12 @@ export const agentProfile = pgTable(
     /** 022: espera (ms) desde el último mensaje del cliente antes de que el
      * agente responda; NULL = default de instancia (`AGENT_COALESCE_MS`). */
     replyDelayMs: integer("reply_delay_ms"),
+    /**
+     * 025: «Este WhatsApp también es mi número personal». El agente no le
+     * responde a contactos conocidos del celular (`contact.known_from_phone_at`)
+     * y, ante un mensaje personal de un número nuevo, calla sin escalar.
+     */
+    sharedPersonalNumber: boolean("shared_personal_number").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -1187,5 +1205,113 @@ export const mcpToolCall = pgTable(
       t.conversationId,
       t.createdAt
     ),
+  ]
+);
+
+/* ============================================================
+ * 025 — Publicaciones de Mercado Libre por empresa
+ * ============================================================ */
+
+/**
+ * Conexión de Mercado Libre por empresa (025, Constitución II categoría 3):
+ * la app es del OPERADOR (`MELI_CLIENT_ID/SECRET`), la cuenta la conecta cada
+ * empresa por OAuth. Access (6 h) y refresh token cifrados AES-256-GCM.
+ *
+ * OJO con el refresh: es de UN SOLO USO y rota en cada renovación (ML solo
+ * acepta el último emitido), así que se reescribe en el mismo update que el
+ * access token. Y el grant nuevo de una cuenta invalida el anterior de la
+ * misma app: por eso `ml_user_id` es único en la instancia — la misma cuenta
+ * conectada en dos empresas dejaría a la primera sin token.
+ */
+export const meliIntegration = pgTable(
+  "meli_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    mlUserId: text("ml_user_id").notNull(),
+    nickname: text("nickname"),
+    /** Sitio de ML de la cuenta (MLA = Argentina): define el dominio de los enlaces. */
+    siteId: text("site_id").notNull().default("MLA"),
+    refreshTokenCipher: text("refresh_token_cipher").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    accessTokenCipher: text("access_token_cipher"),
+    accessTokenIv: text("access_token_iv"),
+    accessTokenTag: text("access_token_tag"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    /** reconnect_required: ML rechazó el refresh (invalid_grant). */
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
+    /** false = conectada y sincronizada, pero el agente no la usa. */
+    agentEnabled: boolean("agent_enabled").notNull().default(true),
+    syncStatus: text("sync_status", { enum: ["idle", "running", "ok", "failed"] })
+      .notNull()
+      .default("idle"),
+    syncStartedAt: timestamp("sync_started_at"),
+    lastSyncAt: timestamp("last_sync_at"),
+    /** Código estable propio (nunca el texto de ML). */
+    lastSyncError: text("last_sync_error"),
+    listingsCount: integer("listings_count").notNull().default(0),
+    connectedBy: text("connected_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("meli_integration_org_uq").on(t.organizationId),
+    uniqueIndex("meli_integration_ml_user_uq").on(t.mlUserId),
+  ]
+);
+
+/**
+ * Snapshot de las publicaciones ACTIVAS de la cuenta (025, D1). El agente
+ * consulta ESTA tabla —nunca la API de ML en el turno—: filtra al instante,
+ * no gasta cupo del proveedor y el Laboratorio queda aislado de la red por
+ * construcción. La sync hace upsert por `(org, item_id)` y borra lo que dejó
+ * de estar activo. Todo el texto viene saneado (es texto ajeno: DATO).
+ */
+export const meliListing = pgTable(
+  "meli_listing",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Id de ML (MLA123…). */
+    itemId: text("item_id").notNull(),
+    title: text("title").notNull(),
+    categoryId: text("category_id"),
+    /** venta | alquiler | alquiler_temporario | null (no es un inmueble). */
+    operation: text("operation"),
+    /** Etiqueta tal como la publica ML («Departamento», «Casa», «PH»…). */
+    propertyType: text("property_type"),
+    price: doublePrecision("price"),
+    currency: text("currency"),
+    rooms: integer("rooms"),
+    bedrooms: integer("bedrooms"),
+    bathrooms: integer("bathrooms"),
+    parking: integer("parking"),
+    coveredArea: doublePrecision("covered_area"),
+    totalArea: doublePrecision("total_area"),
+    neighborhood: text("neighborhood"),
+    city: text("city"),
+    state: text("state"),
+    /** Se guarda para el equipo; el agente NO la da por chat (AC2.5). */
+    addressLine: text("address_line"),
+    permalink: text("permalink"),
+    thumbnail: text("thumbnail"),
+    /** Características legibles («Pileta», «Apto mascotas: Sí», «Expensas: $ 45.000»). */
+    features: jsonb("features").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    description: text("description"),
+    /** `last_updated` de ML: si no cambió, la sync no vuelve a pedir la descripción. */
+    mlUpdatedAt: timestamp("ml_updated_at"),
+    syncedAt: timestamp("synced_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("meli_listing_org_item_uq").on(t.organizationId, t.itemId),
+    index("meli_listing_org_op_idx").on(t.organizationId, t.operation),
   ]
 );

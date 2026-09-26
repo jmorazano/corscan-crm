@@ -18,6 +18,7 @@ const HANDOFF_LABELS: Record<string, string> = {
   modelo: "El agente decidió escalar",
   error: "Error del proveedor de IA",
   ventana: "Ventana de 24h cerrada",
+  visita: "Pidió coordinar una visita",
 };
 
 export function ContactPanel({

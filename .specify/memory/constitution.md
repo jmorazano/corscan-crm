@@ -1,7 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.7.0 → 1.8.0
+Versión: 1.8.0 → 1.8.1
+
+Cambios (feature 025-mercadolibre-listings, 26-sep-2026) — PATCH, sin
+categoría nueva:
+  - Principio II, categoría 3: se nombra a **Mercado Libre** como segunda
+    integración opcional POR EMPRESA vía OAuth (publicaciones vigentes de la
+    cuenta, SOLO LECTURA: el conector no publica, no edita ni responde
+    preguntas). Cumple (a..g) tal como están: la app es del operador por
+    entorno (`MELI_CLIENT_ID/SECRET`), la conecta cada empresa, tokens
+    cifrados, adaptador dedicado `src/lib/meli/`, el instalador no la
+    necesita, y el sandbox jamás la toca (el agente consulta un snapshot en la
+    base, nunca la red en el turno).
+  - Lista de adaptadores dedicados (Principio II y restricciones): se agrega
+    el adaptador OAuth/REST de Mercado Libre.
+  - Sin cambios en otros principios. Plantillas: sin cambios.
+
+Versión anterior: 1.7.0 → 1.8.0
 
 Cambios (feature 023-instagram-direct, 25-sep-2026):
   - Principio II: la categoría 1 deja de ser solo "WhatsApp Cloud API" y pasa
@@ -218,7 +234,8 @@ dependencias externas en runtime es CERRADA:
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
   3. **Integraciones opcionales POR EMPRESA vía OAuth** (desde 1.5.0; la
-     primera: Google Calendar). Condiciones NO negociables: (a) sin la
+     primera: Google Calendar; la segunda, desde 1.8.1: Mercado Libre, solo
+     lectura de las publicaciones vigentes de la cuenta). Condiciones NO negociables: (a) sin la
      integración el producto funciona completo; (b) la habilita el operador de
      la instancia con credenciales de app propias inyectadas por entorno; (c)
      la conecta cada empresa con consentimiento explícito y puede
@@ -275,8 +292,8 @@ dependencias externas en runtime es CERRADA:
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
   (cliente Graph API propio; adaptador LLM; adaptador OAuth/REST de Google;
-  transporte MCP genérico + perfil por proveedor) para no acoplar el dominio a
-  ellas.
+  adaptador OAuth/REST de Mercado Libre; transporte MCP genérico + perfil por
+  proveedor) para no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -432,9 +449,9 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   de tenant; cualquier acceso que pueda omitirlo requiere justificación explícita.
 - **Aislamiento de integraciones**: las dependencias de APIs externas se acceden a
   través de adaptadores dedicados (cliente Graph API propio, cliente de
-  Instagram propio, adaptador LLM OpenRouter-compatible, adaptador OAuth/REST
-  de Google, transporte MCP genérico + perfil por proveedor), no dispersas por
-  el dominio.
+  Instagram propio, adaptador LLM OpenRouter-compatible, adaptadores OAuth/REST
+  de Google y de Mercado Libre, transporte MCP genérico + perfil por
+  proveedor), no dispersas por el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
@@ -475,4 +492,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.8.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-25
+**Version**: 1.8.1 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-26

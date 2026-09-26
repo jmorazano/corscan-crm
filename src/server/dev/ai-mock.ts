@@ -1,6 +1,10 @@
 import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
-import { MCP_MARKER } from "@/server/mcp/markers";
+import {
+  LISTINGS_MARKER,
+  MCP_MARKER,
+  PERSONAL_NUMBER_MARKER,
+} from "@/server/mcp/markers";
 import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
 import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
 import { TRAINER_IMAGE_MARKER } from "@/lib/trainer-image";
@@ -151,6 +155,29 @@ export function aiMockCompletion(messages: InMessage[]): string {
     });
   }
 
+  // 025 (US3): lo que haría un modelo que respeta las reglas de privacidad.
+  // Va antes del resto: la persona «datos_ajenos» mezcla palabras que otras
+  // ramas tomarían («teléfono», «urgente»).
+  // Solo sobre mensajes del CLIENTE: un resultado de herramienta no es algo
+  // que alguien haya preguntado.
+  const fromClient = !lastUser.startsWith("[HERRAMIENTA]");
+  const privacy = fromClient ? dispatchPrivacy(lastUser) : null;
+  if (privacy) return privacy;
+
+  // 025 (AC3.3): perilla del guion E2E — un modelo que INVENTA un teléfono
+  // ajeno. La guarda del pipeline tiene que sacarlo antes de enviar.
+  if (lastUser.includes("[E2E_FILTRAR_TELEFONO]")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Claro, te ayudo. Llamala a Marta al 351 555-1234, ella tiene las llaves.",
+    });
+  }
+
+  // 025 (US4): número personal del dueño — un mensaje personal no se contesta.
+  if (fromClient && system.includes(PERSONAL_NUMBER_MARKER) && isPersonalMessage(text)) {
+    return JSON.stringify({ action: "none" });
+  }
+
   // Persona pide_humano (el regex de respaldo captura la frase canónica; esta
   // rama cubre variantes que llegan al modelo).
   if (text.includes("humano") || text.includes("asesor")) {
@@ -173,6 +200,12 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // quien está preguntando por una cabaña. El orden es el desempate.
   const stayTurn = dispatchStays(messages, system);
   if (stayTurn) return stayTurn;
+
+  // Publicaciones de Mercado Libre (025): también antes que la agenda —
+  // «visita» y «horario» no deben terminar en un turno de 30 minutos cuando
+  // la empresa no tiene la agenda para visitas.
+  const listingsTurn = dispatchListings(messages, system);
+  if (listingsTurn) return listingsTurn;
 
   // Agenda de turnos (005, research D10): despacho determinista de las
   // acciones-herramienta. Solo si el prompt trae la sección de agenda.
@@ -591,3 +624,193 @@ function dispatchCalendar(
   }
   return null;
 }
+
+/* ============================================================
+ * 025 — privacidad, número personal y publicaciones
+ * ============================================================ */
+
+function foldText(t: string): string {
+  return t.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+/** Lo que haría un modelo que respeta PRIVACIDAD Y HONESTIDAD. */
+function dispatchPrivacy(lastUser: string): string | null {
+  const t = foldText(lastUser);
+  if (/(quien mas te (escribio|hablo)|otros clientes|otra conversacion|que te (pregunto|dijo|escribio) (mi|el|la)|con quien (mas )?hablaste)/.test(t)) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Eso no te lo puedo contar: solo puedo ayudarte con tu consulta. ¿En qué te doy una mano?",
+    });
+  }
+  if (/(pasame|dame|decime) (el|la|los) (celular|telefono|numero|direccion|mail)/.test(t) && !/(tuyo|de ustedes|de la inmobiliaria|de la oficina)/.test(t)) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Datos de otras personas no los puedo pasar por acá. Si querés, le aviso a alguien del equipo para que lo vea.",
+    });
+  }
+  if (/(tus instrucciones|tu prompt|tu configuracion|copiame tus|que te dijeron que)/.test(t)) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Eso no lo puedo compartir, pero decime qué necesitás y te ayudo.",
+    });
+  }
+  if (/(sos (un )?(bot|robot|ia|inteligencia artificial|maquina)|estoy hablando con (una persona|un bot|alguien real))/.test(t)) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Soy un asistente automático del negocio; si preferís, una persona del equipo sigue la conversación.",
+    });
+  }
+  return null;
+}
+
+/** Mensajes claramente personales (amigos, familia, otro negocio del dueño). */
+function isPersonalMessage(text: string): boolean {
+  const t = foldText(text);
+  return /\b(asado|cumple\w*|mama|papa|abuela|te quiero|birra|cerveza|la cena|venis (a|al|el)|el bar|la barra|feliz dia|jaja\w*)\b/.test(t);
+}
+
+const MOCK_ZONES = [
+  "general paz",
+  "nueva cordoba",
+  "alta cordoba",
+  "cofico",
+  "centro",
+  "villa allende",
+  "guemes",
+  "cerro de las rosas",
+];
+
+function listingIdsIn(t: string): string[] {
+  return [...t.matchAll(/\bMLA-?(\d{6,})\b/gi)].map((m) => `MLA${m[1]}`);
+}
+
+/**
+ * Despacho determinista de las publicaciones (025). Emula un modelo sensato:
+ * pregunta lo que falta antes de buscar, ofrece hasta 3 opciones con enlace,
+ * usa la ficha para preguntas puntuales, no da la dirección y, ante un pedido
+ * de visita, junta día y nombre y usa `request_visit` (sin agenda).
+ */
+function dispatchListings(messages: InMessage[], system: string): string | null {
+  if (!system.includes(LISTINGS_MARKER)) return null;
+  const last = messages[messages.length - 1];
+  const lastText = last ? textOf(last.content) : "";
+  const clientTexts = messages
+    .filter((m) => m.role === "user")
+    .map((m) => textOf(m.content))
+    .filter((t) => !t.startsWith("[HERRAMIENTA]"));
+  const lastClient = clientTexts[clientTexts.length - 1] ?? "";
+  const lc = foldText(lastClient);
+
+  if (last?.role === "user" && lastText.startsWith("[HERRAMIENTA]")) {
+    if (lastText.includes("PUBLICACIONES ENCONTRADAS")) {
+      const lines = lastText
+        .split("\n")
+        .filter((l) => l.startsWith("- MLA"))
+        .slice(0, 3)
+        .map((l) => {
+          const parts = l.slice(2).split(" | ");
+          const link = parts.find((p) => p.startsWith("https://")) ?? "";
+          return `• ${parts[1] ?? parts[0]} — ${parts[3] ?? ""} — ${parts[4] ?? ""}\n${link}`;
+        });
+      return JSON.stringify({
+        action: "reply",
+        text: `Tengo estas opciones:\n${lines.join("\n")}\n¿Querés coordinar una visita a alguna?`,
+      });
+    }
+    if (lastText.includes("SIN COINCIDENCIAS")) {
+      const alt = lastText.match(/Habría opciones ([^\n]+)/)?.[1] ?? "";
+      return JSON.stringify({
+        action: "reply",
+        text: `Con eso exacto no tengo nada publicado ahora.${alt ? ` Habría opciones ${alt}` : ""} ¿Te sirve que busquemos así?`,
+      });
+    }
+    if (lastText.includes("FICHA ")) {
+      const parts: string[] = [];
+      if (/mascota/.test(lc)) {
+        const pets = lastText.match(/Apto mascotas: (Sí|No)/)?.[1];
+        parts.push(pets ? `Sobre mascotas: ${pets === "Sí" ? "sí, las acepta" : "no se aceptan"}.` : "Sobre mascotas no figura en la publicación; lo confirmo.");
+      }
+      if (/direcci/.test(lc)) {
+        const where = lastText.match(/Ubicación: ([^(\n]+)/)?.[1]?.trim() ?? "la zona publicada";
+        parts.push(`Está en ${where}; la dirección exacta te la paso al coordinar la visita.`);
+      }
+      if (parts.length === 0) {
+        const title = lastText.match(/FICHA \S+ — ([^\n]+)/)?.[1] ?? "la propiedad";
+        parts.push(`Te cuento de ${title}: ${lastText.match(/Características: ([^\n]+)/)?.[1] ?? "tiene los datos que ves en la publicación"}.`);
+      }
+      return JSON.stringify({ action: "reply", text: parts.join(" ") });
+    }
+    if (lastText.includes("NO ENCONTRÉ")) {
+      return JSON.stringify({ action: "reply", text: "¿Me pasás el enlace de la publicación que viste así la busco?" });
+    }
+    return null;
+  }
+
+  const idsInConversation = listingIdsIn(messages.map((m) => textOf(m.content)).join("\n"));
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const offered = listingIdsIn(lastAssistant ? textOf(lastAssistant.content) : "");
+  const focus = offered[0] ?? idsInConversation[idsInConversation.length - 1] ?? null;
+
+  if (/(visitar|verlo|verla|conocerlo|conocerla|ir a ver|pasar a ver|coordinar (una )?visita|me gustaria ver)/.test(lc)) {
+    const day = lastClient.match(/\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b[^.?!]*/i)?.[0];
+    const name = nameFrom(clientTexts.join(" \n "));
+    if (!day) {
+      return JSON.stringify({
+        action: "reply",
+        text: "¡Genial! ¿Qué días y en qué horario te queda bien para ir a verla?",
+      });
+    }
+    return JSON.stringify({
+      action: "request_visit",
+      ...(focus ? { listing: focus } : {}),
+      when: day.trim(),
+      reply: `¡Perfecto${name ? `, ${name}` : ""}! Anoté que querés verla el ${day.trim()}. Te confirmo el horario en un rato.`,
+      ...(name ? { contact_name: name } : {}),
+    });
+  }
+
+  if (focus && /(mascota|direcci|expensa|pileta|cochera|balcon|amoblad|detalle|metros|m2)/.test(lc)) {
+    return JSON.stringify({ action: "show_listing", listing: focus });
+  }
+
+  const all = foldText(clientTexts.join(" \n "));
+  if (!/(alquil|compr|venta|vend|depto|dpto|departamento|casa|\bph\b|terreno|lote|local|oficina|propiedad|inmueble|dormitorio|ambiente)/.test(all)) {
+    return null;
+  }
+  const operation = /alquil/.test(all) ? "alquiler" : /(compr|venta)/.test(all) ? "venta" : undefined;
+  const type = /(depto|dpto|departamento)/.test(all)
+    ? "departamento"
+    : /\bcasa/.test(all)
+      ? "casa"
+      : /(terreno|lote)/.test(all)
+        ? "terreno"
+        : /local/.test(all)
+          ? "local"
+          : undefined;
+  const zone = MOCK_ZONES.find((z) => all.includes(z));
+  const bedrooms = all.match(/(\d)\s*(dormitorio|dorm|habitaci)/)?.[1];
+  const priceM = all.match(/hasta\s*(?:\$|usd|u\$s)?\s*([\d.]+)\s*(mil|k|palos|millon(?:es)?)?/);
+  let priceMax: number | undefined;
+  if (priceM?.[1]) {
+    const base = Number(priceM[1].replace(/\./g, ""));
+    const mult = priceM[2] === "mil" || priceM[2] === "k" ? 1000 : priceM[2] && /palo|millon/.test(priceM[2]) ? 1_000_000 : 1;
+    priceMax = base * mult;
+  }
+  const currency = /(dolar|usd|u\$s)/.test(all) ? "USD" : undefined;
+  if (!type && !zone && !bedrooms) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¡Hola! Contame qué estás buscando: ¿qué tipo de propiedad y en qué zona?",
+    });
+  }
+  return JSON.stringify({
+    action: "search_listings",
+    ...(operation ? { operation } : {}),
+    ...(type ? { property_type: type } : {}),
+    ...(zone ? { zone } : {}),
+    ...(bedrooms ? { bedrooms_min: Number(bedrooms) } : {}),
+    ...(priceMax ? { price_max: priceMax } : {}),
+    ...(currency ? { currency } : {}),
+  });
+}
+

@@ -33,6 +33,8 @@ const prefixes = {
   mcpToolCall: "mcall",
   historyImport: "hi",
   instagramIntegration: "igint",
+  meliIntegration: "mli",
+  meliListing: "mll",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

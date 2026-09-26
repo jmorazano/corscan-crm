@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Plug } from "lucide-react";
+import { Building2, CalendarDays, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,12 @@ const META: Record<
     icon: CalendarDays,
     description:
       "El agente consulta disponibilidad y agenda turnos en el calendario del negocio.",
+  },
+  mercadolibre: {
+    href: "/integrations/mercadolibre",
+    icon: Building2,
+    description:
+      "El agente conoce tus publicaciones vigentes de Mercado Libre, ofrece opciones y junta los pedidos de visita.",
   },
   mcp: {
     href: "/integrations/mcp",

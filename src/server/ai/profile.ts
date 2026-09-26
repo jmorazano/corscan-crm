@@ -36,6 +36,8 @@ export const profileUpdateSchema = z.object({
     .max(REPLY_DELAY_MAX_MS)
     .nullable()
     .optional(),
+  /** 025: el WhatsApp es también el número personal del dueño. */
+  sharedPersonalNumber: z.boolean().optional(),
 });
 export type ProfilePatch = z.infer<typeof profileUpdateSchema>;
 

@@ -5,7 +5,8 @@
  *   pnpm seed:agent --file=scripts/seed/agents/corscan-ingenieria.json [--org=<slug|nombre>] [--dry-run]
  *
  * Efecto: actualiza el perfil del agente (nombre, tono, instrucciones, reglas
- * de escalado, saludo) y REEMPLAZA el knowledge base completo de la
+ * de escalado, saludo y —si el archivo lo trae— el ajuste de número personal
+ * de 025) y REEMPLAZA el knowledge base completo de la
  * organización (borra las entradas existentes e inserta las del archivo, en
  * el orden del archivo). No toca `enabled`, contactos, conversaciones,
  * etapas ni corridas del Laboratorio. Re-ejecutable: correrlo dos veces con
@@ -31,6 +32,11 @@ const ConfigSchema = z.object({
     instructions: z.string().max(8000).nullable().optional(),
     escalationRules: z.string().max(4000).nullable().optional(),
     greeting: z.string().max(1000).nullable().optional(),
+    /**
+     * 025: «Este WhatsApp también es mi número personal». Opcional: si el
+     * archivo no lo trae, el valor de la empresa NO se toca.
+     */
+    sharedPersonalNumber: z.boolean().optional(),
   }),
   kb: z.array(
     z.discriminatedUnion("kind", [
@@ -167,6 +173,9 @@ await db.transaction(async (tx) => {
       instructions: config.profile.instructions ?? null,
       escalationRules: config.profile.escalationRules ?? null,
       greeting: config.profile.greeting ?? null,
+      ...(config.profile.sharedPersonalNumber !== undefined
+        ? { sharedPersonalNumber: config.profile.sharedPersonalNumber }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(schema.agentProfile.organizationId, org.id));

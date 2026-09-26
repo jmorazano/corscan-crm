@@ -61,6 +61,18 @@ const envSchema = z.object({
     .url()
     .default("https://api.instagram.com/oauth/access_token"),
   INSTAGRAM_GRAPH_BASE_URL: z.string().url().default("https://graph.instagram.com"),
+  // Mercado Libre (025): la app de ML es del OPERADOR (developers.mercadolibre
+  // .com.ar → Crear aplicación); la conexión es POR EMPRESA (meli_integration).
+  // Sin id + secreto la tarjeta explica que el operador debe habilitarla. Las
+  // dos URLs son de transporte: el meli-mock del self-test las intercepta
+  // (el endpoint de tokens es `${MELI_API_BASE_URL}/oauth/token`).
+  MELI_CLIENT_ID: z.string().optional(),
+  MELI_CLIENT_SECRET: z.string().optional(),
+  MELI_AUTH_URL: z
+    .string()
+    .url()
+    .default("https://auth.mercadolibre.com.ar/authorization"),
+  MELI_API_BASE_URL: z.string().url().default("https://api.mercadolibre.com"),
   /** Token del archivo `google<token>.html` de Search Console (verificación
    * del dominio para aprobar la app OAuth). Público por naturaleza. */
   GOOGLE_SITE_VERIFICATION: z.string().optional(),
@@ -187,4 +199,16 @@ export function isGoogleIntegrationConfigured(): boolean {
 export function isInstagramConfigured(): boolean {
   const env = getEnv();
   return Boolean(env.INSTAGRAM_APP_ID && env.INSTAGRAM_APP_SECRET);
+}
+
+/**
+ * true si el operador habilitó Mercado Libre en esta instancia (025): id y
+ * secreto de la app. Un placeholder `REEMPLAZA_…` (convención de `.env`) NO
+ * cuenta: sin esto la tarjeta ofrecería «Conectar» contra una app que no
+ * existe y ML respondería con un error opaco.
+ */
+export function isMeliConfigured(): boolean {
+  const env = getEnv();
+  const real = (v: string | undefined) => Boolean(v && !v.startsWith("REEMPLAZA_"));
+  return real(env.MELI_CLIENT_ID) && real(env.MELI_CLIENT_SECRET);
 }

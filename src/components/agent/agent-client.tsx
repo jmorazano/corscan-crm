@@ -24,6 +24,8 @@ type Profile = {
   greeting: string | null;
   /** 022: espera antes de responder (ms); null = default de instancia. */
   replyDelayMs: number | null;
+  /** 025: el WhatsApp es también el número personal del dueño. */
+  sharedPersonalNumber: boolean;
 };
 
 type KbEntry = {
@@ -102,7 +104,7 @@ export function AgentClient() {
             }`}
           >
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
                 profile.enabled ? "translate-x-5" : "translate-x-0.5"
               }`}
             />
@@ -134,6 +136,10 @@ export function AgentClient() {
           <DelaySection
             replyDelayMs={profile.replyDelayMs}
             defaultMs={defaultReplyDelayMs}
+            onSave={saveProfile}
+          />
+          <PersonalNumberSection
+            enabled={profile.sharedPersonalNumber}
             onSave={saveProfile}
           />
         </div>
@@ -219,6 +225,65 @@ function ProfileSection({
  * primer mensaje: espera a que el cliente termine de escribir y responde una
  * vez con todo. Vacío = el default de la instancia.
  */
+/**
+ * 025 (US4): el WhatsApp del negocio es también el celular personal del
+ * dueño. Con esto el agente no le contesta a nadie que el dueño ya conocía
+ * desde el celular, y calla ante mensajes personales de números nuevos.
+ */
+function PersonalNumberSection({
+  enabled,
+  onSave,
+}: {
+  enabled: boolean;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>Número personal</CardTitle>
+            <CardDescription>
+              Activalo si este WhatsApp también es tu celular personal (por
+              ejemplo, conectado en modo coexistencia con la app).
+            </CardDescription>
+          </div>
+          <button
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Este WhatsApp también es mi número personal"
+            data-testid="personal-number-switch"
+            onClick={() => void onSave({ sharedPersonalNumber: !enabled })}
+            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
+              enabled ? "bg-primary" : "bg-secondary"
+            }`}
+          >
+            <span
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground" data-testid="personal-number-hint">
+          <li>
+            El agente <strong>no responde</strong> a quienes están en la agenda
+            de tu celular, a quienes ya te escribían antes de conectar ni a
+            quienes les escribiste vos desde el celular.
+          </li>
+          <li>A números nuevos sí; si el mensaje es personal, no contesta ni te avisa como escalado.</li>
+          <li>Esos mensajes los seguís viendo y respondiendo desde tu celular, como siempre.</li>
+        </ul>
+        <p className="mt-2 text-xs font-medium" data-testid="personal-number-state">
+          {enabled ? "Activado: el agente solo atiende contactos nuevos." : "Desactivado: el agente atiende a todos."}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DelaySection({
   replyDelayMs,
   defaultMs,

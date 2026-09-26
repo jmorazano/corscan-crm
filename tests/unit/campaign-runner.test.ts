@@ -24,6 +24,7 @@ const base = {
   channel: "whatsapp" as "whatsapp" | "instagram",
   igUsername: null as string | null,
   nameEditedAt: null,
+  knownFromPhoneAt: null,
   notes: null,
   tags: ["vip"],
   consentSource: "import" as const,

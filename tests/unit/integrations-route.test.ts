@@ -44,6 +44,14 @@ vi.mock("@/server/mcp/integration", () => ({
   setMcpCredential: () => Promise.resolve({ ok: state.mcpView !== null }),
 }));
 
+// 025: la tarjeta de Mercado Libre la ven todas las empresas.
+vi.mock("@/server/meli/integration", () => ({
+  getMeliView: (org: string) => {
+    expect(org).toBe("org_1");
+    return Promise.resolve(null);
+  },
+}));
+
 vi.mock("@/server/calendar/integration", () => ({
   getCalendarIntegrationView: (org: string) => {
     expect(org).toBe("org_1");
@@ -140,7 +148,7 @@ describe("GET /api/integrations", () => {
     const { GET } = await import("@/app/api/integrations/route");
     const res = await GET();
     const json = (await res.json()) as { integrations: { key: string }[] };
-    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar"]);
+    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar", "mercadolibre"]);
   });
 
   it("016: habilitado, aparece con su etiqueta y su host — jamás la URL completa", async () => {
@@ -171,6 +179,17 @@ describe("GET /api/integrations", () => {
       available: false,
       connected: false,
       status: null,
+    });
+  });
+
+  it("025: la tarjeta de Mercado Libre está siempre; sin app del operador, available=false", async () => {
+    delete process.env.MELI_CLIENT_ID;
+    const { GET } = await import("@/app/api/integrations/route");
+    const json = (await (await GET()).json()) as { integrations: Record<string, unknown>[] };
+    expect(json.integrations.find((i) => i.key === "mercadolibre")).toMatchObject({
+      key: "mercadolibre",
+      available: false,
+      connected: false,
     });
   });
 });

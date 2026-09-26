@@ -13,12 +13,15 @@ import {
   AgentAction,
   degradeAction,
   isCalendarAction,
+  isListingsAction,
   isMcpAction,
   resolveStage,
   type AgentActionType,
 } from "@/server/ai/actions";
 import { stripBookingPromise } from "@/lib/promise-guard";
 import { safePriceReply, stripPrices } from "@/lib/price-guard";
+import { stripUnknownContactData } from "@/lib/privacy-guard";
+import { visitNote } from "@/lib/meli/render";
 import { normalizeContactName } from "@/lib/contact-name";
 import { canOverwriteContactName } from "@/lib/history-import";
 import { agentTextFor } from "@/lib/inbound-media";
@@ -39,6 +42,13 @@ import {
   MCP_TOOL_TEXT_ROLE,
   type McpContext,
 } from "@/server/mcp/agent-tools";
+import {
+  executeListingsAction,
+  listingForVisit,
+  loadListingsContext,
+  renderListingsPromptSection,
+  type ListingsContext,
+} from "@/server/meli/agent-tools";
 
 /** Vueltas extra al modelo por resultados de herramienta (research D6). */
 const MAX_TOOL_ROUNDS = 2;
@@ -172,10 +182,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   // 011 (FR-007): a un contacto dado de baja no se le responde nada —
   // defensa en profundidad además del corte en la ingesta.
-  if (!conversation.isTest) {
-    const contactRow = await loadContact(organizationId, conversation.contactId);
-    if (contactRow?.optedOutAt) return;
-  }
+  const contactRow = conversation.isTest
+    ? null
+    : await loadContact(organizationId, conversation.contactId);
+  if (contactRow?.optedOutAt) return;
 
   const profileRows = await db
     .select()
@@ -187,6 +197,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // El toggle global aplica a conversaciones reales; el Laboratorio evalúa el
   // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
+
+  // 025 (US4): el WhatsApp es también el celular personal del dueño. A quien
+  // el dueño ya conocía desde el celular (agenda, historial, o le escribió él
+  // primero) el agente NO le contesta: son amigos, familia y conocidos, no
+  // leads. Corte determinístico ANTES del proveedor, sin handoff ni push: el
+  // dueño ve el mensaje en su teléfono como siempre.
+  if (shouldSkipKnownContact(profile.sharedPersonalNumber, contactRow)) return;
 
   const history = await db
     .select()
@@ -267,6 +284,26 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     ? renderMcpSection(mcp, { hasCalendar: calendar !== null })
     : null;
 
+  // Publicaciones de Mercado Libre (025): snapshot LOCAL — el turno nunca sale
+  // a la red por esto, así que el Laboratorio queda aislado por construcción.
+  // Un fallo al cargarlas no tumba el turno: el agente atiende sin ellas.
+  let listings: ListingsContext | null = null;
+  try {
+    listings = await loadListingsContext(organizationId, { sandbox: conversation.isTest });
+  } catch (err) {
+    console.error(
+      "[agente] no se pudieron cargar las publicaciones:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  const calendarBookable =
+    calendar !== null &&
+    calendar.integration.status !== "reconnect_required" &&
+    calendar.integration.rules.agentBookingEnabled;
+  const listingsSection = listings
+    ? renderListingsPromptSection(listings, { calendarBookable })
+    : null;
+
   /**
    * Entrega conversacional con la GUARDA DE PROMESAS (016, FR-009).
    *
@@ -280,7 +317,27 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
    * conector, "te reservo el turno" es exactamente lo que el agente debe
    * decir — ahí sí puede agendar de verdad.
    */
-  const say = async (text: string): Promise<void> => {
+  /**
+   * 025 (AC3.3): guarda de privacidad del texto saliente, para TODA empresa.
+   * El corpus es todo lo que el modelo tuvo delante en este turno (system,
+   * historial, resultados de herramientas) más el teléfono del contacto: un
+   * teléfono o email que no salga de ahí, no sale del agente.
+   */
+  const guardPrivacy = (text: string): string => {
+    const guarded = stripUnknownContactData(text, {
+      corpus: messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n"),
+      extraPhones: contactRow ? [contactRow.phone] : [],
+    });
+    if (guarded.replaced) {
+      console.warn(
+        `[agente] dato de contacto ajeno suprimido en ${conversation.id} (${guarded.removed.length})`
+      );
+    }
+    return guarded.text;
+  };
+
+  const say = async (raw: string): Promise<void> => {
+    const text = guardPrivacy(raw);
     if (!mcp) {
       await deliverConversationalReply(conversation, text, lastInbound.id);
       return;
@@ -329,6 +386,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         mcpSection,
         mcpOverridesKb: mcpSection !== null,
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
+        listingsSection,
+        sharedPersonalNumber: profile.sharedPersonalNumber,
       }),
     },
     // 020: un entrante sin texto (una foto, un audio que no se pudo
@@ -370,17 +429,51 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   let lastStaySummary: string | null = null;
   let calendarRounds = 0;
   let mcpRounds = 0;
+  // 025: lo último SEGURO que se supo de las publicaciones (plantilla propia +
+  // datos normalizados + enlaces de ML validados), por si el modelo se cuelga.
+  let lastListingsSummary: string | null = null;
+  let listingsRounds = 0;
   const toolDeadline = Date.now() + TOOL_WALL_CLOCK_MS;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS_TOTAL; round++) {
     const wantsCalendar = isCalendarAction(action);
     const wantsMcp = isMcpAction(action);
-    if (!wantsCalendar && !wantsMcp) break;
+    const wantsListings = isListingsAction(action);
+    if (!wantsCalendar && !wantsMcp && !wantsListings) break;
     // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
     // vueltas al conector, ni al revés.
     if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
     if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
+    if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
     if (Date.now() >= toolDeadline) break;
+
+    // ---- Publicaciones de Mercado Libre (025) --------------------------
+    if (isListingsAction(action)) {
+      listingsRounds++;
+      if (!listings) {
+        // El modelo pidió publicaciones que esta empresa no tiene: degradar
+        // sin inventar.
+        await say("Dejame confirmar qué propiedades tenemos disponibles y te escribo en un ratito.");
+        await applyHandoff(conversationId, organizationId, "modelo");
+        return;
+      }
+      const out = executeListingsAction(listings, action);
+      if (out.clientSummary) lastListingsSummary = out.clientSummary;
+      // Como el conector MCP: el resultado es un DATO, entra como usuario.
+      messages.push({ role: "user", content: out.toolText });
+      const next = await chatJson(aiConfig, AgentAction, messages);
+      if (!next.ok) {
+        console.error(`[agente] fallo del proveedor tras publicaciones (raw): ${next.detail}`);
+        if (lastListingsSummary) {
+          await say(lastListingsSummary);
+          return;
+        }
+        await applyHandoff(conversationId, organizationId, "error");
+        return;
+      }
+      action = next.data;
+      continue;
+    }
 
     // ---- Conector MCP (016) -------------------------------------------
     if (isMcpAction(action)) {
@@ -460,7 +553,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       });
       if (out.kind === "booked") {
         const reply = action.reply?.trim()
-          ? action.reply
+          ? guardPrivacy(action.reply)
           : `¡Listo! Tu turno quedó confirmado para el ${out.appointment.whenText}.`;
         await deliverReply(conversation, reply);
         if (!conversation.isTest) {
@@ -506,6 +599,45 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     }
     await say("Estoy consultando la disponibilidad y te confirmo en un ratito.");
     await applyHandoff(conversationId, organizationId, "modelo");
+    return;
+  }
+
+  // 025: agotado el presupuesto de publicaciones, lo último seguro que se supo.
+  if (isListingsAction(action)) {
+    if (lastListingsSummary) {
+      await say(lastListingsSummary);
+      return;
+    }
+    await say("Estoy revisando las propiedades disponibles y te paso opciones en un ratito.");
+    await applyHandoff(conversationId, organizationId, "modelo");
+    return;
+  }
+
+  // 025: pedido de visita — TERMINAL. Se anota qué propiedad y cuándo, el
+  // lead pasa a la etapa de visita si la empresa tiene una, se le confirma al
+  // cliente que una persona le cierra el horario, y se escala con push. El
+  // agente jamás confirma una visita por su cuenta (sin agenda no puede).
+  if (action.action === "request_visit") {
+    await learnContactName(organizationId, conversation.contactId, action.contact_name);
+    const listing = listingForVisit(listings, action.listing);
+    const reply = action.reply?.trim()
+      ? action.reply
+      : "¡Perfecto! Ya lo anoté y te confirmo el horario de la visita en un rato.";
+    await say(reply);
+    if (!conversation.isTest) {
+      await appendLeadNote(
+        organizationId,
+        conversation.contactId,
+        visitNote(listing, action.when ?? null, action.listing ?? null)
+      );
+      const stage = visitStageFor(stages);
+      if (stage) await moveLeadToStage(organizationId, conversation.contactId, stage.id);
+      publish(organizationId, {
+        type: "conversation.updated",
+        data: { conversation: { id: conversationId } },
+      });
+    }
+    await applyHandoff(conversationId, organizationId, "visita");
     return;
   }
 
@@ -573,6 +705,32 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
 type Conversation = typeof schema.conversation.$inferSelect;
 
+/**
+ * 025 (US4), PURA: ¿el agente se calla con este contacto? Solo si la empresa
+ * declaró que el WhatsApp es también el número personal del dueño Y el
+ * contacto es conocido del celular. Sin contacto (Laboratorio) nunca.
+ */
+export function shouldSkipKnownContact(
+  sharedPersonalNumber: boolean,
+  contact: { knownFromPhoneAt: Date | null } | null
+): boolean {
+  return Boolean(sharedPersonalNumber && contact?.knownFromPhoneAt);
+}
+
+/**
+ * 025, PURA: etapa a la que va un lead que pidió visita. Primero una etapa
+ * ABIERTA que hable de visitas; si no, la de interesados. Sin ninguna, el
+ * lead queda donde está (no se inventan etapas).
+ */
+export function visitStageFor<T extends { id: string; name: string }>(stages: readonly T[]): T | null {
+  const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  return (
+    stages.find((st) => /visita/.test(fold(st.name))) ??
+    stages.find((st) => /interesad/.test(fold(st.name))) ??
+    null
+  );
+}
+
 export type TransactionalContext = {
   /** Texto de la notificación (para el prompt). */
   notice: string;
@@ -625,6 +783,8 @@ async function loadContact(
   consentSource: string | null;
   nameEditedAt: Date | null;
   isTest: boolean;
+  /** 025: el dueño ya lo conocía desde el celular (agenda/historial/eco). */
+  knownFromPhoneAt: Date | null;
 } | null> {
   const db = getDb();
   const rows = await db
@@ -633,6 +793,7 @@ async function loadContact(
       name: schema.contact.name,
       phone: schema.contact.phone,
       optedOutAt: schema.contact.optedOutAt,
+      knownFromPhoneAt: schema.contact.knownFromPhoneAt,
       consentSource: schema.contact.consentSource,
       nameEditedAt: schema.contact.nameEditedAt,
       isTest: schema.contact.isTest,
@@ -809,7 +970,7 @@ async function persistTestOutbound(
 export async function applyHandoff(
   conversationId: string,
   organizationId: string,
-  reason: "cliente" | "modelo" | "error" | "ventana"
+  reason: "cliente" | "modelo" | "error" | "ventana" | "visita"
 ): Promise<void> {
   const db = getDb();
   const updated = await db

@@ -1,7 +1,8 @@
 import { withAuth } from "@/lib/api";
-import { isGoogleIntegrationConfigured } from "@/lib/env";
+import { isGoogleIntegrationConfigured, isMeliConfigured } from "@/lib/env";
 import { getCalendarIntegrationView } from "@/server/calendar/integration";
 import { getMcpIntegrationView } from "@/server/mcp/integration";
+import { getMeliView } from "@/server/meli/integration";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,10 @@ export const dynamic = "force-dynamic";
  * por integración soportada. Hoy: Google Calendar. Sin tokens, jamás.
  */
 export const GET = withAuth(async (session) => {
-  const [gc, mcp] = await Promise.all([
+  const [gc, mcp, meli] = await Promise.all([
     getCalendarIntegrationView(session.organizationId),
     getMcpIntegrationView(session.organizationId),
+    getMeliView(session.organizationId),
   ]);
   return Response.json({
     integrations: [
@@ -23,6 +25,16 @@ export const GET = withAuth(async (session) => {
         connected: gc !== null,
         status: gc?.status ?? null,
         accountEmail: gc?.accountEmail ?? null,
+      },
+      // 025: publicaciones de Mercado Libre. Como Google Calendar, la ven
+      // todas las empresas; `available` depende de la app del operador.
+      {
+        key: "mercadolibre",
+        name: "Mercado Libre",
+        available: isMeliConfigured(),
+        connected: meli !== null,
+        status: meli?.status ?? null,
+        accountEmail: meli?.nickname ?? null,
       },
       // 016 (FR-001): a diferencia de Google Calendar, esta tarjeta NO la ven
       // todas las empresas. La habilita el super admin empresa por empresa, y

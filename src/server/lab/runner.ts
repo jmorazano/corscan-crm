@@ -6,6 +6,7 @@ import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { computeScore, judgeCase } from "@/server/lab/judge";
 import { isMcpEnabled } from "@/server/mcp/integration";
+import { hasAgentListings } from "@/server/meli/integration";
 import { PERSONAS, type Persona } from "@/server/lab/personas";
 
 /**
@@ -134,6 +135,8 @@ async function runAllCases(
   // transcript se arma desde los mensajes y NO incluye el texto
   // [HERRAMIENTA] que justifica esos números.
   const hasLiveData = await isMcpEnabled(organizationId).catch(() => false);
+  // 025: igual con las publicaciones de Mercado Libre.
+  const liveListings = await hasAgentListings(organizationId).catch(() => false);
 
   let done = 0;
   const total = cases.length;
@@ -162,6 +165,7 @@ async function runAllCases(
       kbText,
       behaviorText,
       hasLiveData,
+      liveListings,
     });
 
     await db
@@ -362,5 +366,11 @@ function isUniqueViolation(err: unknown): boolean {
  */
 async function personasFor(organizationId: string): Promise<Persona[]> {
   const stays = await isMcpEnabled(organizationId).catch(() => false);
-  return PERSONAS.filter((p) => !p.requires || (p.requires === "stays" && stays));
+  const listings = await hasAgentListings(organizationId).catch(() => false);
+  return PERSONAS.filter(
+    (p) =>
+      !p.requires ||
+      (p.requires === "stays" && stays) ||
+      (p.requires === "listings" && listings)
+  );
 }

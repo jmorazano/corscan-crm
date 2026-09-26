@@ -35,6 +35,21 @@ export const FENCE_OPEN_PREFIX = "=== NOTAS DEL PROVEEDOR";
 export const FENCE_CLOSE_PREFIX = "=== FIN DE LAS NOTAS DEL PROVEEDOR";
 
 /* ============================================================
+ * Marcadores propios de 025 (definidos acá, importados por su dueño)
+ * ============================================================ */
+
+/**
+ * Sección de las publicaciones de Mercado Libre en el system prompt. El
+ * ai-mock despacha por esta literal; un título o una descripción de ML que
+ * la contenga se apropiaría del turno, por eso el saneo la remueve.
+ */
+export const LISTINGS_MARKER = "PUBLICACIONES VIGENTES";
+/** Encabezado de las reglas generales de privacidad (`prompts.ts`). */
+export const PRIVACY_HEADING = "PRIVACIDAD Y HONESTIDAD";
+/** Sección del número personal del dueño (`prompts.ts`). */
+export const PERSONAL_NUMBER_MARKER = "NÚMERO PERSONAL DEL DUEÑO";
+
+/* ============================================================
  * Marcadores de las features anteriores (copiados de su fuente)
  * ============================================================ */
 
@@ -69,6 +84,9 @@ export const PROMPT_HARD_RULES_HEADING = "Reglas duras:";
  */
 export const SYSTEM_MARKERS: readonly string[] = [
   PROMPT_JSON_HEADING,
+  PERSONAL_NUMBER_MARKER,
+  PRIVACY_HEADING,
+  LISTINGS_MARKER,
   FENCE_CLOSE_PREFIX,
   FENCE_OPEN_PREFIX,
   TRANSACTIONAL_MARKER_LITERAL,

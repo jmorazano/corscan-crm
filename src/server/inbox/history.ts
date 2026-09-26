@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { normalizeToWaId } from "@/lib/phone";
@@ -164,6 +164,8 @@ export async function processHistoryValue(value: WebhookValue): Promise<void> {
       if (rows.length === 0) continue;
       try {
         const { contact } = await getOrCreateContact(organizationId, thread.id);
+        // 025: un hilo del celular = el dueño ya conocía a este contacto.
+        await markKnownFromPhone(organizationId, contact.id);
         const conversation = await getOrCreateConversation(organizationId, contact.id);
         const { inserted } = await insertRows(organizationId, conversation.id, rows, "history");
         imported += inserted.length;
@@ -244,6 +246,9 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
   for (const [to, rows] of byRecipient) {
     try {
       const { contact } = await getOrCreateContact(organizationId, to);
+      // 025: el dueño le escribió desde el celular — se hizo cargo él. Con
+      // «número personal» el agente ya no le contesta a este contacto.
+      await markKnownFromPhone(organizationId, contact.id);
       const conversation = await getOrCreateConversation(organizationId, contact.id);
       const { inserted } = await insertRows(organizationId, conversation.id, rows, "phone");
       for (const message of inserted) {
@@ -304,11 +309,14 @@ export async function processStateSyncValue(value: WebhookValue): Promise<void> 
       // La agenda suele llegar ANTES que el historial: se crea el contacto
       // (sin consentimiento → inelegible para campañas) para que el hilo,
       // cuando llegue, ya tenga su nombre.
-      await getOrCreateContact(organizationId, norm.waId, name);
+      const created = await getOrCreateContact(organizationId, norm.waId, name);
+      await markKnownFromPhone(organizationId, created.contact.id);
       renamed++;
       continue;
     }
     if (contact.isTest) continue;
+    // 025: está en la agenda del celular → conocido del dueño.
+    await markKnownFromPhone(organizationId, contact.id);
     if (contact.name === name || !canOverwriteContactName(contact)) continue;
     await db
       .update(schema.contact)
@@ -319,5 +327,29 @@ export async function processStateSyncValue(value: WebhookValue): Promise<void> 
   if (renamed > 0) {
     console.info(`[historial] org ${organizationId}: ${renamed} contacto(s) con nombre de la agenda`);
     publish(organizationId, { type: "conversations.updated", data: { conversationIds: [] } });
+  }
+}
+
+/**
+ * 025 (US4): marca al contacto como «conocido desde el celular» del dueño
+ * (agenda, historial importado o eco). Set-if-null: la primera señal manda y
+ * re-ejecutar la sync no cambia nada. Con `shared_personal_number` el agente
+ * no le responde. Nunca lanza: una marca que falla no puede tumbar la
+ * importación del historial.
+ */
+export async function markKnownFromPhone(organizationId: string, contactId: string): Promise<void> {
+  try {
+    await getDb()
+      .update(schema.contact)
+      .set({ knownFromPhoneAt: new Date() })
+      .where(
+        and(
+          eq(schema.contact.organizationId, organizationId),
+          eq(schema.contact.id, contactId),
+          isNull(schema.contact.knownFromPhoneAt)
+        )
+      );
+  } catch (err) {
+    console.error("[historial] no se pudo marcar el contacto:", err instanceof Error ? err.message : err);
   }
 }
