@@ -35,6 +35,11 @@ import {
 export async function processInstagramWebhook(body: unknown): Promise<void> {
   const events = parseInstagramWebhook(body);
   if (!events) return;
+  // Traza mínima (sin contenido ni IDs): permite saber si Meta entrega algo.
+  if (events.length > 0) {
+    const kinds = events.map((e) => (e.kind === "message" && e.isEcho ? "eco" : e.kind));
+    console.log(`[instagram] webhook: ${events.length} evento(s): ${kinds.join(", ")}`);
+  }
 
   const integrations = new Map<string, InstagramIntegration | null>();
   for (const ev of events) {
