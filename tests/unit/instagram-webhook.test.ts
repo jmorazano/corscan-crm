@@ -174,3 +174,45 @@ describe("parseMetaJson", () => {
     });
   });
 });
+
+describe("formato `changes` (botón Test del panel de Meta)", () => {
+  it("un evento en entry[].changes[] se normaliza igual que en messaging[]", () => {
+    const events = parseInstagramWebhook(
+      {
+        object: "instagram",
+        entry: [
+          {
+            id: ACCOUNT,
+            time: 1,
+            changes: [
+              {
+                field: "messages",
+                value: {
+                  sender: { id: "12334" },
+                  recipient: { id: ACCOUNT },
+                  timestamp: "1527459824",
+                  message: { mid: "random_mid", text: "random_text" },
+                },
+              },
+              { field: "comments", value: { id: "c1", text: "no es mensajería" } },
+            ],
+          },
+        ],
+      },
+      now
+    );
+    expect(events).toEqual([
+      {
+        kind: "message",
+        accountId: ACCOUNT,
+        customerId: "12334",
+        mid: "random_mid",
+        text: "random_text",
+        attachments: [],
+        isEcho: false,
+        isUnsupported: false,
+        at: new Date(1527459824000),
+      },
+    ]);
+  });
+});

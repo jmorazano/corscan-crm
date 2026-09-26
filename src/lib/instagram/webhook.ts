@@ -72,8 +72,23 @@ const entrySchema = z
     id: z.union([z.string(), z.number()]).transform(String),
     time: z.union([z.number(), z.string()]).optional(),
     messaging: z.array(z.unknown()).optional(),
+    // Formato alternativo: el botón «Test» del panel (y algunas entregas)
+    // mandan cada evento como `changes[{field, value}]`, con `value` = el
+    // mismo objeto que iría en `messaging[]`.
+    changes: z
+      .array(z.object({ field: z.string().optional(), value: z.unknown() }).passthrough())
+      .optional(),
   })
   .passthrough();
+
+/** Campos de `changes` que traen un evento de mensajería. */
+const MESSAGING_FIELDS = new Set([
+  "messages",
+  "messaging_seen",
+  "message_reactions",
+  "messaging_postbacks",
+  "messaging_referral",
+]);
 
 const payloadSchema = z
   .object({ object: z.string(), entry: z.array(entrySchema) })
@@ -140,7 +155,13 @@ export function parseInstagramWebhook(
   const events: InstagramEvent[] = [];
   for (const entry of parsed.data.entry) {
     const accountId = entry.id;
-    for (const raw of entry.messaging ?? []) {
+    const raws = [
+      ...(entry.messaging ?? []),
+      ...(entry.changes ?? [])
+        .filter((c) => !c.field || MESSAGING_FIELDS.has(c.field))
+        .map((c) => c.value),
+    ];
+    for (const raw of raws) {
       const m = messagingSchema.safeParse(raw);
       if (!m.success) continue;
       const ev = normalize(accountId, m.data, now);
