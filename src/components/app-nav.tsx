@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart3,
   FlaskConical,
   Inbox,
   Kanban,
@@ -24,6 +25,8 @@ const NAV = [
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/campaigns", label: "Campañas", icon: Megaphone },
+  // 024: solo el propietario (navItemsFor la saca para un miembro).
+  { href: "/metrics", label: "Métricas", icon: BarChart3 },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
   // Integraciones (005): las conexiones externas por empresa viven acá.

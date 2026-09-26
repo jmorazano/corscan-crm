@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart3,
   Bell,
   Ellipsis,
   FlaskConical,
@@ -129,6 +130,8 @@ const TABS: ReadonlyArray<{
 ];
 
 const MORE: ReadonlyArray<{ href: string; label: string; icon: LucideIcon }> = [
+  // 024: métricas del propietario.
+  { href: "/metrics", label: "Métricas", icon: BarChart3 },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
   { href: "/integrations", label: "Integraciones", icon: Plug },

@@ -17,8 +17,11 @@ export function canManageConfig(role: string): boolean {
   return role === "owner";
 }
 
-/** Secciones de la app que solo ve (y usa) el propietario. */
-export const OWNER_ONLY_SECTIONS = ["/agent", "/lab", "/integrations"] as const;
+/**
+ * Secciones de la app que solo ve (y usa) el propietario. 024: Métricas no
+ * es configuración, pero es del propietario (spec 024).
+ */
+export const OWNER_ONLY_SECTIONS = ["/agent", "/lab", "/integrations", "/metrics"] as const;
 
 /**
  * Pestañas de Ajustes que un miembro sí tiene: son personales, no de la

@@ -42,6 +42,8 @@ describe("memberCanOpen", () => {
       "/integrations",
       "/integrations/google-calendar",
       "/integrations/mcp",
+      // 024: las métricas son del propietario.
+      "/metrics",
       "/settings",
       "/settings/whatsapp",
       "/settings/ai",
@@ -72,6 +74,7 @@ describe("settingsHomeFor", () => {
 describe("navItemsFor", () => {
   const items = [
     { href: "/inbox", label: "Bandeja" },
+    { href: "/metrics", label: "Métricas" },
     { href: "/agent", label: "Agente" },
     { href: "/lab", label: "Laboratorio" },
     { href: "/integrations", label: "Integraciones" },
