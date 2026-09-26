@@ -58,6 +58,8 @@ export function buildAgentSystemPrompt(input: {
    * enmienda es CONDICIONAL: sin conector, el texto queda intacto.
    */
   mcpOverridesKb?: boolean;
+  /** 023: canal de la conversación. Sin dato = WhatsApp (texto histórico). */
+  channel?: "whatsapp" | "instagram";
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
@@ -74,7 +76,9 @@ export function buildAgentSystemPrompt(input: {
     // tiene un rol propio ("responsable de reservas") y a los que la palabra
     // "asistente" les contradice sus propias instrucciones cuando el cliente
     // pregunta quién es. Neutro, sirve para todos.
-    `Eres "${profile.name}" y atendés el WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
+    input.channel === "instagram"
+      ? `Eres "${profile.name}" y atendés los mensajes directos de Instagram de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`
+      : `Eres "${profile.name}" y atendés el WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules

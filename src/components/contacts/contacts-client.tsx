@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
+import { contactHandle } from "@/lib/instagram/messaging";
 import { serializeTagsParam, type TagOps } from "@/lib/tags";
 import { parsePage } from "@/lib/pagination";
 import { ContactAvatar } from "@/components/avatar";
@@ -254,7 +255,8 @@ export function ContactsClient() {
         onSelect: () => router.push(`/inbox?contact=${c.id}`),
       },
     ];
-    if (!c.optedOutAt && !c.isTest && !c.archivedAt) {
+    // 023: Instagram no tiene plantillas ni permite iniciar conversaciones.
+    if (!c.optedOutAt && !c.isTest && !c.archivedAt && c.channel !== "instagram") {
       actions.push({
         key: "template",
         label: "Enviar plantilla",
@@ -456,7 +458,7 @@ export function ContactsClient() {
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {formatPhone(c.phone)}
+                    {contactHandle(c)}
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
                 </div>
@@ -484,7 +486,7 @@ export function ContactsClient() {
                       <MessageSquareText className="h-4 w-4" />
                     </Button>
                   </Link>
-                  {!c.optedOutAt && !c.isTest && !c.archivedAt && (
+                  {!c.optedOutAt && !c.isTest && !c.archivedAt && c.channel !== "instagram" && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -630,7 +632,7 @@ export function ContactsClient() {
           open
           onClose={() => setSheetContact(null)}
           title={sheetContact.name}
-          description={formatPhone(sheetContact.phone)}
+          description={contactHandle(sheetContact)}
           actions={sheetActionsFor(sheetContact)}
           testId="contact-actions-sheet"
         />
@@ -686,7 +688,7 @@ function DeleteContactDialog({
       }
     >
       <p className="text-sm text-muted-foreground">
-        Se borra a {contact.name} ({formatPhone(contact.phone)}) y sus
+        Se borra a {contact.name} ({contactHandle(contact)}) y sus
         conversaciones del CRM. WhatsApp no cambia. No se puede deshacer.
       </p>
     </Dialog>

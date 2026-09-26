@@ -135,6 +135,18 @@ export const contact = pgTable(
     phone: text("phone").notNull(),
     name: text("name").notNull(),
     /**
+     * 023: canal del contacto. `instagram` = cliente que escribió por
+     * Instagram Direct: NO tiene teléfono; `phone` guarda el sintético
+     * `ig:<IGSID>` (mismo patrón que el contacto del Entrenador) para
+     * conservar el unique y a los consumidores del teléfono sin un NULL.
+     * Campañas, plantillas y la API pública lo excluyen por esta columna.
+     */
+    channel: text("channel", { enum: ["whatsapp", "instagram"] })
+      .notNull()
+      .default("whatsapp"),
+    /** 023: @usuario de Instagram (sin la arroba), leído del perfil. */
+    igUsername: text("ig_username"),
+    /**
      * 021: cuándo una PERSONA del equipo editó el nombre a mano en el CRM.
      * NULL = nadie lo tocó, así que el nombre es el del perfil de WhatsApp
      * (lo eligió el cliente) y se puede reemplazar por uno mejor: el de la
@@ -230,8 +242,9 @@ export const conversation = pgTable(
      * 015: `whatsapp` = conversación real con un contacto; `trainer` = la
      * conversación fija del dueño con su propio agente (una por empresa,
      * contacto sintético, is_test). Ramifica UI, envío y turno.
+     * 023: `instagram` = conversación real por Instagram Direct.
      */
-    kind: text("kind", { enum: ["whatsapp", "trainer"] })
+    kind: text("kind", { enum: ["whatsapp", "trainer", "instagram"] })
       .notNull()
       .default("whatsapp"),
     aiEnabled: boolean("ai_enabled").notNull().default(true),
@@ -808,6 +821,45 @@ export const calendarIntegration = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("calendar_integration_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Conexión de Instagram Direct por empresa (023): la cuenta profesional que
+ * el dueño conectó con Business Login for Instagram. Token de usuario de
+ * Instagram (60 días, renovable) cifrado AES-256-GCM. A lo sumo UNA por
+ * empresa, y una cuenta de Instagram en UNA sola empresa de la instancia:
+ * el webhook enruta por `ig_user_id`.
+ */
+export const instagramIntegration = pgTable(
+  "instagram_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** ID de la cuenta profesional: el `entry.id` de los webhooks. */
+    igUserId: text("ig_user_id").notNull(),
+    username: text("username"),
+    name: text("name"),
+    profilePictureUrl: text("profile_picture_url"),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    tokenExpiresAt: timestamp("token_expires_at").notNull(),
+    /** Última emisión o renovación: Meta solo renueva tokens con ≥24 h. */
+    tokenRefreshedAt: timestamp("token_refreshed_at").notNull().defaultNow(),
+    /** reconnect_required: Meta rechazó el token (vencido o revocado). */
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
+    connectedBy: text("connected_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("instagram_integration_org_uq").on(t.organizationId),
+    uniqueIndex("instagram_integration_account_uq").on(t.igUserId),
+  ]
 );
 
 /**

@@ -1,5 +1,6 @@
 import { withAuth } from "@/lib/api";
-import { isGoogleIntegrationConfigured } from "@/lib/env";
+import { isGoogleIntegrationConfigured, isInstagramConfigured } from "@/lib/env";
+import { getInstagramIntegrationView } from "@/server/instagram/integration";
 import { getCalendarIntegrationView } from "@/server/calendar/integration";
 import { getMcpIntegrationView } from "@/server/mcp/integration";
 
@@ -10,9 +11,10 @@ export const dynamic = "force-dynamic";
  * por integración soportada. Hoy: Google Calendar. Sin tokens, jamás.
  */
 export const GET = withAuth(async (session) => {
-  const [gc, mcp] = await Promise.all([
+  const [gc, mcp, ig] = await Promise.all([
     getCalendarIntegrationView(session.organizationId),
     getMcpIntegrationView(session.organizationId),
+    getInstagramIntegrationView(session.organizationId),
   ]);
   return Response.json({
     integrations: [
@@ -23,6 +25,15 @@ export const GET = withAuth(async (session) => {
         connected: gc !== null,
         status: gc?.status ?? null,
         accountEmail: gc?.accountEmail ?? null,
+      },
+      // 023: canal de mensajería; la cuenta se muestra como @usuario.
+      {
+        key: "instagram",
+        name: "Instagram Direct",
+        available: isInstagramConfigured(),
+        connected: ig !== null,
+        status: ig?.status ?? null,
+        accountEmail: ig?.username ? `@${ig.username}` : null,
       },
       // 016 (FR-001): a diferencia de Google Calendar, esta tarjeta NO la ven
       // todas las empresas. La habilita el super admin empresa por empresa, y

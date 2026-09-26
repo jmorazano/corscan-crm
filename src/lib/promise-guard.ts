@@ -442,13 +442,13 @@ export function safeBookingReply(link?: string | null): string {
   const enlace = enlaceUsable(link);
   if (enlace) {
     return (
-      "La reserva se completa en el sitio del alojamiento, no por WhatsApp. " +
+      "La reserva se completa en el sitio del alojamiento, no por chat. " +
       `Te paso el enlace para que la hagas vos 👉 ${enlace}\n\n` +
       "Si necesitás una mano con las fechas o el precio, decime y lo vemos por acá."
     );
   }
   return (
-    "La reserva se completa en el sitio del alojamiento, no por WhatsApp. " +
+    "La reserva se completa en el sitio del alojamiento, no por chat. " +
     "Si querés te paso el enlace de la propiedad y la hacés vos; cualquier duda " +
     "con las fechas o el precio, decime y lo vemos por acá."
   );

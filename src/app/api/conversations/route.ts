@@ -39,6 +39,10 @@ export const GET = withAuth(async (session, req: Request) => {
   const unreadOnly = url.searchParams.get("filter") === "unread";
   const cursor = decodeCursor(url.searchParams.get("cursor"));
   const contactId = url.searchParams.get("contactId") ?? undefined;
+  // 023: filtro por canal; cualquier otro valor = todos.
+  const channelParam = url.searchParams.get("channel");
+  const channel =
+    channelParam === "whatsapp" || channelParam === "instagram" ? channelParam : undefined;
   // 006: filtros (etiquetas, búsqueda, no leídas) y paginación por cursor,
   // todo resuelto en SQL (contrato tags-api.md).
   const page = await listConversationsPage(session.organizationId, {
@@ -50,6 +54,7 @@ export const GET = withAuth(async (session, req: Request) => {
     limit: parseLimit(url.searchParams.get("limit")),
     cursor,
     contactId,
+    channel,
   });
 
   // 015: la conversación fija con el agente va fuera del keyset (solo en la
@@ -61,6 +66,7 @@ export const GET = withAuth(async (session, req: Request) => {
     if (trainerRow) {
       page.unreadMessages += trainerRow.conversation.unreadCount;
       if (
+        !channel &&
         trainerVisible({
           filter: unreadOnly ? "unread" : null,
           q,
@@ -76,8 +82,33 @@ export const GET = withAuth(async (session, req: Request) => {
       }
     }
   }
-  return Response.json(page);
+  // 023: el filtro por canal solo se ofrece si la empresa usa Instagram.
+  const hasInstagram = await companyUsesInstagram(session.organizationId);
+  return Response.json({ ...page, hasInstagram });
 });
+
+async function companyUsesInstagram(organizationId: string): Promise<boolean> {
+  const db = getDb();
+  const [integration, conversation] = await Promise.all([
+    db
+      .select({ id: schema.instagramIntegration.id })
+      .from(schema.instagramIntegration)
+      .where(scoped(schema.instagramIntegration.organizationId, organizationId))
+      .limit(1),
+    db
+      .select({ id: schema.conversation.id })
+      .from(schema.conversation)
+      .where(
+        scoped(
+          schema.conversation.organizationId,
+          organizationId,
+          eq(schema.conversation.kind, "instagram")
+        )
+      )
+      .limit(1),
+  ]);
+  return integration.length > 0 || conversation.length > 0;
+}
 
 const startSchema = z.object({
   contactId: z.string().min(1),
@@ -113,6 +144,14 @@ export const POST = withAuth(async (session, req: Request) => {
       409,
       "opted_out",
       "El contacto pidió no recibir más mensajes (dado de baja)"
+    );
+  }
+  // 023: Instagram no permite iniciar conversaciones ni tiene plantillas.
+  if (contact.channel === "instagram") {
+    return apiError(
+      422,
+      "instagram_contact",
+      "Este contacto escribió por Instagram: no se le pueden enviar plantillas de WhatsApp"
     );
   }
 

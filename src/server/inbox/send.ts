@@ -12,23 +12,11 @@ import {
 import { isWindowOpen } from "@/server/inbox/window";
 import { serializeMessage } from "@/server/inbox/ingest";
 
-/** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
-export class SendError extends Error {
-  code:
-    | "sandbox_violation"
-    | "not_connected"
-    | "reconnect_required"
-    | "window_closed"
-    | "opted_out"
-    | "meta_error"
-    | "meta_unavailable";
-
-  constructor(code: SendError["code"], message: string) {
-    super(message);
-    this.name = "SendError";
-    this.code = code;
-  }
-}
+// 023: la clase vive en su propio módulo para que el envío de Instagram la
+// use sin importar este archivo (que a su vez importa a Instagram).
+export { SendError } from "@/server/inbox/send-error";
+import { SendError } from "@/server/inbox/send-error";
+import { sendInstagramConversationText } from "@/server/instagram/send";
 
 type SendResult = { messageId: string };
 
@@ -74,6 +62,16 @@ export async function sendText(input: {
       "sandbox_violation",
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
     );
+  }
+  // 023: Instagram Direct tiene su propio envío (otra API, otra ventana).
+  if (row.conversation.kind === "instagram") {
+    return sendInstagramConversationText({
+      organizationId: input.organizationId,
+      conversation: row.conversation,
+      contact: row.contact,
+      text: input.text,
+      aiGenerated: input.aiGenerated ?? false,
+    });
   }
   // 015: segundo guardrail — la conversación del entrenador es interna.
   if (row.conversation.kind !== "whatsapp") {

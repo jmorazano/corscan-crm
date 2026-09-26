@@ -651,6 +651,14 @@ export async function sendTemplateCore(input: {
       "Contacto/conversación de prueba del Laboratorio: el envío real está prohibido"
     );
   }
+  // 023: Instagram no tiene plantillas; un contacto de Instagram jamás
+  // recibe una plantilla de WhatsApp (su «teléfono» es un sintético `ig:…`).
+  if (conversation.kind === "instagram" || contact.channel === "instagram") {
+    throw new SendError(
+      "sandbox_violation",
+      "Las plantillas son solo de WhatsApp: este contacto escribió por Instagram"
+    );
+  }
   if (contact.optedOutAt && !isWindowOpen(conversation.lastInboundAt)) {
     // FR-010/FR-012: el dado de baja no recibe envíos INICIADOS por la
     // empresa; responderle dentro de la ventana de servicio sigue permitido.

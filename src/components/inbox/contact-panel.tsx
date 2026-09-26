@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
+import { ChannelIcon } from "@/components/channel-icon";
+import { contactHandle } from "@/lib/instagram/messaging";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -212,8 +214,13 @@ export function ContactPanel({
               <p className="truncate text-sm font-[650]">
                 {conversation.contact.name}
               </p>
-              <p className="text-xs text-text-3">
-                {formatPhone(conversation.contact.phone)}
+              <p className="flex items-center gap-1 text-xs text-text-3">
+                {conversation.kind === "instagram" && (
+                  <ChannelIcon channel="instagram" className="h-3 w-3" />
+                )}
+                {conversation.kind === "instagram"
+                  ? contactHandle(conversation.contact)
+                  : formatPhone(conversation.contact.phone)}
               </p>
             </div>
           </div>
@@ -403,8 +410,9 @@ export function ContactPanel({
             Borrar datos
           </p>
           <p className="mb-3 text-[11px] leading-relaxed text-text-3">
-            Borra del CRM; los chats en WhatsApp del cliente no cambian. No se
-            puede deshacer.
+            {conversation.kind === "instagram"
+              ? "Borra del CRM; los mensajes en Instagram del cliente no cambian. No se puede deshacer."
+              : "Borra del CRM; los chats en WhatsApp del cliente no cambian. No se puede deshacer."}
           </p>
           {deleteError && (
             <p className="mb-2 text-xs text-destructive">{deleteError}</p>

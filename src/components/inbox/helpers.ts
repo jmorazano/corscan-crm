@@ -32,6 +32,12 @@ const MEDIA_LABELS: Record<string, string> = {
   contacts: "Contacto compartido",
   template: "Plantilla",
   media_placeholder: "Archivo del celular",
+  // 023: Instagram Direct.
+  share: "Publicación compartida",
+  story: "Historia de Instagram",
+  unsupported: "Adjunto no disponible",
+  deleted: "Mensaje eliminado",
+  reaction: "Reacción",
 };
 
 export function mediaLabel(type: string): string {

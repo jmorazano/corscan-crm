@@ -26,6 +26,8 @@ import {
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { ChannelIcon } from "@/components/channel-icon";
+import { contactHandle } from "@/lib/instagram/messaging";
 import { TrainerPanel } from "./trainer-panel";
 import { TrainerAvatar } from "./trainer-row";
 
@@ -36,6 +38,8 @@ type ConversationPage = {
   total: number;
   unreadTotal: number;
   nextCursor: string | null;
+  /** 023: la empresa usa Instagram (conexión o conversaciones): filtro por canal. */
+  hasInstagram?: boolean;
 };
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -57,7 +61,8 @@ export function InboxClient() {
     total: number;
     unreadTotal: number;
     nextCursor: string | null;
-  }>({ total: 0, unreadTotal: 0, nextCursor: null });
+    hasInstagram: boolean;
+  }>({ total: 0, unreadTotal: 0, nextCursor: null, hasInstagram: false });
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Hilo abierto que no está en la página cargada (enlace directo, filtro
@@ -80,6 +85,10 @@ export function InboxClient() {
   const listQuery = params.get("q") ?? "";
   const listFilter: ListFilter =
     params.get("filter") === "unread" ? "unread" : "all";
+  // 023: filtro por canal (Todos / WhatsApp / Instagram) en la URL.
+  const channelParam = params.get("channel");
+  const listChannel: "whatsapp" | "instagram" | null =
+    channelParam === "whatsapp" || channelParam === "instagram" ? channelParam : null;
   const urlConversationId = params.get("c");
   const detailsOpen = params.get("d") === "1";
   const filterRef = useRef({
@@ -87,12 +96,14 @@ export function InboxClient() {
     mode: tagFilter.mode,
     q: listQuery,
     filter: listFilter,
+    channel: listChannel,
   });
   filterRef.current = {
     tagsKey,
     mode: tagFilter.mode,
     q: listQuery,
     filter: listFilter,
+    channel: listChannel,
   };
   const [facetsRev, setFacetsRev] = useState(0);
   const { facets } = useTagFacets("conversations", facetsRev);
@@ -128,6 +139,7 @@ export function InboxClient() {
     }
     if (f.q.trim()) qs.set("q", f.q.trim());
     if (f.filter === "unread") qs.set("filter", "unread");
+    if (f.channel) qs.set("channel", f.channel);
     for (const [k, v] of Object.entries(extra ?? {})) qs.set(k, v);
     return `/api/conversations?${qs}`;
   }, []);
@@ -152,6 +164,7 @@ export function InboxClient() {
       total: data.total,
       unreadTotal: data.unreadTotal,
       nextCursor: data.nextCursor,
+      hasInstagram: data.hasInstagram ?? false,
     });
   }, [buildListQuery]);
 
@@ -202,7 +215,7 @@ export function InboxClient() {
       listQuery ? 250 : 0
     );
     return () => clearTimeout(t);
-  }, [refetchConversations, tagsKey, tagFilter.mode, listFilter, listQuery]);
+  }, [refetchConversations, tagsKey, tagFilter.mode, listFilter, listQuery, listChannel]);
 
   // ---- Navegación por URL (012, FR-005) -----------------------------------
 
@@ -710,6 +723,9 @@ export function InboxClient() {
           onQueryChange={(q) => setParams({ q: q || null })}
           filter={listFilter}
           onFilterChange={(f) => setParams({ filter: f === "unread" ? "unread" : null })}
+          channel={listChannel}
+          onChannelChange={(ch) => setParams({ channel: ch })}
+          showChannelFilter={pageMeta.hasInstagram || listChannel !== null}
           tagFilter={tagFilter}
           onTagFilterChange={(next) => setParams(tagFilterPatch(next))}
           facets={facets}
@@ -767,6 +783,9 @@ export function InboxClient() {
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 text-[15px] font-[650] leading-tight">
                     <span className="truncate">{selected.contact.name}</span>
+                    {selected.kind === "instagram" && (
+                      <ChannelIcon channel="instagram" className="shrink-0" />
+                    )}
                     {selected.kind === "trainer" && (
                       <span
                         data-testid="trainer-badge"
@@ -796,9 +815,11 @@ export function InboxClient() {
                         selected.windowOpen ? "font-medium text-success" : "text-text-3"
                       )}
                     >
-                      {selected.windowOpen
-                        ? "ventana abierta"
-                        : `+${selected.contact.phone}`}
+                      {selected.kind === "instagram"
+                        ? `${contactHandle(selected.contact)} · Instagram${selected.windowOpen ? " · ventana abierta" : ""}`
+                        : selected.windowOpen
+                          ? "ventana abierta"
+                          : `+${selected.contact.phone}`}
                     </span>
                   )}
                 </span>

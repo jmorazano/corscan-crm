@@ -44,6 +44,11 @@ vi.mock("@/server/mcp/integration", () => ({
   setMcpCredential: () => Promise.resolve({ ok: state.mcpView !== null }),
 }));
 
+// 023: Instagram Direct figura siempre en el índice (como Google Calendar).
+vi.mock("@/server/instagram/integration", () => ({
+  getInstagramIntegrationView: () => Promise.resolve(null),
+}));
+
 vi.mock("@/server/calendar/integration", () => ({
   getCalendarIntegrationView: (org: string) => {
     expect(org).toBe("org_1");
@@ -140,7 +145,7 @@ describe("GET /api/integrations", () => {
     const { GET } = await import("@/app/api/integrations/route");
     const res = await GET();
     const json = (await res.json()) as { integrations: { key: string }[] };
-    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar"]);
+    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar", "instagram"]);
   });
 
   it("016: habilitado, aparece con su etiqueta y su host — jamás la URL completa", async () => {

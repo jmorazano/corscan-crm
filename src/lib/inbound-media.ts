@@ -14,8 +14,22 @@
  *    falló— produce una línea que el modelo puede leer.
  */
 
-/** Tipos de mensaje entrante que traen un binario adjunto en el webhook. */
-export const MEDIA_TYPES = ["image", "audio", "video", "document", "sticker"] as const;
+/**
+ * Tipos de mensaje entrante que traen un binario adjunto en el webhook.
+ * 023: `share` (publicación o reel compartido), `story` (mención o respuesta
+ * a una historia) y `unsupported` son de Instagram: no se bajan, pero el
+ * agente se entera de que llegaron (nunca queda mudo).
+ */
+export const MEDIA_TYPES = [
+  "image",
+  "audio",
+  "video",
+  "document",
+  "sticker",
+  "share",
+  "story",
+  "unsupported",
+] as const;
 export type MediaType = (typeof MEDIA_TYPES)[number];
 
 /** Los únicos que se descargan y se le dan a la IA (D10). */
@@ -62,7 +76,7 @@ export type MediaState = "pending" | "ready" | "failed";
 
 export const MEDIA_ERRORS = {
   too_large: "El archivo es más grande de lo que aceptamos",
-  download: "No se pudo descargar el archivo de WhatsApp",
+  download: "No se pudo descargar el archivo",
   unsupported: "El formato del archivo no es compatible",
   transcription: "No se pudo transcribir el audio",
   vision: "No se pudo interpretar la imagen",
@@ -77,6 +91,9 @@ const TYPE_LABEL: Record<MediaType, string> = {
   video: "un video",
   document: "un documento",
   sticker: "un sticker",
+  share: "una publicación de Instagram compartida",
+  story: "una mención o respuesta a una historia de Instagram",
+  unsupported: "un adjunto que Instagram no deja abrir",
 };
 
 export type AttachmentView = {

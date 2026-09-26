@@ -36,5 +36,7 @@ export function avatarColor(seed: string): string {
 }
 
 export function formatPhone(phone: string): string {
+  // 023: el "teléfono" sintético de un contacto de Instagram no se muestra.
+  if (phone.startsWith("ig:")) return "Instagram";
   return `+${phone}`;
 }

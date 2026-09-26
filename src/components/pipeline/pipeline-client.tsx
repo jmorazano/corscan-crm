@@ -23,7 +23,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { StageDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { ActionSheet, type SheetAction } from "@/components/ui/action-sheet";
@@ -259,7 +259,7 @@ export function PipelineClient() {
         open={sheetLead !== null}
         onClose={() => setSheetLead(null)}
         title={sheetLead?.contact.name}
-        description={sheetLead ? `+${sheetLead.contact.phone}` : undefined}
+        description={sheetLead ? formatPhone(sheetLead.contact.phone) : undefined}
         actions={sheetActions}
         testId="lead-sheet"
       />

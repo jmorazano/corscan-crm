@@ -328,6 +328,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         transactionalNotice: transactional?.notice ?? null,
         mcpSection,
         mcpOverridesKb: mcpSection !== null,
+        channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
       }),
     },
     // 020: un entrante sin texto (una foto, un audio que no se pudo

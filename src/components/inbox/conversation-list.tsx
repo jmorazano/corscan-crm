@@ -24,6 +24,7 @@ import { SwipeRow, useLongPress } from "@/components/gestures";
 import { BulkTagsBar } from "@/components/tags/bulk-tags-bar";
 import { TagChip } from "@/components/tags/tag-chip";
 import { TagFilter } from "@/components/tags/tag-filter";
+import { ChannelIcon } from "@/components/channel-icon";
 import type { TagFacet } from "@/components/tags/use-tag-facets";
 import type { TagFilterState } from "@/components/use-query-filters";
 import { formatTime, previewText } from "./helpers";
@@ -98,6 +99,9 @@ export function ConversationList({
   onQueryChange,
   filter,
   onFilterChange,
+  channel = null,
+  onChannelChange = () => {},
+  showChannelFilter = false,
   tagFilter,
   onTagFilterChange,
   facets,
@@ -121,6 +125,10 @@ export function ConversationList({
   onQueryChange: (q: string) => void;
   filter: ListFilter;
   onFilterChange: (f: ListFilter) => void;
+  /** 023: filtro por canal (null = todos) y si la empresa usa Instagram. */
+  channel?: "whatsapp" | "instagram" | null;
+  onChannelChange?: (c: "whatsapp" | "instagram" | null) => void;
+  showChannelFilter?: boolean;
   tagFilter: TagFilterState;
   onTagFilterChange: (next: TagFilterState) => void;
   facets: TagFacet[];
@@ -154,7 +162,10 @@ export function ConversationList({
   const conversations = useMemo(() => conversationsProp ?? [], [conversationsProp]);
   const visible = conversations;
   const filtered =
-    query.trim().length > 0 || filter === "unread" || tagFilter.tags.length > 0;
+    query.trim().length > 0 ||
+    filter === "unread" ||
+    tagFilter.tags.length > 0 ||
+    channel !== null;
 
   // Una conversación que desaparece (borrada, o fuera del filtro) sale de la
   // selección para no operar sobre fantasmas.
@@ -330,6 +341,42 @@ export function ConversationList({
             </span>
           </button>
         ))}
+        {showChannelFilter && (
+          <div
+            role="group"
+            aria-label="Canal"
+            className="flex items-center gap-1"
+            data-testid="channel-filter"
+          >
+            {(["whatsapp", "instagram"] as const).map((ch) => (
+              <button
+                key={ch}
+                type="button"
+                onClick={() => onChannelChange(channel === ch ? null : ch)}
+                aria-pressed={channel === ch}
+                title={
+                  channel === ch
+                    ? "Ver todos los canales"
+                    : ch === "instagram"
+                      ? "Solo Instagram"
+                      : "Solo WhatsApp"
+                }
+                data-testid={`channel-filter-${ch}`}
+                className={cn(
+                  "flex h-[28px] items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors",
+                  channel === ch
+                    ? "border-brand bg-brand-tint text-foreground"
+                    : "bg-background text-text-2 hover:bg-accent"
+                )}
+              >
+                <ChannelIcon channel={ch} />
+                <span className="max-sm:sr-only">
+                  {ch === "instagram" ? "Instagram" : "WhatsApp"}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <TagFilter
           compact
           facets={facets}
@@ -618,6 +665,15 @@ function ConversationRow({
         <ContactAvatar name={c.contact.name} seed={c.contact.id} size="lg" />
         {c.windowOpen && (
           <span className="absolute bottom-0 right-0 h-[11px] w-[11px] rounded-full border-[2.5px] border-background bg-success" />
+        )}
+        {/* 023: el canal, siempre visible, sobre la esquina del avatar. */}
+        {c.kind !== "trainer" && (
+          <span
+            data-testid={`row-channel-${c.kind}`}
+            className="absolute -left-1 -top-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-background bg-background shadow-sm"
+          >
+            <ChannelIcon channel={c.kind === "instagram" ? "instagram" : "whatsapp"} className="h-3 w-3" />
+          </span>
         )}
       </span>
       <span className="min-w-0 flex-1">

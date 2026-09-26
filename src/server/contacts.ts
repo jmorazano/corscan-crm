@@ -8,6 +8,8 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     id: c.id,
     name: c.name,
     phone: c.phone,
+    channel: c.channel ?? "whatsapp",
+    igUsername: c.igUsername ?? null,
     notes: c.notes,
     tags: c.tags,
     consentSource: c.consentSource,

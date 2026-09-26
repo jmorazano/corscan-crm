@@ -225,6 +225,28 @@ export function Composer({
   const mode = composerMode(conversation);
   const isTrainer = mode === "trainer";
 
+  // 023: Instagram sin ventana — no hay plantillas que lo reabran.
+  if (mode === "instagram_closed") {
+    return (
+      <div className="safe-bottom border-t bg-background px-3 py-3 md:px-[18px] md:py-3.5">
+        <div
+          data-testid="instagram-window-closed"
+          className="flex items-start gap-2 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3 text-sm text-[#8a6d3b]"
+        >
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
+          <div>
+            <p className="font-medium">Instagram no permite escribirle ahora.</p>
+            <p className="opacity-80">
+              Pasaron más de 7 días desde su último mensaje y Instagram no tiene
+              plantillas para retomar la conversación. Cuando el cliente vuelva a
+              escribir, vas a poder responderle desde acá.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "template") {
     return (
       <div className="safe-bottom border-t bg-background px-3 py-3 md:px-[18px] md:py-3.5">
@@ -472,12 +494,17 @@ export function Composer({
         ) : (
           <span />
         )}
-        <p className="text-[11px] text-text-3">
+        <p
+          className="text-[11px] text-text-3"
+          data-testid={mode === "instagram_human" ? "instagram-human-agent" : undefined}
+        >
           {isTrainer
             ? canAttachImage
               ? "Podés adjuntar o pegar imágenes · los cambios se pueden deshacer"
               : "Los cambios se aplican al instante y se pueden deshacer"
-            : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
+            : mode === "instagram_human"
+              ? "Pasaron más de 24 h: Instagram permite que una persona responda hasta 7 días después (el agente de IA no)"
+              : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
         </p>
       </div>
     </div>

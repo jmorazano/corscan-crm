@@ -1,4 +1,3 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { getEnv } from "@/lib/env";
 
 /**
@@ -30,67 +29,9 @@ export function redirectUri(): string {
 
 /* ---------- state firmado (CSRF) ---------- */
 
-export type OAuthState = {
-  orgId: string;
-  userId: string;
-  nonce: string;
-  exp: number; // epoch ms
-};
-
-const STATE_TTL_MS = 10 * 60 * 1000;
-
-function b64url(buf: Buffer): string {
-  return buf.toString("base64url");
-}
-
-function hmac(payload: string, secret: string): string {
-  return b64url(createHmac("sha256", secret).update(payload).digest());
-}
-
-export function signState(
-  input: { orgId: string; userId: string },
-  secret: string,
-  now = Date.now()
-): string {
-  const state: OAuthState = {
-    ...input,
-    nonce: randomBytes(8).toString("hex"),
-    exp: now + STATE_TTL_MS,
-  };
-  const payload = b64url(Buffer.from(JSON.stringify(state), "utf8"));
-  return `${payload}.${hmac(payload, secret)}`;
-}
-
-/** null si la firma no coincide, expiró o el formato es inválido. */
-export function verifyState(
-  state: string,
-  secret: string,
-  now = Date.now()
-): OAuthState | null {
-  const [payload, sig] = state.split(".");
-  if (!payload || !sig) return null;
-  const expected = hmac(payload, secret);
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(payload, "base64url").toString("utf8")
-    ) as Partial<OAuthState>;
-    if (
-      typeof parsed.orgId !== "string" ||
-      typeof parsed.userId !== "string" ||
-      typeof parsed.nonce !== "string" ||
-      typeof parsed.exp !== "number"
-    ) {
-      return null;
-    }
-    if (parsed.exp < now) return null;
-    return parsed as OAuthState;
-  } catch {
-    return null;
-  }
-}
+// 023: el state firmado se movió a `src/lib/oauth-state.ts` para compartirlo
+// con el Business Login de Instagram sin acoplar ese adaptador a Google.
+export { signState, verifyState, type OAuthState } from "@/lib/oauth-state";
 
 /* ---------- URL de autorización ---------- */
 

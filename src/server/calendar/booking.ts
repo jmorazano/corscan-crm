@@ -1,4 +1,5 @@
 import { and, asc, eq, gte } from "drizzle-orm";
+import { isInstagramPhone } from "@/lib/instagram/messaging";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -116,7 +117,10 @@ export async function bookAppointment(input: {
     const title = `Turno: ${input.contactName}`;
     const description = [
       `Cliente: ${input.contactName}`,
-      `WhatsApp: +${input.contactPhone}`,
+      // 023: un contacto de Instagram no tiene teléfono (sintético `ig:…`).
+      isInstagramPhone(input.contactPhone)
+        ? "Contacto: mensaje directo de Instagram"
+        : `WhatsApp: +${input.contactPhone}`,
       input.note ? `Motivo: ${input.note}` : null,
       "Agendado desde Vocero CRM",
     ]

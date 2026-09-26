@@ -44,6 +44,23 @@ const envSchema = z.object({
     .default("https://accounts.google.com/o/oauth2/v2/auth"),
   GOOGLE_TOKEN_URL: z.string().url().default("https://oauth2.googleapis.com/token"),
   GOOGLE_API_BASE_URL: z.string().url().default("https://www.googleapis.com"),
+  // Instagram Direct (023): la app de Instagram vive DENTRO de la app de Meta
+  // (Instagram API with Instagram Login) y tiene su propio ID y secreto
+  // (panel → Casos de uso → Instagram → API setup with Instagram login). Es
+  // del OPERADOR; la conexión es POR EMPRESA (instagram_integration). Sin id
+  // + secret la tarjeta explica que el operador debe habilitarla. Las tres
+  // URLs son de transporte: el ig-mock del self-test las intercepta.
+  INSTAGRAM_APP_ID: z.string().optional(),
+  INSTAGRAM_APP_SECRET: z.string().optional(),
+  INSTAGRAM_AUTH_URL: z
+    .string()
+    .url()
+    .default("https://www.instagram.com/oauth/authorize"),
+  INSTAGRAM_TOKEN_URL: z
+    .string()
+    .url()
+    .default("https://api.instagram.com/oauth/access_token"),
+  INSTAGRAM_GRAPH_BASE_URL: z.string().url().default("https://graph.instagram.com"),
   /** Token del archivo `google<token>.html` de Search Console (verificación
    * del dominio para aprobar la app OAuth). Público por naturaleza. */
   GOOGLE_SITE_VERIFICATION: z.string().optional(),
@@ -160,4 +177,14 @@ export function isCoexistenceUiEnabled(): boolean {
 export function isGoogleIntegrationConfigured(): boolean {
   const env = getEnv();
   return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}
+
+/**
+ * true si el operador habilitó Instagram Direct en esta instancia (023): ID
+ * y secreto de la app de Instagram. Sin ambos, la tarjeta no ofrece
+ * "Conectar" y el webhook de Instagram responde 404.
+ */
+export function isInstagramConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(env.INSTAGRAM_APP_ID && env.INSTAGRAM_APP_SECRET);
 }

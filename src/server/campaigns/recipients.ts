@@ -17,6 +17,9 @@ import { sanitizeTags } from "@/lib/tags";
  * sin archivo, NO de prueba (columna is_test real — el sandbox no depende
  * del archivado, que es reversible), y match de etiquetas (vacío = todos;
  * si no, AL MENOS una).
+ * 023: solo contactos de WhatsApp — Instagram no admite plantillas ni envíos
+ * iniciados por el negocio, y el consentimiento `inbound` de un DM de
+ * Instagram no es consentimiento para WhatsApp.
  */
 
 function eligibilityWhere(organizationId: string, tagFilter: string[]) {
@@ -27,6 +30,7 @@ function eligibilityWhere(organizationId: string, tagFilter: string[]) {
     isNull(schema.contact.optedOutAt),
     isNull(schema.contact.archivedAt),
     eq(schema.contact.isTest, false),
+    eq(schema.contact.channel, "whatsapp"),
     tags.length > 0
       ? or(...tags.map((t) => arrayContains(schema.contact.tags, [t])))
       : undefined
@@ -107,6 +111,7 @@ export function isStillEligible(
     contact.optedOutAt === null &&
     contact.archivedAt === null &&
     !contact.isTest &&
+    (contact.channel ?? "whatsapp") === "whatsapp" &&
     contact.organizationId === organizationId
   );
 }

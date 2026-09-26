@@ -12,12 +12,16 @@ import {
 
 export type ConversationDto = {
   id: string;
-  /** 015: `trainer` = la conversación fija del dueño con su propio agente. */
-  kind: "whatsapp" | "trainer";
+  /** 015: `trainer` = la conversación fija del dueño con su propio agente.
+   * 023: `instagram` = conversación por Instagram Direct. */
+  kind: "whatsapp" | "trainer" | "instagram";
   contact: {
     id: string;
     name: string;
+    /** 023: en Instagram es el sintético `ig:<IGSID>`; la UI muestra el @usuario. */
     phone: string;
+    channel: "whatsapp" | "instagram";
+    igUsername: string | null;
     /** 011: BAJA/STOP registrado — la bandeja lo señaliza. */
     optedOut: boolean;
   };
@@ -47,6 +51,8 @@ export type ListConversationsOptions = {
   cursor?: Cursor | null;
   /** Enlace directo: solo la conversación de este contacto. */
   contactId?: string;
+  /** 023: solo un canal (WhatsApp o Instagram Direct). */
+  channel?: "whatsapp" | "instagram";
 };
 
 export type ConversationPage = {
@@ -88,6 +94,8 @@ function conversationSearchWhere(q: string | undefined): SQL | undefined {
   return or(
     ilike(schema.contact.name, like),
     ilike(schema.contact.phone, like),
+    // 023: el @usuario de Instagram (con o sin la arroba).
+    ilike(schema.contact.igUsername, `%${term.replace(/^@/, "")}%`),
     sql`exists (select 1 from unnest(${schema.conversation.tags}) t where t ilike ${like})`,
     sql`${previewSql} ilike ${like}`
   );
@@ -111,6 +119,7 @@ export async function listConversationsPage(
     limit = DEFAULT_PAGE_SIZE,
     cursor = null,
     contactId,
+    channel,
   } = options;
   const db = getDb();
 
@@ -121,7 +130,8 @@ export async function listConversationsPage(
     since ? gt(schema.conversation.updatedAt, since) : undefined,
     tagsWhere(schema.conversation.tags, tags, mode),
     conversationSearchWhere(q),
-    contactId ? eq(schema.conversation.contactId, contactId) : undefined
+    contactId ? eq(schema.conversation.contactId, contactId) : undefined,
+    channel ? eq(schema.conversation.kind, channel) : undefined
   );
   const unreadWhere = gt(schema.conversation.unreadCount, 0);
   const pageWhere = and(
@@ -281,6 +291,8 @@ export function serializeConversation(
       id: contact.id,
       name: contact.name,
       phone: contact.phone,
+      channel: contact.channel ?? "whatsapp",
+      igUsername: contact.igUsername ?? null,
       optedOut: contact.optedOutAt !== null,
     },
     stageName,

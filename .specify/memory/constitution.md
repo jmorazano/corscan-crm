@@ -1,7 +1,44 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.6.0 → 1.7.0
+Versión: 1.7.0 → 1.8.0
+
+Cambios (feature 023-instagram-direct, 25-sep-2026):
+  - Principio II: la categoría 1 deja de ser solo "WhatsApp Cloud API" y pasa
+    a ser **las APIs de mensajería de Meta**: WhatsApp Cloud API y, como canal
+    OPCIONAL POR EMPRESA, la **Instagram Messaging API** (Instagram API with
+    Instagram Login, host graph.instagram.com, misma app de Meta que WhatsApp).
+    Condiciones duras (a..i): el producto funciona completo sin Instagram; lo
+    habilita el operador con las credenciales de la app de Instagram por
+    entorno; cada empresa conecta SU cuenta profesional con consentimiento
+    explícito (Business Login for Instagram) y la desconecta cuando quiere;
+    token cifrado en reposo que jamás sale al cliente ni a logs; aislado tras
+    un adaptador dedicado; el instalador no lo necesita; el sandbox jamás lo
+    toca; el webhook se autentica por firma y es idempotente por `mid` POR
+    TENANT; se respetan las reglas del canal (ventana de 24 h, etiqueta
+    HUMAN_AGENT solo para personas y hasta 7 días, sin envíos iniciados por
+    el negocio) y los borrados que ordena Meta.
+  - Principio VIII: el foco vertical pasa a ser "CRM de conversaciones y leads
+    de WhatsApp E INSTAGRAM DIRECT". Instagram entra SOLO para atender,
+    organizar y convertir mensajes directos que el cliente inicia; quedan
+    FUERA publicar contenido, moderar comentarios y cualquier envío masivo o
+    iniciado por el negocio por Instagram.
+  - Restricciones de Plataforma: el aislamiento de integraciones suma el
+    cliente de Instagram, y los entornos de prueba tampoco alcanzan la API
+    real de Instagram.
+  - Motivación escrita: pedido explícito del dueño (25-sep-2026) de gestionar
+    los mensajes de la cuenta de Instagram de un negocio desde la misma
+    Bandeja — sirve a "atender y convertir conversaciones" (Principio VIII).
+  - Bump: MINOR (expansión material del alcance de II y VIII).
+
+Plantillas dependientes (1.8.0):
+  - .specify/templates/plan-template.md — ✅ compatible.
+  - .specify/templates/spec-template.md — ✅ compatible.
+  - .specify/templates/tasks-template.md — ✅ compatible.
+  - CLAUDE.md — ⚠ actualizar la línea de soberanía, el foco y la tabla "Mapa
+    del código" con la frontera de Instagram.
+
+Versión anterior: 1.6.0 → 1.7.0
 
 Cambios (feature 016-mcp-connector, 21-sep-2026):
   - Principio II: se agrega una QUINTA categoría de dependencia externa en
@@ -127,7 +164,7 @@ TODOs diferidos: ninguno.
 
 # Vocero CRM Constitution
 
-Vocero CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
+Vocero CRM es un CRM de WhatsApp (e Instagram Direct, desde 1.8.0) con agente de IA, open source (MIT), self-hosted y
 gratuito, diseñado para que las agencias de IA lo desplieguen en el VPS de sus
 clientes: una instancia = un operador con una o más empresas (multi-tenant real,
 gestionadas por el super admin de la instancia). Esta constitución define las reglas no
@@ -159,8 +196,24 @@ Vocero CRM opera completo sobre la infraestructura del operador. La lista de
 dependencias externas en runtime es CERRADA:
 
 - Dependencias externas permitidas en runtime, ÚNICAMENTE:
-  1. **WhatsApp Cloud API** (Meta Graph API) — el canal es la razón de ser del
-     producto.
+  1. **Las APIs de mensajería de Meta** — el canal es la razón de ser del
+     producto: la **WhatsApp Cloud API** (Meta Graph API) y, desde 1.8.0, la
+     **Instagram Messaging API** (Instagram API with Instagram Login, host
+     `graph.instagram.com`, misma app de Meta). Instagram es un canal
+     OPCIONAL POR EMPRESA con condiciones NO negociables: (a) sin Instagram el
+     producto funciona completo; (b) lo habilita el operador de la instancia
+     con las credenciales de la app de Instagram inyectadas por entorno; (c)
+     cada empresa conecta SU cuenta profesional con consentimiento explícito
+     (Business Login for Instagram) y la desconecta cuando quiere; (d) el
+     token se cifra en reposo y jamás sale al cliente ni a logs; (e) se aísla
+     tras un adaptador dedicado; (f) el instalador NO lo necesita; (g) el
+     sandbox del Laboratorio jamás lo toca; (h) el webhook se autentica por
+     firma y la ingesta es idempotente por `mid` POR TENANT; (i) se respetan
+     las reglas del canal: ventana de 24 h, etiqueta HUMAN_AGENT solo para
+     personas del equipo y hasta 7 días, ningún envío iniciado por el negocio
+     ni por el agente fuera de la ventana, y los borrados que ordena Meta
+     (mensaje borrado por el cliente, pedido de eliminación de datos) se
+     cumplen.
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
@@ -299,13 +352,19 @@ Las decisiones tomadas sin contexto suficiente se documentan para revisión huma
 **Rationale**: Las decisiones implícitas bajo incertidumbre son la principal fuente
 de deuda oculta; hacerlas visibles permite corregirlas a tiempo.
 
-### VIII. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp
+### VIII. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp e Instagram Direct
 
-Es un CRM de conversaciones y leads de WhatsApp que las agencias despliegan para
-negocios. No es plataforma de marketing masivo indiscriminado, ni constructor
-visual de flujos, ni herramienta de scraping. Lo que no ayude a *atender,
-organizar y convertir conversaciones de WhatsApp de las empresas del operador*
-se rechaza.
+Es un CRM de conversaciones y leads de WhatsApp —y, desde 1.8.0, de los mensajes
+directos de Instagram— que las agencias despliegan para negocios. No es plataforma
+de marketing masivo indiscriminado, ni constructor visual de flujos, ni herramienta
+de scraping, ni gestor de redes sociales. Lo que no ayude a *atender, organizar y
+convertir conversaciones de WhatsApp o de Instagram Direct de las empresas del
+operador* se rechaza.
+
+- Instagram entra SOLO como segundo canal de conversación: mensajes directos que
+  el cliente inicia, atendidos en la misma Bandeja, con el mismo agente, pipeline
+  y etiquetas. Quedan FUERA publicar contenido, moderar comentarios, métricas de
+  la cuenta y cualquier envío masivo o iniciado por el negocio por Instagram.
 
 - El modelo de datos y los flujos MUST reflejar ese dominio: contactos que escriben
   por WhatsApp, conversaciones con ventana de 24h, leads en un pipeline, un agente
@@ -372,13 +431,14 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
 - **Frontera de tenant**: la capa de acceso a datos exige el identificador
   de tenant; cualquier acceso que pueda omitirlo requiere justificación explícita.
 - **Aislamiento de integraciones**: las dependencias de APIs externas se acceden a
-  través de adaptadores dedicados (cliente Graph API propio, adaptador LLM
-  OpenRouter-compatible, adaptador OAuth/REST de Google, transporte MCP
-  genérico + perfil por proveedor), no dispersas por el dominio.
+  través de adaptadores dedicados (cliente Graph API propio, cliente de
+  Instagram propio, adaptador LLM OpenRouter-compatible, adaptador OAuth/REST
+  de Google, transporte MCP genérico + perfil por proveedor), no dispersas por
+  el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
-  API real de WhatsApp.
+  API real de WhatsApp ni la de Instagram.
 
 ## Flujo de Desarrollo y Puertas de Calidad
 
@@ -415,4 +475,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.7.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-21
+**Version**: 1.8.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-25

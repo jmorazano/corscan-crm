@@ -15,5 +15,9 @@ export async function register(): Promise<void> {
     // reanuda las pausadas por cupo cuando la ventana móvil libera.
     const { reviveCampaigns } = await import("./server/campaigns/runner");
     await reviveCampaigns();
+    // 023: renovación en proceso de los tokens de Instagram (60 días). Sin
+    // Instagram habilitado no hay filas y el barrido no hace nada.
+    const { startInstagramTokenTicker } = await import("./server/instagram/integration");
+    startInstagramTokenTicker();
   }
 }

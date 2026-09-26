@@ -7,7 +7,7 @@ import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
 import { planInboundMedia } from "@/lib/inbound-media";
-import { processInboundMedia } from "@/server/inbox/media";
+import { processInboundMedia, type InboundMediaSource } from "@/server/inbox/media";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import {
@@ -74,12 +74,14 @@ export async function getOrCreateContact(
 
 export async function getOrCreateConversation(
   organizationId: string,
-  contactId: string
+  contactId: string,
+  /** 023: el canal de una conversación NUEVA. La existente conserva el suyo. */
+  kind: "whatsapp" | "instagram" = "whatsapp"
 ) {
   const db = getDb();
   const inserted = await db
     .insert(schema.conversation)
-    .values({ id: newId("conversation"), organizationId, contactId })
+    .values({ id: newId("conversation"), organizationId, contactId, kind })
     .onConflictDoNothing()
     .returning();
   if (inserted[0]) return inserted[0];
@@ -164,7 +166,6 @@ export async function ingestInboundMessage(input: {
   mediaMime?: string | null;
   timestamp: string;
 }): Promise<void> {
-  const db = getDb();
   const { organizationId } = input;
 
   const { contact } = await getOrCreateContact(
@@ -177,11 +178,51 @@ export async function ingestInboundMessage(input: {
     contact.id
   );
 
-  const waTimestamp = toDate(input.timestamp);
+  await ingestInboundCore({
+    organizationId,
+    contact,
+    conversation,
+    providerMessageId: input.waMessageId,
+    type: input.type,
+    text: input.text,
+    media: input.mediaId
+      ? { source: { kind: "wa", mediaId: input.mediaId }, mime: input.mediaMime ?? null }
+      : null,
+    at: toDate(input.timestamp),
+  });
+}
+
+/**
+ * Núcleo COMÚN de la ingesta de un mensaje entrante, sea de WhatsApp o de
+ * Instagram (023): dedup por id del proveedor POR TENANT, marcas de la
+ * conversación, lead, consentimiento/baja, SSE, push, adjunto y turno del
+ * agente. El llamador ya resolvió contacto y conversación de su canal.
+ */
+export async function ingestInboundCore(input: {
+  organizationId: string;
+  contact: { id: string; name: string };
+  conversation: typeof schema.conversation.$inferSelect;
+  /** `wa_message_id` en WhatsApp, `mid` en Instagram. */
+  providerMessageId: string;
+  type: string;
+  text: string | null;
+  media: { source: InboundMediaSource; mime: string | null } | null;
+  at: Date;
+}): Promise<typeof schema.message.$inferSelect | null> {
+  const db = getDb();
+  const { organizationId, contact, conversation } = input;
+
+  const waTimestamp = input.at;
 
   // 020: qué hacer con el adjunto. `process` nace `pending` y retiene el
   // turno del agente hasta que el binario esté resuelto (D5).
-  const plan = planInboundMedia(input.type, input.mediaId);
+  const mediaRef =
+    input.media?.source.kind === "wa"
+      ? input.media.source.mediaId
+      : input.media?.source.kind === "url"
+        ? input.media.source.url
+        : null;
+  const plan = planInboundMedia(input.type, mediaRef);
 
   // Idempotencia dura POR TENANT: mismo (organization_id, wa_message_id) →
   // sin efectos adicionales. El scope evita que un wamid de la org A condicione
@@ -192,7 +233,7 @@ export async function ingestInboundMessage(input: {
       id: newId("message"),
       organizationId,
       conversationId: conversation.id,
-      waMessageId: input.waMessageId,
+      waMessageId: input.providerMessageId,
       direction: "in",
       type: input.type,
       text: input.text,
@@ -205,7 +246,7 @@ export async function ingestInboundMessage(input: {
     })
     .returning();
   const message = inserted[0];
-  if (!message) return; // duplicado
+  if (!message) return null; // duplicado
 
   await db
     .update(schema.conversation)
@@ -255,26 +296,27 @@ export async function ingestInboundMessage(input: {
   // 011 (FR-007): el mensaje de baja no merece respuesta del agente — el
   // side-effect ya marcó la baja; responder sería insistirle a quien pidió
   // no recibir más.
-  if (isOptOutMessage(input.type, input.text)) return;
+  if (isOptOutMessage(input.type, input.text)) return message;
 
   // 020 (D5): con un adjunto procesable el turno NO sale acá. Lo dispara
   // `processInboundMedia` cuando el binario está resuelto — listo o
   // fallido. Si saliera ahora, el agente contestaría el mensaje anterior:
   // el historial del pipeline filtra los mensajes sin texto.
-  if (plan.kind === "process") {
+  if (plan.kind === "process" && input.media) {
     void processInboundMedia({
       organizationId,
       conversationId: conversation.id,
       messageId: message.id,
       isTest: conversation.isTest,
-      mediaId: input.mediaId!,
-      declaredMime: input.mediaMime ?? null,
+      source: input.media.source,
+      declaredMime: input.media.mime,
       plan,
     });
-    return;
+    return message;
   }
 
   await maybeRunAgentTurn(organizationId, conversation.id);
+  return message;
 }
 
 function toDate(timestamp: string): Date {

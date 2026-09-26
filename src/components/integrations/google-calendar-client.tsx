@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { formatPhone } from "@/lib/utils";
 
 /**
  * Página de la integración Google Calendar (US1/US2/US4): conexión OAuth,
@@ -679,7 +680,7 @@ function AppointmentsCard() {
               <span className="shrink-0 tabular-nums sm:w-44">{fmt(a)}</span>
               <span className="w-full min-w-0 truncate sm:w-auto sm:flex-1">
                 <span className="font-medium">{a.contactName}</span>{" "}
-                <span className="text-muted-foreground">+{a.contactPhone}</span>
+                <span className="text-muted-foreground">{formatPhone(a.contactPhone)}</span>
                 {a.note && <span className="text-muted-foreground"> · {a.note}</span>}
               </span>
               <span className="flex items-center gap-3">

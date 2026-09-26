@@ -102,7 +102,7 @@ export function MessageThread({
 }: {
   messages: MessageDto[];
   /** 015: en el hilo del entrenador no hay ticks de entrega ni etiquetas de API. */
-  kind?: "whatsapp" | "trainer";
+  kind?: "whatsapp" | "trainer" | "instagram";
   /** 015: «{agente} está pensando…» mientras se espera la respuesta. */
   thinkingLabel?: string | null;
 }) {
@@ -337,7 +337,7 @@ function AudioNote({ message: m }: { message: MessageDto }) {
  * transferencia era invisible para el equipo, que es justamente quien tiene
  * que verlo para dar de alta la reserva.
  */
-function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "whatsapp" | "trainer" }) {
+function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "whatsapp" | "trainer" | "instagram" }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const media = m.media;
@@ -440,13 +440,28 @@ function Bubble({
   onLongPress,
 }: {
   message: MessageDto;
-  kind: "whatsapp" | "trainer";
+  kind: "whatsapp" | "trainer" | "instagram";
   grouped: boolean;
   onLongPress: () => void;
 }) {
   const { handlers } = useLongPress(onLongPress);
   const out = m.direction === "out";
-  const wa = kind === "whatsapp";
+  // Canal real (WhatsApp o Instagram, 023): ticks, origen y motivo de fallo.
+  const wa = kind !== "trainer";
+  const ig = kind === "instagram";
+  // 023: la reacción del cliente es una nota chica, no una burbuja.
+  if (m.type === "reaction") {
+    return (
+      <div className={cn("flex justify-start", grouped ? "mt-[3px]" : "mt-2.5")}>
+        <span
+          data-testid="message-reaction"
+          className="rounded-full bg-background/70 px-2.5 py-0.5 text-[11.5px] text-text-3 shadow-sm"
+        >
+          Reaccionó {m.text ?? "❤️"} a un mensaje · {bubbleTime(m.createdAt)}
+        </span>
+      </div>
+    );
+  }
   return (
     <div
       className={cn(
@@ -466,7 +481,11 @@ function Bubble({
           !grouped && (out ? "rounded-tr-[5px]" : "rounded-tl-[5px]")
         )}
       >
-        {m.type === "text" || m.type === "template" ? (
+        {m.type === "deleted" ? (
+          <span data-testid="message-deleted" className="italic text-text-3">
+            Mensaje eliminado por el cliente
+          </span>
+        ) : m.type === "text" || m.type === "template" ? (
           <span className="whitespace-pre-wrap break-words">{m.text}</span>
         ) : m.type === "audio" ? (
           <AudioNote message={m} />
@@ -496,9 +515,13 @@ function Bubble({
           <span
             data-testid="message-from-phone"
             className="mt-1.5 block clear-both border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3"
-            title="Lo mandaste desde la app de WhatsApp del celular"
+            title={
+              ig
+                ? "Lo respondieron desde la app de Instagram"
+                : "Lo mandaste desde la app de WhatsApp del celular"
+            }
           >
-            Desde el celular
+            {ig ? "Desde Instagram" : "Desde el celular"}
           </span>
         )}
         {out && wa && m.via?.kind === "api" && (

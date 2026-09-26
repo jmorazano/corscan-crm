@@ -10,6 +10,7 @@ import {
   type MediaPlan,
 } from "@/lib/inbound-media";
 import { downloadMediaBinary, fetchMediaHandle } from "@/lib/meta/client";
+import { downloadInstagramMedia } from "@/lib/instagram/client";
 import type { MessageMediaDto } from "@/lib/types";
 import { audioFormatForMime, normalizeMime, sniffAudioMime } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
@@ -20,8 +21,17 @@ import { isOptOutMessage, onInboundSideEffects } from "@/server/inbox/side-effec
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 
 /**
- * Adjuntos entrantes de WhatsApp (020): descarga, guardado y lectura por IA,
- * SIEMPRE en segundo plano.
+ * De dónde sale el binario. WhatsApp (020) da un id que se canjea por una URL
+ * con el token de la WABA; Instagram (023) trae la URL firmada de la CDN en
+ * el propio webhook y se baja sin token.
+ */
+export type InboundMediaSource =
+  | { kind: "wa"; mediaId: string }
+  | { kind: "url"; url: string };
+
+/**
+ * Adjuntos entrantes de WhatsApp (020) e Instagram (023): descarga, guardado
+ * y lectura por IA, SIEMPRE en segundo plano.
  *
  * La regla que gobierna todo el módulo: **ningún camino deja mudo al
  * agente**. Pase lo que pase —Meta caída, archivo enorme, audio ilegible,
@@ -36,7 +46,7 @@ export async function processInboundMedia(input: {
   conversationId: string;
   messageId: string;
   isTest: boolean;
-  mediaId: string;
+  source: InboundMediaSource;
   declaredMime: string | null;
   plan: Extract<MediaPlan, { kind: "process" }>;
 }): Promise<void> {
@@ -67,51 +77,21 @@ async function download(input: {
   organizationId: string;
   conversationId: string;
   messageId: string;
-  mediaId: string;
+  source: InboundMediaSource;
   declaredMime: string | null;
   plan: Extract<MediaPlan, { kind: "process" }>;
 }): Promise<{ data: Buffer; mimeType: string } | null> {
-  const creds = await getCredentialsByOrg(input.organizationId);
-  if (!creds) {
-    await finish(input, { state: "failed", errorCode: "download" });
-    return null;
-  }
-
-  let handle;
-  try {
-    handle = await fetchMediaHandle(input.mediaId, creds.token);
-  } catch (err) {
-    console.warn(
-      `[medios] no se pudo pedir el archivo ${input.mediaId}:`,
-      err instanceof Error ? err.message : err
-    );
-    await finish(input, { state: "failed", errorCode: "download" });
-    return null;
-  }
-
-  // Tope aplicado con lo que DECLARA Meta, antes de bajar el cuerpo.
-  if (handle.fileSize !== null && handle.fileSize > input.plan.maxBytes) {
-    await finish(input, { state: "failed", errorCode: "too_large" });
-    return null;
-  }
-
-  let downloaded;
-  try {
-    downloaded = await downloadMediaBinary(handle.url, creds.token, input.plan.maxBytes);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[medios] descarga fallida de ${input.mediaId}: ${message}`);
-    await finish(input, {
-      state: "failed",
-      errorCode: /máximo|tamaño/i.test(message) ? "too_large" : "download",
-    });
-    return null;
-  }
+  const fetched =
+    input.source.kind === "wa"
+      ? await downloadFromWhatsApp(input, input.source.mediaId)
+      : await downloadFromUrl(input, input.source.url);
+  if (!fetched) return null;
+  const { downloaded, handleMime } = fetched;
 
   // El MIME declarado no manda: el contenido sí. Un `image/jpeg` que en
   // realidad es otra cosa hace fallar al proveedor con un error opaco.
   const declared = normalizeMime(
-    downloaded.contentType || handle.mimeType || input.declaredMime || ""
+    downloaded.contentType || handleMime || input.declaredMime || ""
   );
   const mimeType =
     input.plan.type === "audio"
@@ -131,6 +111,77 @@ async function download(input: {
 
   await saveMedia(input, downloaded.bytes, mimeType);
   return { data: downloaded.bytes, mimeType };
+}
+
+type Downloaded = {
+  downloaded: { bytes: Buffer; contentType: string };
+  handleMime: string | null;
+};
+
+type DownloadInput = {
+  organizationId: string;
+  conversationId: string;
+  messageId: string;
+  plan: Extract<MediaPlan, { kind: "process" }>;
+};
+
+/** WhatsApp: id → URL (con el token de la WABA) → bytes. */
+async function downloadFromWhatsApp(
+  input: DownloadInput,
+  mediaId: string
+): Promise<Downloaded | null> {
+  const creds = await getCredentialsByOrg(input.organizationId);
+  if (!creds) {
+    await finish(input, { state: "failed", errorCode: "download" });
+    return null;
+  }
+
+  let handle;
+  try {
+    handle = await fetchMediaHandle(mediaId, creds.token);
+  } catch (err) {
+    console.warn(
+      `[medios] no se pudo pedir el archivo ${mediaId}:`,
+      err instanceof Error ? err.message : err
+    );
+    await finish(input, { state: "failed", errorCode: "download" });
+    return null;
+  }
+
+  // Tope aplicado con lo que DECLARA Meta, antes de bajar el cuerpo.
+  if (handle.fileSize !== null && handle.fileSize > input.plan.maxBytes) {
+    await finish(input, { state: "failed", errorCode: "too_large" });
+    return null;
+  }
+
+  try {
+    const downloaded = await downloadMediaBinary(handle.url, creds.token, input.plan.maxBytes);
+    return { downloaded, handleMime: handle.mimeType };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[medios] descarga fallida de ${mediaId}: ${message}`);
+    await finish(input, {
+      state: "failed",
+      errorCode: /máximo|tamaño/i.test(message) ? "too_large" : "download",
+    });
+    return null;
+  }
+}
+
+/** Instagram: la URL firmada de la CDN llega en el webhook. */
+async function downloadFromUrl(input: DownloadInput, url: string): Promise<Downloaded | null> {
+  try {
+    const downloaded = await downloadInstagramMedia(url, input.plan.maxBytes);
+    return { downloaded, handleMime: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[medios] descarga fallida del adjunto de Instagram: ${message}`);
+    await finish(input, {
+      state: "failed",
+      errorCode: /máximo|tamaño/i.test(message) ? "too_large" : "download",
+    });
+    return null;
+  }
 }
 
 const SUPPORTED_AUDIO = new Set([

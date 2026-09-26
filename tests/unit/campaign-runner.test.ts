@@ -21,6 +21,8 @@ const base = {
   organizationId: "org_1",
   phone: "5493516882200",
   name: "Cliente",
+  channel: "whatsapp" as "whatsapp" | "instagram",
+  igUsername: null as string | null,
   nameEditedAt: null,
   notes: null,
   tags: ["vip"],
@@ -46,6 +48,8 @@ describe("isStillEligible — re-verificación en el momento del envío", () => 
     ["archivado sobrevenido", { archivedAt: new Date() }],
     ["contacto del Laboratorio", { isTest: true }],
     ["de OTRA organización", { organizationId: "org_2" }],
+    // 023: Instagram no admite plantillas ni envíos iniciados por el negocio.
+    ["contacto de Instagram", { channel: "instagram" as const, phone: "ig:1784" }],
   ])("%s → NO elegible", (_label, overrides) => {
     expect(isStillEligible("org_1", { ...base, ...overrides })).toBe(false);
   });
