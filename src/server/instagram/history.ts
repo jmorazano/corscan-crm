@@ -119,6 +119,8 @@ async function runImport(organizationId: string, days: number): Promise<void> {
       withFrom: 0,
       withText: 0,
       rows: 0,
+      /** Antigüedad (días) de la conversación que cortó por ventana. */
+      outOfWindowDays: null as number | null,
     };
 
     let after: string | null = null;
@@ -134,6 +136,7 @@ async function runImport(organizationId: string, days: number): Promise<void> {
         // ventana corta todo el recorrido.
         if (updated && updated.getTime() < oldest) {
           diag.outOfWindow += 1;
+          diag.outOfWindowDays = Math.floor((now.getTime() - updated.getTime()) / 86_400_000);
           break pages;
         }
 
@@ -187,7 +190,7 @@ async function runImport(organizationId: string, days: number): Promise<void> {
 
     console.log(
       `[instagram] historial de ${organizationId}: páginas=${diag.pages} listadas=${diag.listed} ` +
-        `fuera_de_ventana=${diag.outOfWindow} sin_cliente=${diag.noCustomer} errores_lectura=${diag.readErrors} ` +
+        `fuera_de_ventana=${diag.outOfWindow}${diag.outOfWindowDays !== null ? ` (${diag.outOfWindowDays} días)` : ""} sin_cliente=${diag.noCustomer} errores_lectura=${diag.readErrors} ` +
         `mensajes_crudos=${diag.rawMessages} con_fecha=${diag.withDate} con_from=${diag.withFrom} ` +
         `con_texto=${diag.withText} filas=${diag.rows} importados=${messages}` +
         (diag.participantShapes.length ? ` | participantes: ${diag.participantShapes.join(" / ")}` : "")
@@ -203,6 +206,9 @@ async function runImport(organizationId: string, days: number): Promise<void> {
         historyFinishedAt: new Date(),
         historyThreads: totals.threads,
         historyMessages: totals.messages,
+        // Con cero importado, `history_error` lleva una NOTA que explica por
+        // qué (no es un error): la UI la muestra bajo el resumen.
+        historyError: totals.messages === 0 ? emptyImportNote(diag, days) : null,
         updatedAt: new Date(),
       })
       .where(scoped(schema.instagramIntegration.organizationId, organizationId));
@@ -238,6 +244,25 @@ async function runImport(organizationId: string, days: number): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * Por qué una importación terminó en cero, en castellano (sin datos
+ * personales). La causa típica antes del App Review: con acceso estándar
+ * Instagram devuelve solo algunas conversaciones.
+ */
+export function emptyImportNote(
+  diag: { listed: number; outOfWindow: number; outOfWindowDays: number | null; noCustomer: number; rows: number },
+  days: number
+): string {
+  if (diag.listed === 0) {
+    return "Instagram no devolvió conversaciones. Mientras Meta no apruebe el acceso avanzado de la app, solo entrega algunas.";
+  }
+  const listed = diag.listed === 1 ? "1 conversación" : `${diag.listed} conversaciones`;
+  if (diag.outOfWindow > 0 && diag.rows === 0 && diag.noCustomer === 0) {
+    return `Instagram devolvió ${listed}, sin actividad en los últimos ${days} días${diag.outOfWindowDays !== null ? ` (la más reciente, hace ${diag.outOfWindowDays} días)` : ""}. Mientras Meta no apruebe el acceso avanzado de la app, solo entrega algunas conversaciones.`;
+  }
+  return `Instagram devolvió ${listed}, pero ninguna con mensajes para importar.`;
 }
 
 /** Total del historial de Instagram guardado para la empresa. */

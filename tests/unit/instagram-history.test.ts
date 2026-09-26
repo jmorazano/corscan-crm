@@ -174,3 +174,17 @@ describe("adaptador de la Conversations API", () => {
     expect(calls).toHaveLength(3);
   });
 });
+
+describe("emptyImportNote", () => {
+  it("explica por qué no se importó nada", async () => {
+    const { emptyImportNote } = await import("@/server/instagram/history");
+    const base = { listed: 0, outOfWindow: 0, outOfWindowDays: null, noCustomer: 0, rows: 0 };
+    expect(emptyImportNote(base, 60)).toMatch(/no devolvió conversaciones/);
+    expect(emptyImportNote({ ...base, listed: 1, outOfWindow: 1, outOfWindowDays: 143 }, 60)).toBe(
+      "Instagram devolvió 1 conversación, sin actividad en los últimos 60 días (la más reciente, hace 143 días). Mientras Meta no apruebe el acceso avanzado de la app, solo entrega algunas conversaciones."
+    );
+    expect(emptyImportNote({ ...base, listed: 3, noCustomer: 3 }, 60)).toBe(
+      "Instagram devolvió 3 conversaciones, pero ninguna con mensajes para importar."
+    );
+  });
+});

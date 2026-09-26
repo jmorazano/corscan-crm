@@ -317,7 +317,9 @@ function HistoryCard({
             {running
               ? `Importando… ${h.threads} conversaciones y ${h.messages} mensajes hasta ahora.`
               : h.status === "done"
-                ? `${h.threads} conversaciones y ${h.messages} mensajes importados${h.finishedAt ? ` el ${formatDate(h.finishedAt)}` : ""}.`
+                ? h.messages === 0 && h.error
+                  ? h.error
+                  : `${h.threads} conversaciones y ${h.messages} mensajes importados${h.finishedAt ? ` el ${formatDate(h.finishedAt)}` : ""}.`
                 : `La importación se cortó: ${h.error ?? "error desconocido"}. Lo que alcanzó a entrar quedó guardado (${h.messages} mensajes).`}
           </p>
         )}
