@@ -7,6 +7,7 @@ import {
   connectInstagram,
   InstagramConnectError,
 } from "@/server/instagram/integration";
+import { startInstagramHistoryImport } from "@/server/instagram/history";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request): Promise<Response> {
   const env = getEnv();
   const base = env.APP_BASE_URL.replace(/\/$/, "");
-  const back = (q: string) => Response.redirect(`${base}/integrations/instagram?${q}`, 302);
+  // 023: Instagram es un canal y vive en Ajustes (la URL de ESTE callback no
+  // cambia: es la que está registrada en el panel de Meta).
+  const back = (q: string) => Response.redirect(`${base}/settings/instagram?${q}`, 302);
 
   const url = new URL(req.url);
   // Instagram agrega `#_` al final del code: se descarta si viniera pegado.
@@ -46,11 +49,16 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   try {
-    await connectInstagram({
+    const view = await connectInstagram({
       organizationId: session.organizationId,
       userId: session.userId,
       code,
     });
+    // Primera conexión: el historial se importa solo (como el del celular
+    // de WhatsApp tras el onboarding). Reconectar no lo repite.
+    if (view.history.status === "idle") {
+      await startInstagramHistoryImport(session.organizationId).catch(() => {});
+    }
   } catch (err) {
     const code = err instanceof InstagramConnectError ? err.code : "exchange";
     console.error(

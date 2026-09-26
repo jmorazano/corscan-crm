@@ -494,3 +494,131 @@ export async function downloadInstagramMedia(
     contentType: (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase(),
   };
 }
+
+/* ============================================================
+ * Historial (Conversations API)
+ * ============================================================ */
+
+export type IgParticipant = { id: string; username: string | null };
+
+export type IgConversationSummary = {
+  id: string;
+  updatedTime: string | null;
+  participants: IgParticipant[];
+};
+
+export type IgHistoryMessage = {
+  id: string;
+  createdTime: string | null;
+  from: IgParticipant | null;
+  text: string | null;
+  attachments: { type: string; url: string | null }[];
+  isUnsupported: boolean;
+};
+
+type RawParticipant = { id?: string | number; username?: string };
+type RawMessage = {
+  id?: string;
+  created_time?: string;
+  from?: RawParticipant;
+  message?: string;
+  is_unsupported?: boolean;
+  attachments?: { data?: { image_data?: { url?: string }; video_data?: { url?: string }; file_url?: string; mime_type?: string }[] };
+};
+
+function toParticipant(p: RawParticipant | undefined): IgParticipant | null {
+  if (!p || p.id == null) return null;
+  return { id: String(p.id), username: p.username ?? null };
+}
+
+/**
+ * Una página de conversaciones de la cuenta (más recientes primero). Las
+ * solicitudes de mensaje inactivas hace más de 30 días no las devuelve
+ * Meta (límite de la plataforma).
+ */
+export async function listInstagramConversations(
+  token: string,
+  opts: { after?: string | null; limit?: number } = {}
+): Promise<{ conversations: IgConversationSummary[]; next: string | null }> {
+  const query: Record<string, string> = {
+    platform: "instagram",
+    fields: "id,updated_time,participants",
+    limit: String(opts.limit ?? 25),
+  };
+  if (opts.after) query.after = opts.after;
+  const res = await igGraphRequest<{
+    data?: { id?: string; updated_time?: string; participants?: { data?: RawParticipant[] } }[];
+    paging?: { cursors?: { after?: string }; next?: string };
+  }>("me/conversations", { token, query });
+  const conversations = (res.data ?? [])
+    .filter((c): c is typeof c & { id: string } => typeof c.id === "string")
+    .map((c) => ({
+      id: c.id,
+      updatedTime: c.updated_time ?? null,
+      participants: (c.participants?.data ?? [])
+        .map(toParticipant)
+        .filter((p): p is IgParticipant => p !== null),
+    }));
+  // Sin `next` no hay más páginas aunque venga un cursor.
+  const next = res.paging?.next ? (res.paging.cursors?.after ?? null) : null;
+  return { conversations, next };
+}
+
+function toHistoryMessage(m: RawMessage): IgHistoryMessage | null {
+  if (!m.id) return null;
+  const attachments = (m.attachments?.data ?? []).map((a) => ({
+    type: a.image_data
+      ? "image"
+      : a.video_data
+        ? "video"
+        : a.mime_type?.startsWith("audio/")
+          ? "audio"
+          : "file",
+    url: a.image_data?.url ?? a.video_data?.url ?? a.file_url ?? null,
+  }));
+  return {
+    id: m.id,
+    createdTime: m.created_time ?? null,
+    from: toParticipant(m.from),
+    text: m.message?.trim() ? m.message : null,
+    attachments,
+    isUnsupported: m.is_unsupported === true,
+  };
+}
+
+const MESSAGE_FIELDS = "id,created_time,from,message,attachments,is_unsupported";
+
+/**
+ * Los mensajes de una conversación con su contenido. Meta solo da el
+ * detalle de los **20 más recientes**; se pide con expansión anidada y, si
+ * la respuesta viene sin detalle, se cae a un pedido por mensaje.
+ */
+export async function getInstagramConversationMessages(
+  token: string,
+  conversationId: string
+): Promise<IgHistoryMessage[]> {
+  const res = await igGraphRequest<{ messages?: { data?: RawMessage[] } }>(
+    encodeURIComponent(conversationId),
+    { token, query: { fields: `messages.limit(20){${MESSAGE_FIELDS}}` } }
+  );
+  const raw = (res.messages?.data ?? []).slice(0, 20);
+  const detailed = raw.some((m) => m.created_time || m.message || m.from);
+  if (detailed) {
+    return raw.map(toHistoryMessage).filter((m): m is IgHistoryMessage => m !== null);
+  }
+  const out: IgHistoryMessage[] = [];
+  for (const m of raw) {
+    if (!m.id) continue;
+    try {
+      const full = await igGraphRequest<RawMessage>(encodeURIComponent(m.id), {
+        token,
+        query: { fields: MESSAGE_FIELDS },
+      });
+      const parsed = toHistoryMessage(full);
+      if (parsed) out.push(parsed);
+    } catch {
+      // Un mensaje viejo o borrado no frena al resto del hilo.
+    }
+  }
+  return out;
+}

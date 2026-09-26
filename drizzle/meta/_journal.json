@@ -141,6 +141,13 @@
       "when": 1790381969788,
       "tag": "0019_instagram_direct",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790388515817,
+      "tag": "0020_instagram_history",
+      "breakpoints": true
     }
   ]
 }

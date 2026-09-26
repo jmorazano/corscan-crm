@@ -41,9 +41,15 @@ Estado durable del loop. `[x]` hecho y verificado.
 
 ## Fase 6 — Producción y Meta
 - [x] T060 CLAUDE.md + `.env.example` + `docs/integraciones/instagram.md`
-- [ ] T061 Política de privacidad y eliminación de datos (dronebiz)
-- [ ] T062 Merge + deploy + migración aplicada
+- [x] T061 Política de privacidad y eliminación de datos (dronebiz)
+- [x] T062 Merge + deploy + migración aplicada
 - [ ] T063 Panel de Meta: redirect URI, callbacks, webhook (el dueño pega el verify token), tester
 - [ ] T064 Railway: `INSTAGRAM_APP_ID` + `INSTAGRAM_APP_SECRET` (el dueño pega el secreto)
 - [ ] T065 Prueba real con `@corscan.ing` (llamadas exitosas de ambos permisos)
 - [x] T066 Borrador del App Review (textos + guion del video) listo para que el dueño envíe
+
+## Fase 7 — Feedback del dueño (26-sep-2026)
+- [x] T070 Instagram es un CANAL: pasa de Integraciones a Ajustes → Instagram (al lado de WhatsApp); `/integrations/instagram` redirige; el callback OAuth vuelve a Ajustes (su URL en Meta no cambia)
+- [x] T071 Historial: Conversations API (20 últimos por conversación, 60 días) con las reglas de 017; migración 0020 (`instagram_integration.history_*`); al conectar, botón y ticker para cuentas `idle`
+- [x] T072 Unit + E2E del historial (guion pasos 20–24)
+- [ ] T073 Deploy + importación automática del historial de @corscan.ing en producción

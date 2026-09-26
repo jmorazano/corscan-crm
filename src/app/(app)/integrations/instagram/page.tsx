@@ -1,31 +1,20 @@
-import { requireOwnerPage } from "@/lib/auth/owner-page";
-import Link from "next/link";
-import { InstagramClient } from "@/components/integrations/instagram-client";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function InstagramIntegrationPage() {
-  // 022: configuración de la empresa — solo el propietario.
-  await requireOwnerPage();
-  return (
-    <div className="flex h-full flex-col">
-      <header className="border-b px-4 py-3 md:px-6 md:py-4">
-        <p className="text-xs text-muted-foreground">
-          <Link href="/integrations" className="hover:underline">
-            Integraciones
-          </Link>{" "}
-          / Instagram Direct
-        </p>
-        <h2 className="font-semibold">Instagram Direct</h2>
-        <p className="text-sm text-muted-foreground">
-          Los mensajes directos de la cuenta de Instagram del negocio entran a la
-          misma Bandeja que WhatsApp, y el agente los atiende con el mismo
-          conocimiento.
-        </p>
-      </header>
-      <div className="min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <InstagramClient />
-      </div>
-    </div>
-  );
+/**
+ * 023: Instagram es un CANAL (como WhatsApp) y vive en Ajustes → Instagram.
+ * Esta ruta queda solo para no romper enlaces viejos.
+ */
+export default async function InstagramIntegrationRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(await searchParams)) {
+    if (typeof v === "string") params.set(k, v);
+  }
+  const qs = params.toString();
+  redirect(`/settings/instagram${qs ? `?${qs}` : ""}`);
 }

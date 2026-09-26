@@ -853,6 +853,19 @@ export const instagramIntegration = pgTable(
       .notNull()
       .default("connected"),
     connectedBy: text("connected_by"),
+    /**
+     * 023: importación del historial (Conversations API). `idle` = nunca se
+     * importó (el ticker la dispara sola una vez); `running` lleva
+     * `history_started_at` para no correr dos a la vez.
+     */
+    historyStatus: text("history_status", { enum: ["idle", "running", "done", "failed"] })
+      .notNull()
+      .default("idle"),
+    historyStartedAt: timestamp("history_started_at"),
+    historyFinishedAt: timestamp("history_finished_at"),
+    historyThreads: integer("history_threads").notNull().default(0),
+    historyMessages: integer("history_messages").notNull().default(0),
+    historyError: text("history_error"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

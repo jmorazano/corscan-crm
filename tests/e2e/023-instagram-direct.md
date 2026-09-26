@@ -19,9 +19,11 @@ envíos y suscripciones. **Knobs** (`POST /api/dev/ig-mock/state`, one-shot):
 
 ## Guion
 
-1. **La tarjeta aparece y conecta.** Integraciones muestra «Instagram Direct ·
-   No conectada». En `/integrations/instagram` → «Conectar con Instagram» →
-   vuelve con `?connected=1`, «Conectada · @negocio.demo». BD: fila
+1. **Ajustes → Instagram (canal, al lado de WhatsApp) y conecta.** La pestaña
+   «Instagram» figura segunda en Ajustes; `/integrations/instagram` redirige
+   a `/settings/instagram` y la tarjeta ya NO está en Integraciones.
+   «Conectar con Instagram» → vuelve con `?connected=1`, «Conectada ·
+   @negocio.demo». BD: fila
    `instagram_integration` con `token_cipher` cifrado (no empieza con `mock`),
    vence en 60 días; outbox: suscripción a
    `messages,messaging_seen,messaging_postbacks,message_reactions,messaging_referral`.
@@ -77,12 +79,32 @@ envíos y suscripciones. **Knobs** (`POST /api/dev/ig-mock/state`, one-shot):
     ajena → 200 sin borrar nada.
 19. Móvil (375 px): chips de canal como íconos y marca de canal en las filas.
 
+### Historial (Conversations API)
+
+20. **Al conectar por primera vez se importa solo.** El ig-mock trae 3
+    conversaciones: Sofía (25 mensajes, hace 2 h), Martín (4, hace 10 días)
+    y una de hace 90 días. Resultado: «Importado · 2 conversaciones y 24
+    mensajes» (20 de Sofía —Meta solo deja leer los 20 últimos— + 4 de
+    Martín; la de 90 días queda fuera de la ventana de 60). BD: fechas
+    originales, `source=history`, `unread_count=0`, sin leads, sin IA;
+    `last_inbound_at` avanza con `greatest`.
+21. **Reimportar no duplica** (sigue en 24) y el resumen muestra el total; dos
+    POST seguidos → el segundo 409 `in_progress`.
+22. **Meta caída durante la importación** (`historyFails`) → «Con error ·
+    Instagram no respondió; probá de nuevo en un rato. Lo que alcanzó a
+    entrar quedó guardado (24 mensajes)».
+23. **Cuenta conectada ANTES de esta función** (`history_status=idle`): al
+    reiniciar el servidor el ticker la importa sola (2 / 24).
+24. En la Bandeja las conversaciones importadas aparecen en su orden
+    cronológico, sin no leídos ni etapa de lead.
+
 ## Resultado (25-sep-2026)
 
 Todo ✅. Bug encontrado y corregido en la conducción: el eco guardaba la fila
 pero no la publicaba por SSE (un `Date` crudo dentro de un `sql` fallaba en
 postgres-js); ahora usa `::timestamp` como la ingesta de historial.
 
-Gate técnico: typecheck ✅ · lint ✅ · build ✅ · unit 1.096 ✅ (43 nuevos:
+Gate técnico (con historial y Ajustes, 26-sep): typecheck ✅ · lint ✅ ·
+build ✅ · unit 1.104 ✅. Antes: unit 1.096 ✅ (43 nuevos:
 `instagram-webhook`, `instagram-messaging`, `instagram-signed-request`,
 `instagram-client`, `instagram-integration`, + casos en `campaign-runner`).

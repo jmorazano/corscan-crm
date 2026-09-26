@@ -30,6 +30,15 @@ export type InstagramIntegrationView = {
   status: "connected" | "reconnect_required";
   tokenExpiresAt: string;
   connectedAt: string;
+  /** 023: importación del historial (Conversations API). */
+  history: {
+    status: "idle" | "running" | "done" | "failed";
+    startedAt: string | null;
+    finishedAt: string | null;
+    threads: number;
+    messages: number;
+    error: string | null;
+  };
 };
 
 /** Forma de runtime (servidor): incluye el token descifrado. */
@@ -83,6 +92,14 @@ export function toInstagramView(row: Row): InstagramIntegrationView {
     status: row.status,
     tokenExpiresAt: row.tokenExpiresAt.toISOString(),
     connectedAt: row.createdAt.toISOString(),
+    history: {
+      status: row.historyStatus,
+      startedAt: row.historyStartedAt?.toISOString() ?? null,
+      finishedAt: row.historyFinishedAt?.toISOString() ?? null,
+      threads: row.historyThreads,
+      messages: row.historyMessages,
+      error: row.historyError,
+    },
   };
 }
 
@@ -332,12 +349,20 @@ declare global {
 export function startInstagramTokenTicker(): void {
   if (globalThis.__voceroInstagramTicker) return;
   const run = () =>
-    void refreshDueInstagramTokens().catch((err) =>
-      console.warn(
-        "[instagram] barrido de tokens falló:",
-        err instanceof Error ? err.message : err
-      )
-    );
+    void refreshDueInstagramTokens()
+      // Cuentas conectadas que nunca importaron su historial: una sola vez.
+      .then(async () => {
+        const { startPendingInstagramHistoryImports } = await import(
+          "@/server/instagram/history"
+        );
+        await startPendingInstagramHistoryImports();
+      })
+      .catch((err) =>
+        console.warn(
+          "[instagram] barrido de tokens/historial falló:",
+          err instanceof Error ? err.message : err
+        )
+      );
   globalThis.__voceroInstagramTicker = setInterval(run, TICKER_MS);
   globalThis.__voceroInstagramTicker.unref?.();
   run();

@@ -56,8 +56,9 @@ async function resolveOrg(value: WebhookValue) {
  * Ecos: `created_at` = ahora — son mensajes en vivo y el `timestamp` de Meta
  * viene en segundos: truncado podía quedar ANTES del entrante recién
  * ingerido (con milisegundos) y el agente veía «último = cliente».
+ * 023: también la usa la importación del historial de Instagram.
  */
-async function insertRows(
+export async function insertRows(
   organizationId: string,
   conversationId: string,
   rows: HistoryRow[],

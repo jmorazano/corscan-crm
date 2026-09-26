@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Instagram, Link2, Unplug } from "lucide-react";
+import { History, Instagram, Link2, Loader2, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
- * Integraciones → Instagram Direct (023): conectar la cuenta profesional por
- * Business Login for Instagram, ver su estado y desconectarla. El token
- * jamás llega al cliente.
+ * Ajustes → Instagram (023): el segundo canal, al lado de WhatsApp. Conectar
+ * la cuenta profesional por Business Login for Instagram, ver su estado,
+ * importar el historial y desconectarla. El token jamás llega al cliente.
  */
 
 type View = {
@@ -21,6 +21,14 @@ type View = {
   status: "connected" | "reconnect_required";
   tokenExpiresAt: string;
   connectedAt: string;
+  history: {
+    status: "idle" | "running" | "done" | "failed";
+    startedAt: string | null;
+    finishedAt: string | null;
+    threads: number;
+    messages: number;
+    error: string | null;
+  };
 };
 
 type ApiResponse = { available: boolean; integration: View | null; canManage: boolean };
@@ -44,7 +52,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function InstagramClient() {
+export function InstagramSettings() {
   const params = useSearchParams();
   const [data, setData] = useState<ApiResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -61,6 +69,27 @@ export function InstagramClient() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // Mientras importa el historial, el estado se refresca solo.
+  const running = data?.integration?.history.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => void refetch(), 3000);
+    return () => clearInterval(t);
+  }, [running, refetch]);
+
+  async function importHistory() {
+    setError(null);
+    const res = await fetch("/api/integrations/instagram/history", { method: "POST" }).catch(
+      () => null
+    );
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      setError(body?.error?.message ?? "No se pudo iniciar la importación.");
+      return;
+    }
+    await refetch();
+  }
 
   useEffect(() => {
     if (params.get("connected") === "1") {
@@ -89,7 +118,15 @@ export function InstagramClient() {
   const handle = integration?.username ? `@${integration.username}` : "la cuenta";
 
   return (
-    <div className="max-w-3xl space-y-6">
+    // Mismo marco que el resto de Ajustes (012: en móvil el padding lo pone el layout).
+    <div className="max-w-2xl space-y-6 md:p-6">
+      <div>
+        <h2 className="font-semibold">Instagram</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Los mensajes directos de la cuenta de Instagram del negocio entran a la misma
+          Bandeja que WhatsApp y el agente los atiende con el mismo conocimiento.
+        </p>
+      </div>
       {notice && (
         <p
           className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] px-3 py-2 text-sm text-[#3f6b52]"
@@ -201,6 +238,8 @@ export function InstagramClient() {
         </CardContent>
       </Card>
 
+      {integration && <HistoryCard view={integration} canManage={canManage} onImport={importHistory} />}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Antes de conectar</CardTitle>
@@ -231,5 +270,77 @@ export function InstagramClient() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function HistoryCard({
+  view,
+  canManage,
+  onImport,
+}: {
+  view: View;
+  canManage: boolean;
+  onImport: () => Promise<void>;
+}) {
+  const h = view.history;
+  const [busy, setBusy] = useState(false);
+  const running = h.status === "running";
+  return (
+    <Card data-testid="ig-history">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-4 w-4 text-brand" strokeWidth={1.7} />
+            Historial
+          </CardTitle>
+          {running ? (
+            <Badge variant="secondary">Importando…</Badge>
+          ) : h.status === "done" ? (
+            <Badge variant="success">Importado</Badge>
+          ) : h.status === "failed" ? (
+            <Badge variant="warning">Con error</Badge>
+          ) : (
+            <Badge variant="secondary">Sin importar</Badge>
+          )}
+        </div>
+        <CardDescription>
+          Trae a la Bandeja las conversaciones de los últimos 60 días. Instagram solo deja
+          leer los <strong>20 mensajes más recientes</strong> de cada conversación, y no
+          devuelve las solicitudes de mensaje sin actividad en 30 días. Lo importado no
+          genera no leídos, avisos ni respuestas del agente, y no se duplica si lo volvés a
+          importar.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 px-5 pb-5">
+        {(running || h.status === "done" || h.status === "failed") && (
+          <p className="text-sm text-text-2" data-testid="ig-history-status">
+            {running
+              ? `Importando… ${h.threads} conversaciones y ${h.messages} mensajes hasta ahora.`
+              : h.status === "done"
+                ? `${h.threads} conversaciones y ${h.messages} mensajes importados${h.finishedAt ? ` el ${formatDate(h.finishedAt)}` : ""}.`
+                : `La importación se cortó: ${h.error ?? "error desconocido"}. Lo que alcanzó a entrar quedó guardado (${h.messages} mensajes).`}
+          </p>
+        )}
+        {canManage && view.status === "connected" && (
+          <Button
+            variant="outline"
+            disabled={busy || running}
+            onClick={async () => {
+              setBusy(true);
+              await onImport();
+              setBusy(false);
+            }}
+            data-testid="ig-history-import"
+          >
+            {running ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.7} />
+            ) : (
+              <History className="h-4 w-4" strokeWidth={1.7} />
+            )}
+            {h.status === "idle" ? "Importar historial" : "Volver a importar"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

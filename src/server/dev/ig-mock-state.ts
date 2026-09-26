@@ -30,7 +30,49 @@ export type IgMockState = {
   subscribeFails: boolean;
   /** Persistente: el mock manda el eco de cada envío (como Instagram real). */
   echoSends: boolean;
+  /** 023: conversaciones que devuelve la Conversations API simulada. */
+  history: IgMockConversation[];
+  historyFails: boolean;
 };
+
+export type IgMockConversation = {
+  id: string;
+  customer: { igsid: string; username: string; name: string };
+  messages: { id: string; fromCustomer: boolean; text: string; at: Date }[];
+};
+
+const MIN = 60 * 1000;
+
+/**
+ * Historial de ejemplo: una conversación reciente con 25 mensajes (Meta
+ * solo deja leer los 20 últimos), otra de hace 10 días y una de hace 90
+ * (fuera de la ventana de 60 días).
+ */
+function sampleHistory(now = Date.now()): IgMockConversation[] {
+  const conv = (
+    n: string,
+    customer: IgMockConversation["customer"],
+    count: number,
+    newestMinutesAgo: number
+  ): IgMockConversation => ({
+    id: `aWdfconv_${n}`,
+    customer,
+    messages: Array.from({ length: count }, (_, i) => ({
+      id: `aWdfmsg_${n}_${i + 1}`,
+      fromCustomer: i % 2 === 0,
+      text:
+        i % 2 === 0
+          ? `Consulta ${i + 1} de ${customer.name.split(" ")[0]}`
+          : `Respuesta ${i + 1} del negocio`,
+      at: new Date(now - (newestMinutesAgo + (count - 1 - i) * 30) * MIN),
+    })),
+  });
+  return [
+    conv("sofia", { igsid: "771100220033", username: "sofia.viajera", name: "Sofía Viajera" }, 25, 120),
+    conv("martin", { igsid: "771100220044", username: "martin.obras", name: "Martín Obras" }, 4, 10 * 24 * 60),
+    conv("vieja", { igsid: "771100220055", username: "cliente.viejo", name: "Cliente Viejo" }, 3, 90 * 24 * 60),
+  ];
+}
 
 declare global {
   var __igMockState: IgMockState | undefined;
@@ -54,6 +96,8 @@ function fresh(): IgMockState {
     refreshFails: false,
     subscribeFails: false,
     echoSends: true,
+    history: sampleHistory(),
+    historyFails: false,
   };
 }
 

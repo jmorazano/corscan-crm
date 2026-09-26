@@ -93,7 +93,9 @@ async function handleEvent(integration: InstagramIntegration, ev: InstagramEvent
  */
 export async function getOrCreateInstagramContact(
   integration: InstagramIntegration,
-  igsid: string
+  igsid: string,
+  /** Lo que ya se sabe del cliente (p. ej. el @usuario del historial). */
+  hint: { username?: string | null } = {}
 ) {
   const db = getDb();
   const { organizationId } = integration;
@@ -107,6 +109,7 @@ export async function getOrCreateInstagramContact(
       phone,
       channel: "instagram",
       name: instagramDisplayName({ igsid }),
+      igUsername: hint.username?.replace(/^@/, "") || null,
     })
     .onConflictDoNothing({ target: [schema.contact.organizationId, schema.contact.phone] })
     .returning();

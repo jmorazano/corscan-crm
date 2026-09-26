@@ -11,6 +11,7 @@ const knobs = z.object({
   refreshFails: z.boolean().optional(),
   subscribeFails: z.boolean().optional(),
   echoSends: z.boolean().optional(),
+  historyFails: z.boolean().optional(),
 });
 
 /** Perillas del camino infeliz del ig-mock (one-shot salvo `echoSends`). */

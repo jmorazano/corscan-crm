@@ -39,8 +39,15 @@ Instagram): sin `INSTAGRAM_APP_SECRET` la ruta responde 404.
 1. La cuenta de Instagram tiene que ser **profesional** (empresa o creador).
 2. En la app de Instagram: **Configuración → Mensajes y respuestas a
    historias → Herramientas conectadas → «Permitir acceso a los mensajes»**.
-3. El propietario entra a **Integraciones → Instagram Direct → Conectar con
-   Instagram** y autoriza con el usuario de Instagram del negocio.
+3. El propietario entra a **Ajustes → Instagram → Conectar con Instagram**
+   (al lado de WhatsApp: es un canal, no una integración) y autoriza con el
+   usuario de Instagram del negocio.
+4. Al conectar por primera vez se importa solo el **historial**: las
+   conversaciones de los últimos 60 días, con los 20 mensajes más recientes
+   de cada una (límite de la Conversations API de Meta; las solicitudes de
+   mensaje sin actividad en 30 días no las devuelve). Se puede repetir con
+   «Volver a importar»: no duplica. Lo importado no genera no leídos, avisos,
+   leads ni respuestas del agente.
 
 ## 3. Acceso estándar vs. avanzado (App Review)
 

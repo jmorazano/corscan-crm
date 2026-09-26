@@ -9,6 +9,8 @@ import { navItemsFor } from "@/lib/roles";
 
 const TABS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
+  // 023: segundo canal, al lado de WhatsApp.
+  { href: "/settings/instagram", label: "Instagram" },
   { href: "/settings/ai", label: "Inteligencia artificial" },
   { href: "/settings/sending", label: "Envíos y campañas" },
   { href: "/settings/branding", label: "Marca" },

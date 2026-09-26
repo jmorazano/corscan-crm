@@ -32,6 +32,15 @@ function authorized(req: Request): boolean {
   return (bearer(req) ?? "").startsWith("mock-ig-long-");
 }
 
+/** Formato de Meta: ISO con `+0000`. */
+function metaTime(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, "+0000");
+}
+
+function lastAt(c: { messages: { at: Date }[] }): Date {
+  return new Date(Math.max(...c.messages.map((m) => m.at.getTime())));
+}
+
 /** Quita la versión (`v25.0`) del path. */
 function route(path: string[]): string[] {
   return path[0] && /^v\d+(\.\d+)?$/.test(path[0]) ? path.slice(1) : path;
@@ -89,13 +98,65 @@ export async function GET(req: Request, ctx: Params) {
     });
   }
 
+  // 023: Conversations API (historial).
+  if (path[0] === "me" && path[1] === "conversations") {
+    if (s.historyFails) {
+      s.historyFails = false;
+      return err(500, 2, "An unexpected error has occurred. Please retry your request later.");
+    }
+    const limit = Number(url.searchParams.get("limit") ?? 25);
+    const start = Number(url.searchParams.get("after") ?? 0);
+    const ordered = [...s.history].sort(
+      (a, b) => lastAt(b).getTime() - lastAt(a).getTime()
+    );
+    const page = ordered.slice(start, start + limit);
+    const hasMore = start + limit < ordered.length;
+    return Response.json({
+      data: page.map((c) => ({
+        id: c.id,
+        updated_time: metaTime(lastAt(c)),
+        participants: {
+          data: [
+            { id: s.account.igUserId, username: s.account.username },
+            { id: c.customer.igsid, username: c.customer.username },
+          ],
+        },
+      })),
+      paging: {
+        cursors: { after: String(start + limit) },
+        ...(hasMore ? { next: "https://graph.instagram.com/next" } : {}),
+      },
+    });
+  }
+  const conv = s.history.find((c) => c.id === path[0]);
+  if (conv && path.length === 1) {
+    // Meta: solo los 20 más recientes, del más nuevo al más viejo.
+    const latest = [...conv.messages].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 20);
+    return Response.json({
+      id: conv.id,
+      messages: {
+        data: latest.map((m) => ({
+          id: m.id,
+          created_time: metaTime(m.at),
+          from: m.fromCustomer
+            ? { id: conv.customer.igsid, username: conv.customer.username }
+            : { id: s.account.igUserId, username: s.account.username },
+          message: m.text,
+        })),
+      },
+    });
+  }
+
   // Perfil de un cliente (User Profile API).
   if (path.length === 1 && path[0]) {
     if (s.profileFails) {
       s.profileFails = false;
       return err(400, 230, "User consent is required to access user profile");
     }
-    const p = s.profiles.get(path[0]);
+    const fromHistory = s.history.find((c) => c.customer.igsid === path[0])?.customer;
+    const p =
+      s.profiles.get(path[0]) ??
+      (fromHistory ? { name: fromHistory.name, username: fromHistory.username } : undefined);
     return Response.json({
       name: p?.name ?? null,
       username: p?.username ?? null,

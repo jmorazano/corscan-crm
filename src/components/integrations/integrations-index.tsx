@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Instagram, Plug } from "lucide-react";
+import { CalendarDays, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * Índice de integraciones (FR-001): una tarjeta por integración soportada
- * con su estado. Hoy: Instagram Direct (023), Google Calendar y el conector
- * MCP (016).
+ * con su estado. Hoy: Google Calendar y el conector MCP (016). Instagram
+ * Direct (023) NO está acá: es un canal y vive en Ajustes, como WhatsApp.
  */
 
 type IntegrationItem = {
@@ -40,12 +40,6 @@ const META: Record<
     icon: CalendarDays,
     description:
       "El agente consulta disponibilidad y agenda turnos en el calendario del negocio.",
-  },
-  instagram: {
-    href: "/integrations/instagram",
-    icon: Instagram,
-    description:
-      "Los mensajes directos de la cuenta de Instagram del negocio entran a la Bandeja y el agente los atiende.",
   },
   mcp: {
     href: "/integrations/mcp",

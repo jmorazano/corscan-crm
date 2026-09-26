@@ -25,7 +25,7 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 > Test login: https://crm.corscan.com.ar/login — user and password in the
 > "Credentials" field (company "Meta Review", owner role, no data).
 >
-> 1. Log in. Go to **Integraciones** (left menu) → **Instagram Direct** →
+> 1. Log in. Go to **Ajustes** (Settings, left menu) → **Instagram** →
 >    **Conectar con Instagram**.
 > 2. Log in with an Instagram professional (Business or Creator) test account
 >    and accept the requested permissions. You return to the CRM and the card
@@ -42,8 +42,8 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 >    less than 7 days), the composer explains that only a human can reply and
 >    the message is sent with the HUMAN_AGENT tag. The AI assistant never uses
 >    this tag; outside 24 h it hands the conversation to a human instead.
-> 6. **Integraciones → Instagram Direct → Desconectar** removes the token and
->    stops receiving messages.
+> 6. **Ajustes → Instagram → Desconectar** removes the token and stops
+>    receiving messages.
 
 ## instagram_business_basic — How will your app use it?
 
@@ -90,9 +90,9 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 Grabar en `crm.corscan.com.ar` con la empresa «Meta Review» (o la real si se
 prefiere) y un segundo celular/cuenta que hace de cliente. Mostrar la URL.
 
-1. (0:00) Login en el CRM → Integraciones → tarjeta «Instagram Direct».
+1. (0:00) Login en el CRM → Ajustes → Instagram.
 2. (0:20) «Conectar con Instagram» → ventana de Instagram (se ve el nombre de
-   la app y los permisos) → «Permitir» → vuelve a Integraciones: «Conectada ·
+   la app y los permisos) → «Permitir» → vuelve a Ajustes → Instagram: «Conectada ·
    @corscan.ing» con foto. **(instagram_business_basic)**
 3. (0:50) En el celular del «cliente»: abrir Instagram → DM a @corscan.ing:
    «Hola, ¿hacen relevamientos con dron?».
@@ -107,7 +107,7 @@ prefiere) y un segundo celular/cuenta que hace de cliente. Mostrar la URL.
 8. (2:25) Human Agent: mostrar una conversación con el último mensaje de hace
    más de 24 h (preparar una de prueba el día anterior) → el composer explica
    que solo una persona puede responder → enviar. **(Human Agent)**
-9. (2:50) Integraciones → Instagram Direct → «Desconectar» → confirmar.
+9. (2:50) Ajustes → Instagram → «Desconectar» → confirmar.
 
 Checklist del video: sin datos personales reales de terceros, subtítulos o
 narración en inglés opcional (los textos de arriba explican cada paso),

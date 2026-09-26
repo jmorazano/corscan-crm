@@ -61,7 +61,7 @@ export async function sendInstagramConversationText(input: {
   if (integration.status === "reconnect_required") {
     throw new SendError(
       "reconnect_required",
-      "La conexión con Instagram venció: reconectá la cuenta en Integraciones"
+      "La conexión con Instagram venció: reconectá la cuenta en Ajustes → Instagram"
     );
   }
 
@@ -158,7 +158,7 @@ async function toSendError(err: unknown, organizationId: string): Promise<SendEr
       await markInstagramReconnectRequired(organizationId);
       return new SendError(
         "reconnect_required",
-        "La conexión con Instagram venció: reconectá la cuenta en Integraciones"
+        "La conexión con Instagram venció: reconectá la cuenta en Ajustes → Instagram"
       );
     }
     if (err.isUnavailable) {

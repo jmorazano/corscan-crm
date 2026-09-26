@@ -165,6 +165,25 @@ Como dueño no quiero tener que reconectar cada 60 días.
    eliminación, **Then** se borra el token de esa cuenta y se responde el
    código de confirmación que exige Meta.
 
+### User Story 7 - El historial de Instagram entra a la Bandeja (Priority: P2)
+
+Como dueño, al conectar la cuenta quiero ver en la Bandeja las
+conversaciones recientes de Instagram, como pasa con el historial del
+celular de WhatsApp (017).
+
+**Acceptance Scenarios**:
+
+1. **Given** una cuenta recién conectada, **When** termina la conexión,
+   **Then** se importan en segundo plano las conversaciones de los últimos
+   60 días con sus mensajes (Meta solo da los 20 más recientes de cada una),
+   con su fecha original, sin no leídos, avisos, leads ni agente.
+2. **Given** una importación hecha, **When** el dueño toca «Volver a
+   importar», **Then** no se duplica nada.
+3. **Given** Meta falla a mitad, **When** termina, **Then** el estado dice
+   «Con error» con el motivo en castellano y lo importado queda guardado.
+4. **Given** una cuenta conectada antes de que existiera el historial,
+   **When** arranca el servidor, **Then** su historial se importa solo una vez.
+
 ### Edge Cases
 
 - Un mensaje de Instagram llega para una empresa cuya conexión está en
@@ -238,6 +257,11 @@ Como dueño no quiero tener que reconectar cada 60 días.
   firmados, para el self-test E2E.
 - **FR-019**: Solo el dueño conecta/desconecta (withOwner); los miembros
   operan las conversaciones.
+- **FR-020**: Instagram es un CANAL: su pantalla vive en Ajustes → Instagram,
+  al lado de WhatsApp (no en Integraciones).
+- **FR-021**: Importación del historial por la Conversations API (US7), una a
+  la vez por empresa, idempotente, disparada al conectar, a mano y por el
+  ticker para cuentas que nunca la hicieron.
 
 ### Key Entities
 
