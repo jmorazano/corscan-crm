@@ -73,7 +73,12 @@ async function responseTimes(
   previousStart: Date,
   start: Date,
   end: Date
-): Promise<{ avgMs: number | null; medianMs: number | null; count: number; previousAvgMs: number | null }> {
+): Promise<{
+  medianMs: number | null;
+  avgMs: number | null;
+  count: number;
+  previousMedianMs: number | null;
+}> {
   const scanFrom = new Date(previousStart.getTime() - 7 * 24 * 60 * 60 * 1000);
   const rows = await getDb().execute(sql`
     with msgs as (
@@ -113,15 +118,15 @@ async function responseTimes(
       avg(ms) filter (where is_current) as avg_ms,
       percentile_cont(0.5) within group (order by ms) filter (where is_current) as median_ms,
       count(*) filter (where is_current) as n,
-      avg(ms) filter (where not is_current) as previous_avg_ms
+      percentile_cont(0.5) within group (order by ms) filter (where not is_current) as previous_median_ms
     from replies
   `);
   const row = (rows as unknown as Record<string, unknown>[])[0] ?? {};
   return {
-    avgMs: toNumberOrNull(row.avg_ms),
     medianMs: toNumberOrNull(row.median_ms),
+    avgMs: toNumberOrNull(row.avg_ms),
     count: Number(row.n ?? 0),
-    previousAvgMs: toNumberOrNull(row.previous_avg_ms),
+    previousMedianMs: toNumberOrNull(row.previous_median_ms),
   };
 }
 

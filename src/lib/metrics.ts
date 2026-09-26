@@ -175,10 +175,16 @@ export type MetricsOverview = {
     allSent: number;
   };
   responseTime: {
-    avgMs: number | null;
+    /**
+     * Mediana: el número principal de la tarjeta. Un mensaje que quedó
+     * horas esperando con el agente apagado dispara el promedio; la mediana
+     * dice cuánto tarda una respuesta típica.
+     */
     medianMs: number | null;
+    avgMs: number | null;
     count: number;
-    previousAvgMs: number | null;
+    /** Mediana del período anterior (se compara mediana con mediana). */
+    previousMedianMs: number | null;
     /** Espera configurada antes de responder (022): va incluida en el tiempo. */
     replyDelayMs: number;
   };

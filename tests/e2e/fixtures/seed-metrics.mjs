@@ -4,13 +4,16 @@
 // que devolver en el rango diario. Re-ejecutable (borra y recrea la
 // empresa). Desde la raíz del repo:
 //
-//   node tests/e2e/fixtures/seed-metrics.cjs            # sembrar
-//   node tests/e2e/fixtures/seed-metrics.cjs --cleanup  # borrar la empresa
-const fs = require('fs');
-const root = process.cwd();
-const env = fs.readFileSync(root + '/.env', 'utf8');
+//   node tests/e2e/fixtures/seed-metrics.mjs            # sembrar
+//   node tests/e2e/fixtures/seed-metrics.mjs --cleanup  # borrar la empresa
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import postgres from "postgres";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+const env = readFileSync(join(root, ".env"), "utf8");
 const url = env.match(/^DATABASE_URL=(.*)$/m)[1];
-const postgres = require(root + '/node_modules/postgres/cjs/src/index.js');
 const sql = postgres(url, { onnotice: () => {} });
 
 const ORG = 'org_metrics_e2e';
@@ -94,7 +97,7 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   const expected = {
     received: { total: 5, whatsapp: 4, instagram: 1, previous: 1 },
     agentSent: { total: 3, previous: 1, allSent: 4 },
-    responseTime: { avgMs: (120_000 + 90_000 + 40_000) / 3, medianMs: 90_000, count: 3, previousAvgMs: 60_000 },
+    responseTime: { medianMs: 90_000, avgMs: (120_000 + 90_000 + 40_000) / 3, count: 3, previousMedianMs: 60_000 },
     series,
   };
   console.log(JSON.stringify(expected, null, 2));

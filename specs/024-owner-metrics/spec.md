@@ -49,10 +49,12 @@ segundo canal: `conversation.kind`). Sin migración, sin dependencias nuevas
   el cliente). Si a ese grupo de mensajes lo respondió una persona o una
   campaña, no entra en el cálculo. Incluye a propósito la espera
   configurada antes de responder (022) y el procesamiento de audios e
-  imágenes (020): es lo que tarda de verdad. La tarjeta muestra el
-  **promedio** (lo pedido) y, debajo, la **mediana** y la cantidad de
-  respuestas, porque un caso aislado (un mensaje de la noche que el agente
-  contestó a la mañana siguiente al reactivarse) mueve el promedio.
+  imágenes (020): es lo que tarda de verdad. **El número principal es la
+  MEDIANA** (decisión del dueño, 26-sep-2026, tras ver datos reales:
+  promedio 2 min 21 s contra mediana 3 s — un mensaje que quedó esperando
+  con el agente apagado dispara el promedio). Debajo va el promedio y la
+  cantidad de respuestas; la comparación con el período anterior es
+  mediana contra mediana.
 - **Solo propietario, tres capas** (como 022): el enlace «Métricas» no
   aparece para un miembro, `requireOwnerPage()` en la página y
   `withOwner` (403 `forbidden`) en `GET /api/metrics`.
@@ -70,7 +72,8 @@ comparación contra el período anterior.
 1. **Given** una empresa con mensajes de WhatsApp e Instagram, **When** el
    propietario abre `/metrics`, **Then** ve tres tarjetas (recibidos con el
    desglose por canal, enviados por el agente con su porcentaje, tiempo de
-   respuesta promedio con la mediana) y el histograma apilado del período.
+   respuesta —mediana— con el promedio debajo) y el histograma apilado del
+   período.
 2. **Given** la vista Diario, **When** elige Semanal o Anual, **Then** las
    tarjetas y el histograma se recalculan para ese período sin saltos de
    diseño (el gráfico anterior queda atenuado mientras carga).
@@ -110,8 +113,9 @@ comparación contra el período anterior.
   cambio vs. período anterior.
 - **FR-004**: Tarjeta de enviados por el agente con total, porcentaje sobre
   todo lo enviado y cambio vs. período anterior.
-- **FR-005**: Tarjeta de tiempo de respuesta con promedio, mediana,
-  cantidad de respuestas y cambio (bajar es bueno).
+- **FR-005**: Tarjeta de tiempo de respuesta con la mediana como número
+  principal, promedio y cantidad de respuestas debajo, y cambio de la
+  mediana (bajar es bueno).
 - **FR-006**: Histograma a todo el ancho, barras apiladas WhatsApp (base) e
   Instagram, con leyenda, tooltip por barra (puntero y teclado), eje Y con
   valores redondos y una vista de tabla con los mismos datos.

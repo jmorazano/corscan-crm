@@ -12,6 +12,10 @@
       `tests/unit/roles.test.ts`.
 - [x] T6 UI: tarjetas con cambio vs. período anterior, selector en la URL,
       histograma apilado SVG con tooltip/teclado/tabla/estado vacío.
-- [x] T7 Seed de números conocidos `tests/e2e/fixtures/seed-metrics.cjs` +
+- [x] T7 Seed de números conocidos `tests/e2e/fixtures/seed-metrics.mjs` +
       guion `tests/e2e/024-owner-metrics.md` conducido en verde.
 - [x] T8 Gate: typecheck + lint + build + 1.135 unit.
+- [x] T9 Pedido del dueño (26-sep): la MEDIANA es el número principal del
+      tiempo de respuesta (promedio debajo) y se compara mediana contra
+      mediana (`previousMedianMs`). Seed pasado a ESM (`.mjs`): el `.cjs`
+      rompía el lint con `require()`.

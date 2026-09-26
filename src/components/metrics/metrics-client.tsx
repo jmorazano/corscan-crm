@@ -297,24 +297,29 @@ function ResponseTimeCard({ data, previousLabel }: { data: MetricsOverview; prev
     <StatCard
       icon={Timer}
       label="Tiempo de respuesta"
-      value={formatDuration(t.avgMs)}
+      value={formatDuration(t.medianMs)}
       testId="metrics-response"
       delta={
-        <Delta current={t.avgMs} previous={t.previousAvgMs} previousLabel={previousLabel} goodWhenUp={false} />
+        <Delta
+          current={t.medianMs}
+          previous={t.previousMedianMs}
+          previousLabel={previousLabel}
+          goodWhenUp={false}
+        />
       }
     >
       {t.count === 0 ? (
         <span className="text-text-3">Sin respuestas del agente en este período.</span>
       ) : (
         <div className="flex flex-col gap-1">
-          <span data-testid="metrics-response-median">
-            Mediana <span className="font-semibold text-foreground">{formatDuration(t.medianMs)}</span>
+          <span data-testid="metrics-response-average">
+            Promedio <span className="font-semibold text-foreground">{formatDuration(t.avgMs)}</span>
             {" · "}
             {formatCount(t.count)} {t.count === 1 ? "respuesta" : "respuestas"}
           </span>
           <span className="text-text-3">
-            Promedio de las respuestas del agente, desde el primer mensaje del
-            cliente sin responder
+            Mediana de las respuestas del agente (la mitad fue más rápida),
+            desde el primer mensaje del cliente sin responder
             {delaySeconds > 0 ? `; incluye la espera de ${delaySeconds} s antes de responder` : ""}.
           </span>
         </div>

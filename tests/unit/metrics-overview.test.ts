@@ -67,7 +67,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
       }
       if (r.sql.includes("percentile_cont")) {
         return Promise.resolve([
-          { avg_ms: "31500.5", median_ms: 24000, n: "12", previous_avg_ms: null },
+          { avg_ms: "31500.5", median_ms: 24000, n: "12", previous_median_ms: "18000" },
         ]);
       }
       return Promise.resolve([
@@ -96,10 +96,10 @@ describe("getMetricsOverview", () => {
     expect(o.received).toEqual({ total: 10, whatsapp: 7, instagram: 3, previous: 5 });
     expect(o.agentSent).toEqual({ total: 6, previous: 4, allSent: 8 });
     expect(o.responseTime).toEqual({
-      avgMs: 31500.5,
       medianMs: 24000,
+      avgMs: 31500.5,
       count: 12,
-      previousAvgMs: null,
+      previousMedianMs: 18000,
       replyDelayMs: 20_000,
     });
     expect(o.series).toHaveLength(30);
@@ -140,6 +140,10 @@ describe("getMetricsOverview", () => {
     expect(rt?.sql).toContain("r.ai_generated = true");
     expect(rt?.sql).toContain("r.out_seq = w.out_seq + 1");
     expect(rt?.sql).toContain("\"message\".\"status\" <> 'failed'");
+    // La comparación es mediana contra mediana (el titular de la tarjeta).
+    expect(rt?.sql).toContain(
+      "percentile_cont(0.5) within group (order by ms) filter (where not is_current) as previous_median_ms"
+    );
   });
 
   it("la espera configurada de la empresa pisa la de instancia", async () => {
