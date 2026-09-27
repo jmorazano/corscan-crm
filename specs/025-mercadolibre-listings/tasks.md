@@ -54,7 +54,7 @@
 - [x] E2 Gate: typecheck + lint + build + test.
 - [x] E3 Docs: `docs/integraciones/mercadolibre.md`, `.env.example`,
       CLAUDE.md, constitución 1.8.1, memoria.
-- [ ] E4 Merge + deploy + verificación en Railway; cargar Javier en
+- [x] E4 Merge + deploy + verificación en Railway; cargar Javier en
       `distrito-inmobiliario` (autorizado por el dueño).
 
 ## Estado
@@ -67,3 +67,11 @@ ficha → pedido de visita con handoff, privacidad (negativas + guarda de
 teléfono), número personal (conocido calla, nuevo personal calla, ajuste
 apagado responde) y Laboratorio sin tráfico a ML. Gate: typecheck + lint +
 build + 1.190 tests.
+
+**Entrega (26/27-sep-2026):** `a8fa866` fast-forward a main, Railway
+`c32c5fa6` SUCCESS, migración 0021 aplicada (backfill: 3.533 contactos de
+Distrito conocidos), mocks 404, rutas nuevas protegidas. Seed de Javier
+cargado en `distrito-inmobiliario` (encendido, número personal activo, 14
+entradas; respaldo del perfil/KB anterior tomado antes). Pendiente del
+operador: crear la app de ML (guía corregida con el formulario real) y
+cargar `MELI_CLIENT_ID/SECRET` en Railway.

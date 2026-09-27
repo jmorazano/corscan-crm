@@ -11,20 +11,39 @@ cuenta la conecta cada empresa desde **Integraciones → Mercado Libre**.
 
 ## 1. Crear la app (una vez por instancia)
 
-1. Entrá con la cuenta de Mercado Libre del operador (con los datos
-   validados) a <https://developers.mercadolibre.com.ar> → **Mis
-   aplicaciones** → **Crear aplicación**.
-2. Completá nombre (p. ej. «Corscan CRM»), nombre corto, descripción y logo.
-3. **URI de redirect** — EXACTA, sin nada variable:
-   `https://<tu-dominio>/api/integrations/mercadolibre/callback`
-   (en producción: `https://crm.corscan.com.ar/api/integrations/mercadolibre/callback`).
-4. **PKCE**: podés activarlo; el CRM ya manda `code_challenge` S256 siempre.
-5. **Scopes**: lectura + **acceso offline** (`offline_access`). Sin
-   offline_access Mercado Libre no entrega refresh token y la conexión se
-   rechaza.
-6. **Permisos funcionales**: los de lectura de publicaciones (ítems) y
-   usuarios. No hace falta escritura, notificaciones ni tópicos.
-7. Copiá el **App ID** y la **Clave secreta**.
+Formulario de <https://developers.mercadolibre.com.ar/devcenter/create-app>
+(verificado el 27-sep-2026), con la cuenta de Mercado Libre del operador:
+
+**Paso 1 — Información básica**
+- Nombre: «Corscan CRM» · Nombre corto: `corscan-crm` · Descripción (≤150):
+  «CRM de WhatsApp: el asistente de cada negocio consulta sus publicaciones
+  vigentes para responder consultas y coordinar visitas.»
+- Propósito: **Negocios** · Usuarios: el rango más chico que corresponda.
+- Logo: opcional (PNG ≤ 1 MB).
+
+**Paso 2 — Configuración y scopes**
+- **Redirect URIs**: una sola, EXACTA:
+  `https://<tu-dominio>/api/integrations/mercadolibre/callback`
+  (producción: `https://crm.corscan.com.ar/api/integrations/mercadolibre/callback`).
+- **Flujos OAuth**: ✅ Authorization Code · ✅ Refresh Token · ⬜ Client
+  Credentials. Sin «Refresh Token» ML no entrega refresh y la conexión se
+  rechaza (es lo que antes se llamaba `offline_access`).
+- **Requiere PKCE**: ✅ recomendado (el CRM manda `code_challenge` S256 y
+  `code_verifier` siempre, así que funciona con o sin).
+- **Negocios**: ✅ Mercado Libre · ✅ **VIS** (Vehículos, Inmuebles y
+  Servicios: las publicaciones de inmuebles son de VIS).
+- **Permisos**:
+  - Usuarios: viene por defecto; si el desplegable lo permite, **Solo
+    lectura**.
+  - **Publicación y sincronización: Solo lectura** (cubre `items`,
+    `items/search` y descripciones). Sin esto ML responde 403
+    `PA_UNAUTHORIZED_RESULT_FROM_POLICIES`.
+  - Todo lo demás (Comunicaciones, Publicidad, Facturación, Métricas,
+    Promociones, Ventas y envíos): **Sin acceso**.
+- **Tópicos**: ninguno. **Notificaciones callbacks URL**: vacía. El CRM no
+  usa notificaciones: sincroniza solo.
+- Aceptar términos, reCAPTCHA y **Crear**. Copiá el **App ID** y la **Clave
+  secreta** (Client Secret) de la app creada.
 
 ## 2. Configurar la instancia
 
