@@ -45,11 +45,14 @@
 - [x] D3 Gate: typecheck + lint + build + unit.
 - [x] D4 Guion `tests/e2e/026-outbound-media.md` conducido con mocks.
 - [x] D5 CLAUDE.md (mapa + feature activa) y memoria.
-- [ ] D6 Merge fast-forward a `main` + deploy + verificación en producción.
+- [x] D6 Merge fast-forward a `main` + deploy + verificación en producción.
 
 ## Estado
 
 30-sep-2026: A–D5 hechas. Gate verde (typecheck, lint, 1.263+ unit,
 build) y guion `tests/e2e/026-outbound-media.md` conducido con mocks
 (WhatsApp, Instagram, entrantes, rechazos, fallos con Reintentar, miembro,
-móvil). Pendiente D6: merge + deploy (autorizado por el dueño).
+móvil). D6: `0f019f0` fast-forward a `main`; Railway 9a3165c4 SUCCESS,
+health 200, rutas nuevas vivas (media-link sin firma 404, envío sin sesión
+401, mocks 404). La 0022 quedó aplicada: el contenedor corre
+`migrate.mjs && server.js` y el server arrancó.
