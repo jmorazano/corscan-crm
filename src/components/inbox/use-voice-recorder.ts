@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeWav, pickRecorderMimeType } from "@/lib/audio-record";
+import { canEncodeOpus, encodeOggOpus } from "@/lib/voice-encode";
 
 /**
  * Grabador de notas de voz (015, US3). Tap para grabar / tap para enviar.
@@ -13,6 +14,11 @@ import { encodeWav, pickRecorderMimeType } from "@/lib/audio-record";
  * con 0:00/0:00 y el modelo alucinaba frases sobre audio que no decodificaba.
  * Respaldo (sin AudioWorklet): MediaRecorder en `audio/mp4` u `audio/ogg`;
  * nunca WebM (el proveedor no lo acepta).
+ *
+ * 027 — formato `whatsapp` (nota de voz a un cliente): el mismo PCM se
+ * codifica a OGG/Opus con WebCodecs, lo único que WhatsApp muestra como nota
+ * de voz. Sin WebCodecs, MediaRecorder en `audio/mp4` (llega como audio
+ * común); sin ninguno, un error claro ANTES de pedir el micrófono.
  */
 
 export type RecorderState = "idle" | "requesting" | "recording" | "uploading" | "error";
@@ -33,8 +39,13 @@ export type RecorderApi = {
 const PERMISSION_COPY =
   "Necesitamos permiso para usar el micrófono. Activalo en los ajustes del navegador (en la app instalada: Ajustes del teléfono → Safari/Chrome → Micrófono).";
 
+const WHATSAPP_UNSUPPORTED =
+  "Este navegador no puede grabar notas de voz para WhatsApp. Actualizalo o usá Chrome, Firefox o Safari 26 o posterior.";
+
 export function useVoiceRecorder(opts: {
   maxMs: number;
+  /** 027: `whatsapp` = OGG/Opus (o MP4 de respaldo); `wav` = el de siempre. */
+  format?: "wav" | "whatsapp";
   onBlob: (blob: Blob, meta: { mimeType: string; durationMs: number }) => Promise<string | null>;
 }): RecorderApi {
   const [state, setState] = useState<RecorderState>("idle");
@@ -55,6 +66,19 @@ export function useVoiceRecorder(opts: {
   onBlobRef.current = opts.onBlob;
   const maxMsRef = useRef(opts.maxMs);
   maxMsRef.current = opts.maxMs;
+  const formatRef = useRef(opts.format ?? "wav");
+  formatRef.current = opts.format ?? "wav";
+  // 027: se averigua una vez; `start` no puede esperar dentro del tap.
+  const opusRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void canEncodeOpus().then((ok) => {
+      if (alive) opusRef.current = ok;
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const stopRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -129,17 +153,45 @@ export function useVoiceRecorder(opts: {
       await finish(blob, mimeRef.current);
       return;
     }
-    // Camino WAV (AudioWorklet / ScriptProcessor).
+    // Camino PCM (AudioWorklet / ScriptProcessor).
     const rate = ctxRef.current?.sampleRate ?? 48000;
-    const wav = encodeWav(pcmRef.current, rate, 16000);
+    const pcm = pcmRef.current;
     pcmRef.current = [];
+    if (formatRef.current === "whatsapp") {
+      // 027: nota de voz de WhatsApp = OGG/Opus.
+      let ogg: Uint8Array;
+      try {
+        ogg = await encodeOggOpus(pcm, rate);
+      } catch {
+        release();
+        setElapsedMs(0);
+        setError("No se pudo preparar la nota de voz. Probá de nuevo.");
+        setState("error");
+        return;
+      }
+      await finish(new Blob([new Uint8Array(ogg)], { type: "audio/ogg" }), "audio/ogg");
+      return;
+    }
+    const wav = encodeWav(pcm, rate, 16000);
     await finish(new Blob([wav], { type: "audio/wav" }), "audio/wav");
-  }, [state, finish]);
+  }, [state, finish, release]);
   stopRef.current = stop;
 
   const start = useCallback(async () => {
     if (state === "recording" || state === "requesting") return;
     setError(null);
+    // 027: WhatsApp sin Opus en este navegador → MP4 si hay; si no, avisar
+    // ANTES de pedir el micrófono.
+    const mp4Fallback =
+      formatRef.current === "whatsapp" &&
+      !opusRef.current &&
+      typeof MediaRecorder !== "undefined" &&
+      MediaRecorder.isTypeSupported("audio/mp4");
+    if (formatRef.current === "whatsapp" && !opusRef.current && !mp4Fallback) {
+      setError(WHATSAPP_UNSUPPORTED);
+      setState("error");
+      return;
+    }
     setState("requesting");
     let stream: MediaStream;
     try {
@@ -166,7 +218,7 @@ export function useVoiceRecorder(opts: {
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     try {
-      if (Ctx) {
+      if (Ctx && !mp4Fallback) {
         const ctx = new Ctx();
         ctxRef.current = ctx;
         // iOS crea el contexto suspendido hasta un gesto: estamos dentro del tap.
@@ -191,8 +243,9 @@ export function useVoiceRecorder(opts: {
           nodeRef.current = proc;
         }
       } else {
-        const mime =
-          typeof MediaRecorder !== "undefined"
+        const mime = mp4Fallback
+          ? "audio/mp4"
+          : typeof MediaRecorder !== "undefined"
             ? pickRecorderMimeType((t) => MediaRecorder.isTypeSupported(t))
             : null;
         if (!mime) throw new Error("sin formato de grabación aceptado");

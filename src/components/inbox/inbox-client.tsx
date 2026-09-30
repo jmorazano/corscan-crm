@@ -41,6 +41,8 @@ type ConversationPage = {
   nextCursor: string | null;
   /** 023: la empresa usa Instagram (conexión o conversaciones): filtro por canal. */
   hasInstagram?: boolean;
+  /** 027: Meta aprobó «Human Agent» (ventana de 7 días en Instagram). */
+  instagramHumanAgent?: boolean;
 };
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -63,7 +65,14 @@ export function InboxClient() {
     unreadTotal: number;
     nextCursor: string | null;
     hasInstagram: boolean;
-  }>({ total: 0, unreadTotal: 0, nextCursor: null, hasInstagram: false });
+    instagramHumanAgent: boolean;
+  }>({
+    total: 0,
+    unreadTotal: 0,
+    nextCursor: null,
+    hasInstagram: false,
+    instagramHumanAgent: false,
+  });
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Hilo abierto que no está en la página cargada (enlace directo, filtro
@@ -166,6 +175,7 @@ export function InboxClient() {
       unreadTotal: data.unreadTotal,
       nextCursor: data.nextCursor,
       hasInstagram: data.hasInstagram ?? false,
+      instagramHumanAgent: data.instagramHumanAgent ?? false,
     });
   }, [buildListQuery]);
 
@@ -522,7 +532,11 @@ export function InboxClient() {
   const sendMedia = useCallback(
     (
       file: File,
-      meta: { caption: string | null; onProgress: (pct: number) => void }
+      meta: {
+        caption: string | null;
+        onProgress: (pct: number) => void;
+        voice?: { durationMs: number | null };
+      }
     ): Promise<SendMediaResult> =>
       new Promise((resolve) => {
         const conversationId = selectedIdRef.current;
@@ -533,6 +547,12 @@ export function InboxClient() {
         const form = new FormData();
         form.append("file", file);
         if (meta.caption) form.append("caption", meta.caption);
+        if (meta.voice) {
+          form.append("voice", "1");
+          if (meta.voice.durationMs !== null) {
+            form.append("durationMs", String(meta.voice.durationMs));
+          }
+        }
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `/api/conversations/${conversationId}/messages/media`);
         xhr.upload.onprogress = (e) => {
@@ -935,6 +955,7 @@ export function InboxClient() {
               onSendAudio={selected.kind === "trainer" ? sendVoiceNote : undefined}
               onSendImage={selected.kind === "trainer" ? sendTrainerImage : undefined}
               onSendMedia={selected.kind === "trainer" ? undefined : sendMedia}
+              instagramHumanAgent={pageMeta.instagramHumanAgent}
               onSent={() => {
                 if (selectedIdRef.current)
                   void refetchMessages(selectedIdRef.current);

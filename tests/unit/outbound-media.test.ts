@@ -312,3 +312,14 @@ describe("epígrafe y agente", () => {
     expect(outboundAgentText({ type: "template", text: null })).toBeNull();
   });
 });
+
+describe("027: nota de voz de WhatsApp", () => {
+  it("solo un OGG/Opus grabado va con `voice: true`", async () => {
+    const { isWhatsAppVoiceNote } = await import("@/server/inbox/send-media");
+    expect(isWhatsAppVoiceNote({ kind: "audio", mime: "audio/ogg", voice: true })).toBe(true);
+    expect(isWhatsAppVoiceNote({ kind: "audio", mime: "audio/mp4", voice: true })).toBe(false);
+    expect(isWhatsAppVoiceNote({ kind: "audio", mime: "audio/ogg", voice: false })).toBe(false);
+    expect(isWhatsAppVoiceNote({ kind: "document", mime: "audio/ogg", voice: true })).toBe(false);
+  });
+});
+

@@ -25,6 +25,15 @@ describe("shouldRefreshToken (023)", () => {
 describe("friendlyInstagramError", () => {
   it("traduce los motivos frecuentes", () => {
     expect(friendlyInstagramError({ code: 551, subcode: null, message: "x" })).toMatch(/no está disponible/);
+    // 027: el rechazo real de producción (30-sep-2026) sin el permiso aprobado.
+    expect(
+      friendlyInstagramError({
+        code: 10,
+        subcode: null,
+        message:
+          "To use 'Human Agent', your use of this endpoint must be reviewed and approved by Facebook.",
+      })
+    ).toMatch(/«Human Agent».*24 h/);
     expect(friendlyInstagramError({ code: 10, subcode: 2018278, message: "x" })).toMatch(/fuera de la ventana/);
     expect(friendlyInstagramError({ code: 1, subcode: null, message: "raro" })).toBe(
       "Instagram rechazó el envío: raro"

@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { describeImage, transcribeAudio } from "@/lib/ai";
+import { describeImage, readDocument, transcribeAudio } from "@/lib/ai";
 import {
   MEDIA_ERRORS,
+  PDF_READ_MAX_BYTES,
   sniffImageMime,
   type MediaErrorCode,
   type MediaPlan,
@@ -68,6 +69,11 @@ export async function processInboundMedia(input: {
       await finish(input, { state: "ready" });
       return;
     }
+    // 027: el PDF sí lo lee.
+    if (input.plan.type === "document") {
+      await readPdf(input, bytes);
+      return;
+    }
     await interpret(input, bytes);
   } catch (err) {
     console.error(
@@ -100,8 +106,8 @@ async function download(input: {
 
   // 026: video y documento se guardan tal cual; el MIME sale de la firma
   // (y si no se reconoce, del declarado: el visor lo sirve como binario
-  // opaco si no es un tipo seguro).
-  if (input.plan.kind === "store") {
+  // opaco si no es un tipo seguro). 027: también el PDF que se va a leer.
+  if (input.plan.kind === "store" || input.plan.type === "document") {
     const plain = (downloaded.contentType || handleMime || input.declaredMime || "")
       .split(";")[0]!
       .trim()
@@ -113,6 +119,8 @@ async function download(input: {
         ? sanitizeFileName(input.fileName, { mime: mimeType })
         : null;
     await saveMedia(input, downloaded.bytes, mimeType, fileName);
+    // 027: el equipo ve el archivo ya, mientras la IA lo lee.
+    if (input.plan.kind === "process") await publishCurrent(input);
     return { data: downloaded.bytes, mimeType };
   }
 
@@ -285,6 +293,85 @@ async function interpret(
   });
   if (!result.ok) {
     await finish(input, { state: "failed", errorCode: "vision" });
+    return;
+  }
+  await finish(input, { state: "ready", summary: result.text });
+}
+
+/** 027: publica el mensaje como está (con su binario), sin cambiarlo. */
+async function publishCurrent(input: {
+  organizationId: string;
+  conversationId: string;
+  messageId: string;
+}): Promise<void> {
+  const rows = await getDb()
+    .select({
+      message: schema.message,
+      id: schema.messageMedia.id,
+      mimeType: schema.messageMedia.mimeType,
+      durationMs: schema.messageMedia.durationMs,
+      fileName: schema.messageMedia.fileName,
+      sizeBytes: schema.messageMedia.sizeBytes,
+    })
+    .from(schema.message)
+    .innerJoin(schema.messageMedia, eq(schema.messageMedia.messageId, schema.message.id))
+    .where(
+      scoped(schema.message.organizationId, input.organizationId, eq(schema.message.id, input.messageId))
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return;
+  publish(input.organizationId, {
+    type: "message.updated",
+    data: {
+      conversationId: input.conversationId,
+      message: serializeMessage(row.message, null, toMediaDto(row)),
+    },
+  });
+}
+
+/* ============================================================
+ * Lectura de PDF (027)
+ * ============================================================ */
+
+/**
+ * Lee un PDF del cliente con el modelo de visión de la empresa. Cualquier
+ * salida —leído, no es PDF, muy grande, sin IA, fallo del proveedor—
+ * termina en `finish`, que suelta el turno retenido.
+ */
+async function readPdf(
+  input: {
+    organizationId: string;
+    conversationId: string;
+    messageId: string;
+    fileName?: string | null;
+    plan: Extract<MediaPlan, { kind: "process" | "store" }>;
+  },
+  media: { data: Buffer; mimeType: string }
+): Promise<void> {
+  // Un .docx que llegó sin MIME (Instagram) se guarda y el agente pregunta.
+  if (media.mimeType !== "application/pdf") {
+    await finish(input, { state: "ready" });
+    return;
+  }
+  if (media.data.byteLength > PDF_READ_MAX_BYTES) {
+    await finish(input, { state: "failed", errorCode: "document_too_long" });
+    return;
+  }
+  const config = await getAiConfig(input.organizationId);
+  if (!config) {
+    await finish(input, { state: "failed", errorCode: "not_configured" });
+    return;
+  }
+  const result = await readDocument(config, {
+    bytes: media.data,
+    fileName: input.fileName?.trim() || "documento.pdf",
+  });
+  if (!result.ok) {
+    if (result.error !== "empty") {
+      console.warn(`[medios] lectura de PDF ${result.error}: ${result.detail}`);
+    }
+    await finish(input, { state: "failed", errorCode: "document" });
     return;
   }
   await finish(input, { state: "ready", summary: result.text });

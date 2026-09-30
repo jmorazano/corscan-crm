@@ -9,6 +9,7 @@ import { listConversationsPage, serializeConversation } from "@/server/inbox/que
 import { ensureTrainerConversation } from "@/server/trainer/conversation";
 import { trainerVisible } from "@/lib/trainer";
 import { canManageConfig } from "@/lib/roles";
+import { isInstagramHumanAgentEnabled } from "@/lib/env";
 import { getOrCreateConversation } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send";
 import { isWindowOpen } from "@/server/inbox/window";
@@ -84,7 +85,8 @@ export const GET = withAuth(async (session, req: Request) => {
   }
   // 023: el filtro por canal solo se ofrece si la empresa usa Instagram.
   const hasInstagram = await companyUsesInstagram(session.organizationId);
-  return Response.json({ ...page, hasInstagram });
+  // 027: el composer tiene que saber si ofrecer la ventana de 7 días.
+  return Response.json({ ...page, hasInstagram, instagramHumanAgent: isInstagramHumanAgentEnabled() });
 });
 
 async function companyUsesInstagram(organizationId: string): Promise<boolean> {

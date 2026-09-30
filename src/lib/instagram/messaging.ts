@@ -71,7 +71,12 @@ export function isProvisionalInstagramName(name: string, igsid: string): boolean
 export type InstagramSendMode =
   | { mode: "standard" }
   | { mode: "human_agent" }
-  | { mode: "closed"; reason: "no_inbound" | "window" | "human_agent_expired" };
+  | {
+      mode: "closed";
+      /** 027: `human_agent_unavailable` = entre 24 h y 7 días, pero Meta
+       * todavía no aprobó el permiso «Human Agent» de la app. */
+      reason: "no_inbound" | "window" | "human_agent_expired" | "human_agent_unavailable";
+    };
 
 /**
  * Cómo (y si) se puede enviar por Instagram ahora. La etiqueta HUMAN_AGENT
@@ -80,13 +85,22 @@ export type InstagramSendMode =
  */
 export function instagramSendMode(
   lastInboundAt: Date | null,
-  opts: { aiGenerated: boolean; now?: Date }
+  opts: {
+    aiGenerated: boolean;
+    now?: Date;
+    /** 027: ¿Meta aprobó «Human Agent»? (flag de instancia). */
+    humanAgentEnabled?: boolean;
+  }
 ): InstagramSendMode {
   if (!lastInboundAt) return { mode: "closed", reason: "no_inbound" };
   const elapsed = (opts.now ?? new Date()).getTime() - lastInboundAt.getTime();
   if (elapsed < INSTAGRAM_WINDOW_MS) return { mode: "standard" };
   if (opts.aiGenerated) return { mode: "closed", reason: "window" };
-  if (elapsed < INSTAGRAM_HUMAN_AGENT_MS) return { mode: "human_agent" };
+  if (elapsed < INSTAGRAM_HUMAN_AGENT_MS) {
+    return opts.humanAgentEnabled === false
+      ? { mode: "closed", reason: "human_agent_unavailable" }
+      : { mode: "human_agent" };
+  }
   return { mode: "closed", reason: "human_agent_expired" };
 }
 

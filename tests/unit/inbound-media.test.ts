@@ -23,17 +23,26 @@ describe("planInboundMedia", () => {
     });
   });
 
-  it("026: video y documento se guardan para el equipo (sin IA)", () => {
+  it("026: video y documentos que no son PDF se guardan para el equipo (sin IA)", () => {
     expect(planInboundMedia("video", "mid")).toEqual({
       kind: "store",
       type: "video",
       maxBytes: MEDIA_MAX_BYTES.video,
     });
-    expect(planInboundMedia("document", "mid")).toEqual({
-      kind: "store",
-      type: "document",
-      maxBytes: 25 * 1024 * 1024,
-    });
+    expect(
+      planInboundMedia("document", "mid", {
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        fileName: "contrato.docx",
+      })
+    ).toEqual({ kind: "store", type: "document", maxBytes: 25 * 1024 * 1024 });
+  });
+
+  it("027: un PDF se LEE (retiene el turno); Instagram no dice el tipo y también", () => {
+    const pdf = { kind: "process", type: "document", maxBytes: 25 * 1024 * 1024 };
+    expect(planInboundMedia("document", "mid", { mime: "application/pdf", fileName: "a.pdf" })).toEqual(pdf);
+    expect(planInboundMedia("document", "mid", { mime: null, fileName: "Requisitos.PDF" })).toEqual(pdf);
+    expect(planInboundMedia("document", "https://cdn/x", { mime: null, fileName: null })).toEqual(pdf);
+    expect(planInboundMedia("document", "mid")).toEqual(pdf);
   });
 
   it("no descarga stickers, pero el agente se entera", () => {
@@ -141,3 +150,18 @@ describe("sniffImageMime", () => {
     expect(sniffImageMime(Uint8Array.from([1, 2]))).toBeNull();
   });
 });
+
+describe("027: marcador de un documento PDF para el agente", () => {
+  const doc = { type: "document", text: "Requisitos.pdf", mediaSummary: null };
+  it("leído: entra con el resumen (y el nombre como texto del cliente)", () => {
+    expect(
+      agentTextFor({ ...doc, mediaState: "ready", mediaSummary: "una lista de requisitos para alquilar" })
+    ).toBe(`${ATTACHMENT_MARKER} El cliente mandó un documento PDF: una lista de requisitos para alquilar\nRequisitos.pdf`);
+  });
+  it("leyéndose / no se pudo leer / no es PDF", () => {
+    expect(attachmentMarker({ ...doc, mediaState: "pending" })).toContain("todavía se está leyendo");
+    expect(attachmentMarker({ ...doc, mediaState: "failed" })).toContain("no se pudo leer");
+    expect(attachmentMarker({ ...doc, mediaState: "ready" })).toContain("No lo podés abrir");
+  });
+});
+

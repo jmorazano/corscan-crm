@@ -24,6 +24,8 @@ type InContent =
       text?: string;
       input_audio?: { data: string; format: string };
       image_url?: { url: string };
+      /** 027: PDF. */
+      file?: { filename?: string; file_data?: string };
     }[];
 type InMessage = { role: string; content: InContent };
 
@@ -37,6 +39,10 @@ export const MOCK_INBOUND_TRANSCRIPTION =
 
 /** 020: descripción fija que devuelve el mock ante cualquier `image_url`. */
 export const MOCK_IMAGE_SUMMARY = "un comprobante de transferencia bancaria";
+
+/** 027: resumen fijo de un PDF del cliente (sin datos sensibles). */
+export const MOCK_DOCUMENT_SUMMARY =
+  "una lista de requisitos para alquilar: pide recibo de sueldo, garantía y documentación de los inquilinos para ingresar el 1 de noviembre.";
 
 /** 022: lectura fija de una imagen que el DUEÑO le manda a su agente. */
 export const MOCK_TRAINER_IMAGE_READING =
@@ -59,6 +65,10 @@ function hasImage(c: InContent | undefined): boolean {
   return Array.isArray(c) && c.some((p) => p.type === "image_url");
 }
 
+function hasFile(c: InContent | undefined): boolean {
+  return Array.isArray(c) && c.some((p) => p.type === "file");
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   // 015: nota de voz → transcripción en texto plano (no JSON). Un `format`
@@ -70,6 +80,15 @@ export function aiMockCompletion(messages: InMessage[]): string {
     // 020: el audio de un cliente (ogg, el formato de WhatsApp) trae una
     // consulta de alojamiento; el del entrenador (m4a/wav) enseña al agente.
     return audio?.format === "ogg" ? MOCK_INBOUND_TRANSCRIPTION : MOCK_TRANSCRIPTION;
+  }
+
+  // 027: PDF → resumen (texto plano). Un nombre con «ilegible» dispara el
+  // sentinel para el camino infeliz.
+  if (lastUserMsg && hasFile(lastUserMsg.content)) {
+    const parts = lastUserMsg.content as Exclude<InContent, string>;
+    const file = parts.find((p) => p.type === "file")?.file;
+    if (/ilegible/i.test(file?.filename ?? "")) return "[SIN_CONTENIDO]";
+    return MOCK_DOCUMENT_SUMMARY;
   }
 
   // 020: imagen → descripción en una línea (texto plano, no JSON). Un PNG
@@ -141,6 +160,21 @@ export function aiMockCompletion(messages: InMessage[]): string {
       return JSON.stringify({
         action: "reply",
         text: "Perdón, no pude escuchar el audio. ¿Me lo escribís así te ayudo?",
+      });
+    }
+    // 027: el agente usa el resumen del PDF (el tipo de documento sale del
+    // propio contexto: así el guion prueba que lo vio).
+    const pdf = /documento PDF: ([^:.\n]+)/.exec(lastUser);
+    if (pdf) {
+      return JSON.stringify({
+        action: "reply",
+        text: `Leí el documento que mandaste (${pdf[1]!.trim()}). ¿Querés que coordinemos una visita?`,
+      });
+    }
+    if (/documento que no se pudo leer/i.test(lastUser)) {
+      return JSON.stringify({
+        action: "reply",
+        text: "No pude abrir el documento. ¿Me contás de qué se trata?",
       });
     }
     if (/no se pudo ver/i.test(lastUser)) {

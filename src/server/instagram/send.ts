@@ -8,6 +8,7 @@ import {
   instagramSendMode,
   splitInstagramText,
 } from "@/lib/instagram/messaging";
+import { isInstagramHumanAgentEnabled } from "@/lib/env";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send-error";
@@ -38,15 +39,9 @@ export async function sendInstagramConversationText(input: {
 
   const mode = instagramSendMode(conversation.lastInboundAt, {
     aiGenerated: input.aiGenerated,
+    humanAgentEnabled: isInstagramHumanAgentEnabled(),
   });
-  if (mode.mode === "closed") {
-    throw new SendError(
-      "window_closed",
-      mode.reason === "human_agent_expired"
-        ? "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no permite escribirle hasta que vuelva a escribir"
-        : "La ventana de 24 horas de Instagram está cerrada"
-    );
-  }
+  if (mode.mode === "closed") throw instagramWindowError(mode.reason);
 
   const igsid = igsidFromPhone(contact.phone);
   if (!igsid) {
@@ -150,6 +145,20 @@ export async function sendInstagramConversationText(input: {
   return { messageId: lastId ?? "" };
 }
 
+/** 027: el motivo de una ventana cerrada, en castellano (texto y adjuntos). */
+export function instagramWindowError(
+  reason: "no_inbound" | "window" | "human_agent_expired" | "human_agent_unavailable"
+): SendError {
+  return new SendError(
+    "window_closed",
+    reason === "human_agent_expired"
+      ? "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no permite escribirle hasta que vuelva a escribir"
+      : reason === "human_agent_unavailable"
+        ? "Pasaron más de 24 h desde el último mensaje del cliente e Instagram todavía no habilitó responder hasta 7 días (falta que Meta apruebe el permiso «Human Agent» de la app)"
+        : "La ventana de 24 horas de Instagram está cerrada"
+  );
+}
+
 /** Traduce el error de Instagram al contrato de `SendError` (026: también
  * lo usa el envío de adjuntos). */
 export async function toSendError(err: unknown, organizationId: string): Promise<SendError> {
@@ -175,6 +184,10 @@ export async function toSendError(err: unknown, organizationId: string): Promise
  * secretos). Códigos de la Send API de Instagram / Messenger.
  */
 export function friendlyInstagramError(err: { code: number | null; subcode: number | null; message: string }): string {
+  // 027: la etiqueta HUMAN_AGENT sin el permiso aprobado en el App Review.
+  if (/human agent/i.test(err.message)) {
+    return "Instagram todavía no aprobó el permiso «Human Agent» de la app: solo se puede responder dentro de las 24 h del último mensaje del cliente";
+  }
   if (err.code === 551 || err.subcode === 1545041) {
     return "Instagram: la persona no está disponible (bloqueó a la cuenta o la desactivó)";
   }

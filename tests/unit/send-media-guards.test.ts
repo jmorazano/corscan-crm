@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * 026: las guardas del envío de adjuntos corren ANTES de escribir nada y
@@ -77,7 +77,14 @@ async function send() {
 }
 
 describe("guardas del envío de adjuntos", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
+    vi.stubEnv("DATABASE_URL", "postgresql://t:t@localhost:5432/t");
+    vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
+    vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
+    vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
     uploadWhatsAppMedia.mockReset();
     graphRequest.mockReset();
     sendInstagramAttachment.mockReset();
@@ -111,6 +118,17 @@ describe("guardas del envío de adjuntos", () => {
     getCredentialsByOrg.mockResolvedValueOnce(null);
     await expect(send()).rejects.toMatchObject({ code: "not_connected" });
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("027: Instagram entre 24 h y 7 días sin «Human Agent» aprobado → window_closed sin llamar a Meta", async () => {
+    selectRows.push([
+      conv({ kind: "instagram", lastInboundAt: new Date(Date.now() - 30 * 3600 * 1000) }),
+    ]);
+    const err = await send().catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: "window_closed" });
+    expect((err as Error).message).toContain("Human Agent");
+    expect(transaction).not.toHaveBeenCalled();
+    expect(sendInstagramAttachment).not.toHaveBeenCalled();
   });
 
   it("Instagram pasados los 7 días → window_closed sin guardar ni mandar", async () => {

@@ -61,6 +61,11 @@ const envSchema = z.object({
     .url()
     .default("https://api.instagram.com/oauth/access_token"),
   INSTAGRAM_GRAPH_BASE_URL: z.string().url().default("https://graph.instagram.com"),
+  // 027: responder entre las 24 h y los 7 días (etiqueta HUMAN_AGENT) exige
+  // que Meta apruebe el permiso «Human Agent» en el App Review de la app.
+  // Apagado (default) Instagram cierra a las 24 h con un aviso; encenderlo
+  // ("true") recién cuando el permiso figure aprobado.
+  INSTAGRAM_HUMAN_AGENT: z.string().optional(),
   // Mercado Libre (025): la app de ML es del OPERADOR (developers.mercadolibre
   // .com.ar → Crear aplicación); la conexión es POR EMPRESA (meli_integration).
   // Sin id + secreto la tarjeta explica que el operador debe habilitarla. Las
@@ -199,6 +204,17 @@ export function isGoogleIntegrationConfigured(): boolean {
 export function isInstagramConfigured(): boolean {
   const env = getEnv();
   return Boolean(env.INSTAGRAM_APP_ID && env.INSTAGRAM_APP_SECRET);
+}
+
+/**
+ * 027: true si Meta aprobó «Human Agent» para la app de Instagram y el
+ * operador lo encendió. Sin esto, responder pasadas las 24 h falla SIEMPRE
+ * («To use 'Human Agent', your use of this endpoint must be reviewed…»):
+ * mejor no ofrecerlo.
+ */
+export function isInstagramHumanAgentEnabled(): boolean {
+  const v = getEnv().INSTAGRAM_HUMAN_AGENT?.trim().toLowerCase();
+  return v === "true" || v === "1";
 }
 
 /**

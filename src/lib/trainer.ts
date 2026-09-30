@@ -39,7 +39,9 @@ export type ComposerMode =
   /** 023: Instagram entre 24 h y 7 días: solo personas, con HUMAN_AGENT. */
   | "instagram_human"
   /** 023: Instagram sin ventana: no hay plantillas, hay que esperar al cliente. */
-  | "instagram_closed";
+  | "instagram_closed"
+  /** 027: entre 24 h y 7 días pero sin el permiso «Human Agent» aprobado. */
+  | "instagram_24h";
 
 /**
  * Modo del composer: el entrenador ignora la ventana de 24 h (no es
@@ -47,17 +49,27 @@ export type ComposerMode =
  * Instagram (023) no tiene plantillas: entre 24 h y 7 días una persona
  * todavía puede responder (etiqueta de agente humano) y después se cierra.
  */
-export function composerMode(conversation: {
-  kind?: ConversationKind;
-  windowOpen: boolean;
-  lastInboundAt?: string | null;
-}, now: Date = new Date()): ComposerMode {
+export function composerMode(
+  conversation: {
+    kind?: ConversationKind;
+    windowOpen: boolean;
+    lastInboundAt?: string | null;
+  },
+  now: Date = new Date(),
+  /** 027: flag de instancia `INSTAGRAM_HUMAN_AGENT` (lo manda el servidor). */
+  opts: { instagramHumanAgent?: boolean } = {}
+): ComposerMode {
   if (conversation.kind === "trainer") return "trainer";
   if (conversation.kind === "instagram") {
     const last = conversation.lastInboundAt ? new Date(conversation.lastInboundAt) : null;
-    const mode = instagramSendMode(last, { aiGenerated: false, now });
+    const mode = instagramSendMode(last, {
+      aiGenerated: false,
+      now,
+      humanAgentEnabled: opts.instagramHumanAgent ?? true,
+    });
     if (mode.mode === "standard") return "text";
     if (mode.mode === "human_agent") return "instagram_human";
+    if (mode.reason === "human_agent_unavailable") return "instagram_24h";
     return "instagram_closed";
   }
   return conversation.windowOpen ? "text" : "template";

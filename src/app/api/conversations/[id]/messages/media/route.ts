@@ -78,15 +78,33 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       ? captionRaw.trim().slice(0, OUTBOUND_CAPTION_MAX)
       : null;
 
+  // 027: nota de voz grabada en la Bandeja (duración del grabador).
+  const voice = form.get("voice") === "1";
+  const durationRaw = Number(form.get("durationMs"));
+  const durationMs =
+    voice && Number.isInteger(durationRaw) && durationRaw > 0 && durationRaw <= 10 * 60 * 1000
+      ? durationRaw
+      : null;
+
   const bytes = Buffer.from(await file.arrayBuffer());
   const valid = validateOutboundFile(bytes, file.name, channel);
   if (!valid.ok) return apiError(valid.status, valid.code, valid.error);
+  if (voice && valid.kind !== "audio") {
+    return apiError(422, "invalid", "Una nota de voz tiene que ser un audio");
+  }
 
   try {
     const result = await sendMedia({
       organizationId: session.organizationId,
       conversationId: id,
-      file: { bytes, kind: valid.kind, mime: valid.mime, fileName: valid.fileName },
+      file: {
+        bytes,
+        kind: valid.kind,
+        mime: valid.mime,
+        fileName: valid.fileName,
+        voice,
+        durationMs,
+      },
       caption,
     });
     return Response.json(result, { status: 201 });

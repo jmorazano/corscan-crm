@@ -229,7 +229,11 @@ export async function ingestInboundCore(input: {
       : input.media?.source.kind === "url"
         ? input.media.source.url
         : null;
-  const plan = planInboundMedia(input.type, mediaRef);
+  // 027: MIME y nombre deciden si un documento es un PDF que se lee.
+  const plan = planInboundMedia(input.type, mediaRef, {
+    mime: input.media?.mime ?? null,
+    fileName: input.media?.fileName ?? null,
+  });
 
   // Idempotencia dura POR TENANT: mismo (organization_id, wa_message_id) →
   // sin efectos adicionales. El scope evita que un wamid de la org A condicione
@@ -317,6 +321,7 @@ export async function ingestInboundCore(input: {
       isTest: conversation.isTest,
       source: input.media.source,
       declaredMime: input.media.mime,
+      fileName: input.media.fileName ?? null,
       plan,
     });
     return message;

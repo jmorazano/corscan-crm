@@ -2,7 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { getEnv } from "@/lib/env";
+import { getEnv, isInstagramHumanAgentEnabled } from "@/lib/env";
 import { MetaApiError, normalizeRecipient, uploadWhatsAppMedia } from "@/lib/meta/client";
 import {
   sendInstagramAttachment,
@@ -11,6 +11,9 @@ import {
 import { igsidFromPhone, instagramSendMode } from "@/lib/instagram/messaging";
 import { mediaLinkSecret, signMediaLinkPath } from "@/lib/media-link";
 import { toMediaDto } from "@/lib/message-media";
+import { transcribeAudio } from "@/lib/ai";
+import { audioFormatForMime, type VoiceMime } from "@/lib/voice-note";
+import { getAiConfig } from "@/server/ai/credentials";
 import { captionTravelsInline, OUTBOUND_KINDS, type OutboundKind } from "@/lib/outbound-media";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
@@ -22,7 +25,10 @@ import {
   getInstagramIntegration,
   type InstagramIntegration,
 } from "@/server/instagram/integration";
-import { toSendError as instagramSendError } from "@/server/instagram/send";
+import {
+  instagramWindowError,
+  toSendError as instagramSendError,
+} from "@/server/instagram/send";
 import {
   getCredentialsByOrg,
   markReconnectRequired,
@@ -46,7 +52,15 @@ export type OutboundFile = {
   kind: OutboundKind;
   mime: string;
   fileName: string;
+  /** 027: nota de voz grabada (OGG/Opus → WhatsApp `voice: true`). */
+  voice?: boolean;
+  durationMs?: number | null;
 };
+
+/** 027: WhatsApp muestra como NOTA DE VOZ solo un OGG/Opus con `voice: true`. */
+export function isWhatsAppVoiceNote(file: Pick<OutboundFile, "kind" | "mime" | "voice">): boolean {
+  return file.kind === "audio" && file.voice === true && file.mime === "audio/ogg";
+}
 
 type Conversation = typeof schema.conversation.$inferSelect;
 type Contact = typeof schema.contact.$inferSelect;
@@ -95,15 +109,11 @@ async function resolveTarget(
   }
 
   if (conversation.kind === "instagram") {
-    const mode = instagramSendMode(conversation.lastInboundAt, { aiGenerated: false });
-    if (mode.mode === "closed") {
-      throw new SendError(
-        "window_closed",
-        mode.reason === "human_agent_expired"
-          ? "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no permite escribirle hasta que vuelva a escribir"
-          : "La ventana de 24 horas de Instagram está cerrada"
-      );
-    }
+    const mode = instagramSendMode(conversation.lastInboundAt, {
+      aiGenerated: false,
+      humanAgentEnabled: isInstagramHumanAgentEnabled(),
+    });
+    if (mode.mode === "closed") throw instagramWindowError(mode.reason);
     const igsid = igsidFromPhone(contact.phone);
     if (!igsid) throw new SendError("meta_error", "El contacto no tiene un ID de Instagram");
     let integration = await getInstagramIntegration(organizationId);
@@ -192,7 +202,7 @@ export async function sendMedia(input: {
       messageId: message.id,
       mimeType: file.mime,
       sizeBytes: file.bytes.byteLength,
-      durationMs: null,
+      durationMs: file.durationMs ?? null,
       fileName: file.fileName,
       data: file.bytes,
     });
@@ -205,7 +215,7 @@ export async function sendMedia(input: {
   const media = toMediaDto({
     id: mediaId,
     mimeType: file.mime,
-    durationMs: null,
+    durationMs: file.durationMs ?? null,
     fileName: file.fileName,
     sizeBytes: file.bytes.byteLength,
   });
@@ -222,6 +232,15 @@ export async function sendMedia(input: {
     caption: inline ? caption : null,
     target,
   });
+  if (file.kind === "audio") {
+    void transcribeOutboundAudio({
+      organizationId,
+      conversationId,
+      messageId: message.id,
+      bytes: file.bytes,
+      mime: file.mime,
+    });
+  }
 
   let captionError: string | null = null;
   if (caption && !inline) {
@@ -252,6 +271,7 @@ export async function retryMedia(input: {
       mediaId: schema.messageMedia.id,
       mime: schema.messageMedia.mimeType,
       fileName: schema.messageMedia.fileName,
+      durationMs: schema.messageMedia.durationMs,
       data: schema.messageMedia.data,
     })
     .from(schema.message)
@@ -303,6 +323,9 @@ export async function retryMedia(input: {
       kind: row.message.type as OutboundKind,
       mime: row.mime,
       fileName: row.fileName ?? "archivo",
+      // La nota de voz grabada guarda su duración; un audio adjunto, no.
+      voice: row.durationMs !== null,
+      durationMs: row.durationMs,
     },
     caption: row.message.text,
     target,
@@ -392,6 +415,7 @@ async function deliverWhatsApp(
   const body: Record<string, unknown> = { id: mediaId };
   if (caption && media.kind !== "audio") body.caption = caption;
   if (media.kind === "document") body.filename = media.fileName;
+  if (isWhatsAppVoiceNote(media)) body.voice = true;
   const { waMessageId } = await callGraphSend(credentials, {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -430,6 +454,61 @@ async function deliverInstagram(
       )
     );
   return messageId;
+}
+
+/* ============================================================
+ * Transcripción del audio que mandó el equipo (027)
+ * ============================================================ */
+
+const TRANSCRIBABLE = new Set<string>([
+  "audio/ogg",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/aac",
+  "audio/wav",
+]);
+
+/**
+ * La nota de voz del equipo se transcribe en segundo plano (si la empresa
+ * tiene IA): se ve en el hilo y entra al historial del agente, que así no
+ * contradice lo que dijo una persona. Nunca lanza; sin IA no hace nada y un
+ * fallo solo deja el reproductor.
+ */
+export async function transcribeOutboundAudio(input: {
+  organizationId: string;
+  conversationId: string;
+  messageId: string;
+  bytes: Buffer;
+  mime: string;
+}): Promise<void> {
+  if (!TRANSCRIBABLE.has(input.mime)) return;
+  const db = getDb();
+  const where = scoped(
+    schema.message.organizationId,
+    input.organizationId,
+    eq(schema.message.id, input.messageId)
+  );
+  try {
+    const config = await getAiConfig(input.organizationId);
+    if (!config) return;
+    await db.update(schema.message).set({ mediaState: "pending" }).where(where);
+    await publishUpdated(input.organizationId, input.conversationId, input.messageId);
+    const result = await transcribeAudio(config, {
+      bytes: input.bytes,
+      format: audioFormatForMime(input.mime as VoiceMime),
+    });
+    await db
+      .update(schema.message)
+      .set(result.ok ? { text: result.text, mediaState: "ready" } : { mediaState: "ready" })
+      .where(where);
+  } catch (err) {
+    console.warn(
+      "[medios] no se pudo transcribir el audio enviado:",
+      err instanceof Error ? err.message : err
+    );
+    await db.update(schema.message).set({ mediaState: "ready" }).where(where).catch(() => {});
+  }
+  await publishUpdated(input.organizationId, input.conversationId, input.messageId).catch(() => {});
 }
 
 /* ============================================================

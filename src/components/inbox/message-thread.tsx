@@ -295,19 +295,44 @@ function AudioNote({ message: m, plain = false }: { message: MessageDto; plain?:
   // "delivered" desde la ingesta y no puede contar dos historias.
   const state = m.mediaState ?? (m.text ? "ready" : "pending");
   const media = m.media;
-  // 026: un audio que mandó el equipo no se transcribe: solo el reproductor.
+  // 026: un audio que mandó el equipo: el reproductor. 027: con su
+  // duración y, si la empresa tiene IA, la transcripción (un fallo no se
+  // muestra: el audio ya salió y es del propio equipo).
   if (plain && media) {
     return (
       <div className="min-w-[220px]" data-testid="audio-message" data-status="sent">
-        <audio
-          controls
-          preload="none"
-          src={media.url}
-          data-testid="audio-player"
-          className="h-9 w-full max-w-[260px]"
-        />
-        {m.text && (
-          <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+        <div className="flex items-center gap-2">
+          <audio
+            controls
+            preload="none"
+            src={media.url}
+            data-testid="audio-player"
+            className="h-9 w-full max-w-[260px]"
+          />
+          {media.durationMs !== null && (
+            <span className="shrink-0 text-[11px] text-text-3" data-testid="audio-duration">
+              {formatElapsed(media.durationMs)}
+            </span>
+          )}
+        </div>
+        {(m.mediaState === "pending" || m.text) && (
+          <div
+            data-testid="audio-transcription"
+            data-status={m.mediaState === "pending" ? "pending" : "ready"}
+            className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[13px] leading-snug text-text-2"
+          >
+            {m.mediaState === "pending" ? (
+              <>
+                <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
+                <span>Transcribiendo…</span>
+              </>
+            ) : (
+              <>
+                <Mic className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" strokeWidth={1.7} />
+                <span className="whitespace-pre-wrap break-words">{m.text}</span>
+              </>
+            )}
+          </div>
         )}
       </div>
     );
@@ -540,6 +565,10 @@ function DocumentAttachment({ message: m }: { message: MessageDto }) {
   const meta = [formatLabel(media.mimeType, media.fileName), formatFileSize(media.sizeBytes)]
     .filter(Boolean)
     .join(" · ");
+  // 027: el PDF de un cliente lo lee la IA; el resumen ayuda al equipo y es
+  // lo que ve el agente.
+  const incoming = m.direction === "in";
+  const summary = m.mediaSummary?.trim() ?? "";
   return (
     <div className="w-[240px] max-w-full md:w-[260px]" data-testid="document-message">
       <div className="flex items-center gap-1 rounded-md border border-brand-soft/60 bg-background/70 p-1.5">
@@ -580,6 +609,53 @@ function DocumentAttachment({ message: m }: { message: MessageDto }) {
       {caption && (
         <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{caption}</p>
       )}
+      {incoming && m.mediaState === "pending" && (
+        <div
+          data-testid="document-reading"
+          className="mt-1.5 flex items-center gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] text-text-3"
+        >
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
+          <span>Leyendo el documento…</span>
+        </div>
+      )}
+      {incoming && m.mediaState === "failed" && m.error && (
+        <div
+          data-testid="document-read-error"
+          className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-text-3"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+          <span>{m.error}: el agente le va a preguntar de qué se trata.</span>
+        </div>
+      )}
+      {summary && <SummaryLine text={summary} label="Lo que dice: " testId="document-summary" />}
+    </div>
+  );
+}
+
+/** Resumen escrito por la IA (027: PDF), plegable si es largo. */
+function SummaryLine({ text, label, testId }: { text: string; label: string; testId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = text.length > 280;
+  const shown = long && !expanded ? `${text.slice(0, 280).trimEnd()}…` : text;
+  return (
+    <div
+      data-testid={testId}
+      className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-text-3"
+    >
+      <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-brand" strokeWidth={1.7} />
+      <span className="min-w-0 break-words">
+        <span className="font-medium text-text-2">{label}</span>
+        <span className="whitespace-pre-wrap">{shown}</span>
+        {long && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="ml-1 font-medium text-brand-text underline underline-offset-2"
+          >
+            {expanded ? "Ver menos" : "Ver todo"}
+          </button>
+        )}
+      </span>
     </div>
   );
 }

@@ -33,12 +33,30 @@ export const MEDIA_TYPES = [
 ] as const;
 export type MediaType = (typeof MEDIA_TYPES)[number];
 
-/** Los únicos que se descargan y se le dan a la IA (D10). */
-export type ProcessedMediaType = "audio" | "image";
+/** Los que se descargan y se le dan a la IA (D10). 027: los PDF también. */
+export type ProcessedMediaType = "audio" | "image" | "document";
 /** 026: se descargan y se guardan para el equipo, sin IA. */
 export type StoredMediaType = "video" | "document";
 
-export const MEDIA_MAX_BYTES: Record<ProcessedMediaType | StoredMediaType, number> = {
+/**
+ * 027: hasta acá se LEE un PDF (el cuerpo viaja en base64 al proveedor);
+ * hasta `MEDIA_MAX_BYTES.document` se guarda igual para el equipo.
+ */
+export const PDF_READ_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * 027: ¿el documento es (o puede ser) un PDF? WhatsApp manda el MIME y el
+ * nombre; Instagram no manda ninguno de los dos, pero solo permite adjuntar
+ * PDFs como archivo. La firma binaria lo confirma después de bajarlo.
+ */
+export function looksLikePdf(hint?: { mime?: string | null; fileName?: string | null }): boolean {
+  const mime = hint?.mime?.split(";")[0]?.trim().toLowerCase() || null;
+  const name = hint?.fileName?.trim().toLowerCase() || null;
+  if (!mime && !name) return true;
+  return mime === "application/pdf" || (name?.endsWith(".pdf") ?? false);
+}
+
+export const MEDIA_MAX_BYTES: Record<"audio" | "image" | "video" | "document", number> = {
   /** Mismo tope que la nota de voz del entrenador (015). */
   audio: 8 * 1024 * 1024,
   /** Mismo tope que el encabezado de plantilla (008). */
@@ -74,11 +92,21 @@ export type MediaPlan =
  * aunque el tipo lo permita: el webhook llegó incompleto y el agente igual
  * tiene que enterarse de que el cliente mandó algo.
  */
-export function planInboundMedia(type: string, mediaId: string | null | undefined): MediaPlan {
+export function planInboundMedia(
+  type: string,
+  mediaId: string | null | undefined,
+  /** 027: MIME y nombre del webhook, para saber si un documento es PDF. */
+  hint?: { mime?: string | null; fileName?: string | null }
+): MediaPlan {
   if (!MEDIA_TYPES.includes(type as MediaType)) return { kind: "none" };
   const media = type as MediaType;
   if ((media === "audio" || media === "image") && mediaId) {
     return { kind: "process", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
+  }
+  // 027: el PDF se LEE (y retiene el turno, como una imagen); el resto de
+  // los documentos solo se guarda para el equipo.
+  if (media === "document" && mediaId && looksLikePdf(hint)) {
+    return { kind: "process", type: "document", maxBytes: MEDIA_MAX_BYTES.document };
   }
   if ((media === "video" || media === "document") && mediaId) {
     return { kind: "store", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
@@ -95,6 +123,9 @@ export const MEDIA_ERRORS = {
   unsupported: "El formato del archivo no es compatible",
   transcription: "No se pudo transcribir el audio",
   vision: "No se pudo interpretar la imagen",
+  /** 027 */
+  document: "No se pudo leer el documento",
+  document_too_long: "El PDF es demasiado grande para leerlo (más de 10 MB)",
   not_configured: "La empresa no tiene IA configurada",
 } as const;
 export type MediaErrorCode = keyof typeof MEDIA_ERRORS;
@@ -116,7 +147,7 @@ export type AttachmentView = {
   mediaState: MediaState | null;
   /** Epígrafe real del cliente, o la transcripción de un audio. */
   text: string | null;
-  /** Descripción generada por IA (solo imágenes). */
+  /** Descripción generada por IA (imágenes; 027: resumen de un PDF). */
   mediaSummary: string | null;
 };
 
@@ -148,6 +179,19 @@ export function attachmentMarker(m: AttachmentView): string | null {
       return `${ATTACHMENT_MARKER} El cliente mandó una imagen que todavía se está procesando.`;
     }
     return `${ATTACHMENT_MARKER} El cliente mandó una imagen que no se pudo ver. Preguntale de qué se trata.`;
+  }
+
+  // 027: un PDF leído entra con su resumen (escrito por la IA, es DATO).
+  if (type === "document") {
+    if (m.mediaState === "ready" && m.mediaSummary?.trim()) {
+      return `${ATTACHMENT_MARKER} El cliente mandó un documento PDF: ${m.mediaSummary.trim()}`;
+    }
+    if (m.mediaState === "pending") {
+      return `${ATTACHMENT_MARKER} El cliente mandó un documento que todavía se está leyendo.`;
+    }
+    if (m.mediaState === "failed") {
+      return `${ATTACHMENT_MARKER} El cliente mandó un documento que no se pudo leer. Preguntale de qué se trata o escalá si hace falta.`;
+    }
   }
 
   return `${ATTACHMENT_MARKER} El cliente mandó ${TYPE_LABEL[type]}. No lo podés abrir: preguntale de qué se trata o escalá si hace falta.`;

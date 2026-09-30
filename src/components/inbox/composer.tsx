@@ -48,7 +48,12 @@ export type SendMediaResult = {
 };
 export type SendMedia = (
   file: File,
-  meta: { caption: string | null; onProgress: (pct: number) => void }
+  meta: {
+    caption: string | null;
+    onProgress: (pct: number) => void;
+    /** 027: nota de voz grabada (WhatsApp la muestra como tal). */
+    voice?: { durationMs: number | null };
+  }
 ) => Promise<SendMediaResult>;
 
 type PendingAttachment = { file: File; kind: OutboundKind; previewUrl: string | null };
@@ -67,6 +72,7 @@ export function Composer({
   onSendImage,
   onSendMedia,
   onSent,
+  instagramHumanAgent = false,
 }: {
   conversation: ConversationDto;
   onSend: (text: string) => Promise<string | null>;
@@ -77,6 +83,8 @@ export function Composer({
   /** 026: imágenes, videos, audios y documentos a un cliente. */
   onSendMedia?: SendMedia;
   onSent: () => void;
+  /** 027: Meta aprobó «Human Agent» (Instagram hasta 7 días). */
+  instagramHumanAgent?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [text, setText] = useState("");
@@ -176,12 +184,33 @@ export function Composer({
   // 015: grabador (tap para grabar / tap para enviar) y adjunto de archivo.
   const recorder = useVoiceRecorder({
     maxMs: VOICE_NOTE_MAX_MS,
+    // 027: a WhatsApp, OGG/Opus (nota de voz de verdad); Instagram y el
+    // Entrenador siguen con WAV.
+    format: conversation.kind === "whatsapp" ? "whatsapp" : "wav",
     onBlob: async (blob, meta) => {
-      if (!onSendAudio) return "Esta conversación no acepta notas de voz";
       const file = new File([blob], fileNameFor(meta.mimeType), { type: meta.mimeType });
+      if (channel) return sendVoiceToCustomer(file, meta.durationMs);
+      if (!onSendAudio) return "Esta conversación no acepta notas de voz";
       return sendAudioFile(file, meta.durationMs);
     },
   });
+
+  // 027: la nota de voz a un cliente sale al soltar, como en WhatsApp. Un
+  // rechazo del canal queda en el hilo con «Reintentar».
+  async function sendVoiceToCustomer(file: File, durationMs: number | null): Promise<string | null> {
+    if (!onSendMedia) return "Esta conversación no acepta notas de voz";
+    setError(null);
+    const res = await onSendMedia(file, {
+      caption: null,
+      onProgress: () => {},
+      voice: { durationMs },
+    });
+    if (res.error && !res.persisted) return res.error;
+    if (res.error) {
+      return "No se pudo entregar la nota de voz: el motivo y «Reintentar» están en el mensaje.";
+    }
+    return null;
+  }
 
   function localAudioError(file: File): string | null {
     if (!onSendAudio) return "Esta conversación no acepta notas de voz";
@@ -359,8 +388,31 @@ export function Composer({
     if (taRef.current) taRef.current.style.height = "auto";
   }
 
-  const mode = composerMode(conversation);
+  const mode = composerMode(conversation, new Date(), { instagramHumanAgent });
   const isTrainer = mode === "trainer";
+
+  // 027: entre 24 h y 7 días, pero Meta todavía no aprobó «Human Agent»:
+  // responder falla SIEMPRE, así que no se ofrece.
+  if (mode === "instagram_24h") {
+    return (
+      <div className="safe-bottom border-t bg-background px-3 py-3 md:px-[18px] md:py-3.5">
+        <div
+          data-testid="instagram-window-24h"
+          className="flex items-start gap-2 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3 text-sm text-[#8a6d3b]"
+        >
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
+          <div>
+            <p className="font-medium">Pasaron más de 24 horas desde su último mensaje.</p>
+            <p className="opacity-80">
+              Instagram solo deja responder hasta 7 días cuando Meta aprueba el
+              permiso «Human Agent» de la app, y todavía está pendiente. Cuando
+              el cliente vuelva a escribir, vas a poder responderle desde acá.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // 023: Instagram sin ventana — no hay plantillas que lo reabran.
   if (mode === "instagram_closed") {
@@ -404,13 +456,15 @@ export function Composer({
   }
 
   const canRecord = isTrainer && Boolean(onSendAudio);
+  // 027: también a clientes (WhatsApp e Instagram).
+  const canRecordVoice = canRecord || canAttachMedia;
   const canAttachImage = isTrainer && Boolean(onSendImage);
   const canAttach = canRecord || canAttachImage;
   const recording = recorder.state === "recording" || recorder.state === "requesting";
   const uploadingMedia = progress !== null;
   const uploading = recorder.state === "uploading" || sendingImage || uploadingMedia;
   const canSend = text.trim().length > 0 || pending !== null;
-  const showMic = canRecord && recorder.supported && text.trim().length === 0;
+  const showMic = canRecordVoice && recorder.supported && text.trim().length === 0 && !pending;
 
   return (
     <div
@@ -642,7 +696,11 @@ export function Composer({
               void recorder.start();
             }}
             aria-label="Grabar nota de voz"
-            title="Grabar una nota de voz"
+            title={
+              channel
+                ? `Grabar una nota de voz para ${conversation.contact.name}`
+                : "Grabar una nota de voz"
+            }
             data-testid="composer-mic"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white transition-opacity hover:bg-brand-hover md:h-[34px] md:w-[34px] md:rounded-[9px]"
           >

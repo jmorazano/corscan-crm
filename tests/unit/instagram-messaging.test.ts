@@ -54,6 +54,28 @@ describe("composerMode para Instagram", () => {
   it("WhatsApp sigue igual", () => {
     expect(composerMode({ kind: "whatsapp", windowOpen: false })).toBe("template");
   });
+
+  it("027: sin «Human Agent» aprobado, entre 24 h y 7 días no se ofrece responder", () => {
+    const off = { instagramHumanAgent: false };
+    expect(composerMode(conv(1), now, off)).toBe("text");
+    expect(composerMode(conv(48), now, off)).toBe("instagram_24h");
+    expect(composerMode(conv(24 * 8), now, off)).toBe("instagram_closed");
+    expect(composerMode(conv(48), now, { instagramHumanAgent: true })).toBe("instagram_human");
+  });
+});
+
+describe("instagramSendMode con el permiso «Human Agent» (027)", () => {
+  it("apagado: 24 h–7 días queda cerrado con su propio motivo", () => {
+    expect(
+      instagramSendMode(ago(30), { aiGenerated: false, now, humanAgentEnabled: false })
+    ).toEqual({ mode: "closed", reason: "human_agent_unavailable" });
+    expect(
+      instagramSendMode(ago(2), { aiGenerated: false, now, humanAgentEnabled: false })
+    ).toEqual({ mode: "standard" });
+    expect(
+      instagramSendMode(ago(24 * 8), { aiGenerated: false, now, humanAgentEnabled: false })
+    ).toEqual({ mode: "closed", reason: "human_agent_expired" });
+  });
 });
 
 describe("splitInstagramText", () => {
