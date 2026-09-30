@@ -45,7 +45,7 @@ transcripción), `src/lib/ai` (`readDocument`), `inbound-media.ts` +
 - [x] D1 Gate (typecheck, lint, unit, build).
 - [x] D2 Guion `tests/e2e/027-voice-notes-pdf.md` conducido con mocks.
 - [x] D3 CLAUDE.md + memoria.
-- [ ] D4 Merge + deploy (autorizado) + `INSTAGRAM_HUMAN_AGENT` documentado.
+- [x] D4 Merge + deploy (autorizado) + `INSTAGRAM_HUMAN_AGENT` documentado.
 
 ## Estado
 
@@ -54,3 +54,5 @@ guion `tests/e2e/027-voice-notes-pdf.md` conducido: nota de voz OGG/Opus real
 por la UI (decodificada en el navegador) con `voice: true` a WhatsApp y WAV a
 Instagram; PDF leído y usado por el agente; ilegible/Word/Instagram;
 Instagram 24 h bloqueado sin «Human Agent».
+D4: `16f8222` fast-forward a `main`; Railway 7fe3222a SUCCESS, health 200,
+media-link sin firma 404, envío sin sesión 401, mocks 404.
