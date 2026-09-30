@@ -10,6 +10,8 @@ export type EventHandlers = {
     conversationId: string;
     messageId: string;
     status: string;
+    /** 026: motivo del fallo asincrónico, para verlo sin recargar. */
+    error?: string | null;
   }) => void;
   onConversationUpdated?: (data: { conversation: unknown }) => void;
   /** Cambio en bloque (006): varias conversaciones a la vez. */

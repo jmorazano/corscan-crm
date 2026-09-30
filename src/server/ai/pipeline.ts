@@ -25,6 +25,7 @@ import { visitNote } from "@/lib/meli/render";
 import { normalizeContactName } from "@/lib/contact-name";
 import { canOverwriteContactName } from "@/lib/history-import";
 import { agentTextFor } from "@/lib/inbound-media";
+import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
@@ -405,7 +406,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
                 text: m.text,
                 mediaSummary: m.mediaSummary,
               })
-            : m.text,
+            : // 026: un adjunto que mandó el equipo (o el celular) no
+              // desaparece del contexto aunque no tenga epígrafe.
+              outboundAgentText({ type: m.type, text: m.text, status: m.status }),
       }))
       .filter((m): m is { role: "user" | "assistant"; content: string } => !!m.content),
   ];

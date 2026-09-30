@@ -45,6 +45,8 @@ export function buildInboundPayload(input: {
   /** 020: id del binario que sirve el propio mock (`mediamock_*`). */
   mediaId?: string;
   mediaMime?: string;
+  /** 026: nombre del documento, como lo manda Meta. */
+  filename?: string;
   waMessageId?: string;
   timestamp?: number;
 }) {
@@ -63,6 +65,7 @@ export function buildInboundPayload(input: {
       mime_type: input.mediaMime ?? DEFAULT_MEDIA_MIME[type] ?? "application/octet-stream",
       sha256: "mock",
       ...(input.text ? { caption: input.text } : {}),
+      ...(type === "document" ? { filename: input.filename ?? "documento.pdf" } : {}),
     };
   }
 

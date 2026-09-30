@@ -24,7 +24,8 @@ import {
   type RowActions,
 } from "./conversation-list";
 import { MessageThread } from "./message-thread";
-import { Composer } from "./composer";
+import { Composer, type SendMediaResult } from "./composer";
+import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { ContactPanel } from "./contact-panel";
 import { ChannelIcon } from "@/components/channel-icon";
 import { contactHandle } from "@/lib/instagram/messaging";
@@ -395,11 +396,18 @@ export function InboxClient() {
       const m = message as MessageDto;
       setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
     },
-    onMessageStatus: ({ conversationId, messageId, status }) => {
+    onMessageStatus: ({ conversationId, messageId, status, error }) => {
       if (selectedIdRef.current !== conversationId) return;
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === messageId ? { ...m, status: status as MessageDto["status"] } : m
+          m.id === messageId
+            ? {
+                ...m,
+                status: status as MessageDto["status"],
+                // 026: el motivo de un fallo asincrónico (131053…) se ve ya.
+                ...(error !== undefined ? { error } : {}),
+              }
+            : m
         )
       );
     },
@@ -507,6 +515,83 @@ export function InboxClient() {
       return null;
     },
     [refetchMessages, refetchConversations, startThinking]
+  );
+
+  // 026: adjunto a un cliente. XHR (no fetch) para mostrar el progreso de
+  // la subida: un PDF de 25 MB por datos móviles tarda.
+  const sendMedia = useCallback(
+    (
+      file: File,
+      meta: { caption: string | null; onProgress: (pct: number) => void }
+    ): Promise<SendMediaResult> =>
+      new Promise((resolve) => {
+        const conversationId = selectedIdRef.current;
+        if (!conversationId) {
+          resolve({ error: "Sin conversación seleccionada" });
+          return;
+        }
+        const form = new FormData();
+        form.append("file", file);
+        if (meta.caption) form.append("caption", meta.caption);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/conversations/${conversationId}/messages/media`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) meta.onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          let data: {
+            captionError?: string | null;
+            error?: { message?: string; messageId?: string };
+          } | null = null;
+          try {
+            data = JSON.parse(xhr.responseText);
+          } catch {
+            // respuesta no-JSON (proxy): se informa genérico
+          }
+          void refetchMessages(conversationId);
+          void refetchConversations();
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ error: null, captionError: data?.captionError ?? null });
+            return;
+          }
+          const raw =
+            data?.error?.message ??
+            (xhr.status === 413
+              ? "El archivo es demasiado grande"
+              : "No se pudo enviar el archivo");
+          resolve({
+            // El rechazo de Meta llega en inglés (131053…): misma traducción
+            // que la línea «No entregado» de la burbuja.
+            error: friendlyDeliveryError(raw) ?? raw,
+            persisted: Boolean(data?.error?.messageId),
+          });
+        };
+        xhr.onerror = () => resolve({ error: "Sin conexión con el servidor" });
+        xhr.send(form);
+      }),
+    [refetchMessages, refetchConversations]
+  );
+
+  // 026: reenvía un adjunto fallido con el binario ya guardado.
+  const retryMessage = useCallback(
+    async (messageId: string): Promise<string | null> => {
+      const conversationId = selectedIdRef.current;
+      if (!conversationId) return "Sin conversación seleccionada";
+      const res = await fetch(
+        `/api/conversations/${conversationId}/messages/${messageId}/retry`,
+        { method: "POST" }
+      ).catch(() => null);
+      void refetchMessages(conversationId);
+      if (!res) return "Sin conexión con el servidor";
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        return data?.error?.message ?? "No se pudo reintentar";
+      }
+      return null;
+    },
+    [refetchMessages]
   );
 
   const patchConversation = useCallback(
@@ -842,12 +927,14 @@ export function InboxClient() {
                   ? `${selected.contact.name} está pensando…`
                   : null
               }
+              onRetry={selected.kind === "trainer" ? undefined : retryMessage}
             />
             <Composer
               conversation={selected}
               onSend={sendText}
               onSendAudio={selected.kind === "trainer" ? sendVoiceNote : undefined}
               onSendImage={selected.kind === "trainer" ? sendTrainerImage : undefined}
+              onSendMedia={selected.kind === "trainer" ? undefined : sendMedia}
               onSent={() => {
                 if (selectedIdRef.current)
                   void refetchMessages(selectedIdRef.current);

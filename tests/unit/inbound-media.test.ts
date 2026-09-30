@@ -23,10 +23,22 @@ describe("planInboundMedia", () => {
     });
   });
 
-  it("no descarga video, documento ni sticker, pero el agente se entera", () => {
-    for (const type of ["video", "document", "sticker"]) {
-      expect(planInboundMedia(type, "mid")).toEqual({ kind: "acknowledge", type });
-    }
+  it("026: video y documento se guardan para el equipo (sin IA)", () => {
+    expect(planInboundMedia("video", "mid")).toEqual({
+      kind: "store",
+      type: "video",
+      maxBytes: MEDIA_MAX_BYTES.video,
+    });
+    expect(planInboundMedia("document", "mid")).toEqual({
+      kind: "store",
+      type: "document",
+      maxBytes: 25 * 1024 * 1024,
+    });
+  });
+
+  it("no descarga stickers, pero el agente se entera", () => {
+    expect(planInboundMedia("sticker", "mid")).toEqual({ kind: "acknowledge", type: "sticker" });
+    expect(planInboundMedia("document", null)).toEqual({ kind: "acknowledge", type: "document" });
   });
 
   it("sin media_id no hay nada que bajar, pero tampoco se pierde el mensaje", () => {

@@ -33,6 +33,12 @@ const KNOWN: { pattern: RegExp; friendly: string }[] = [
       "La ventana de 24 horas está cerrada: para retomar hay que enviar una plantilla aprobada.",
   },
   {
+    // 131053 — Meta no pudo procesar el adjunto (formato, códec o tamaño).
+    pattern: /media upload error|unsupported (media|file)|media (download|processing) (error|failed)/i,
+    friendly:
+      "WhatsApp no pudo procesar el archivo (formato, códec o tamaño no admitidos). Probá con otro formato: JPG o PNG para imágenes, MP4 (H.264) para videos, PDF para documentos.",
+  },
+  {
     // 131048/131056 — spam rate limit del número emisor.
     pattern: /spam rate|too many messages|rate limit/i,
     friendly:

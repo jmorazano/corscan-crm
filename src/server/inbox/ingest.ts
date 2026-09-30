@@ -144,6 +144,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       text: msg.text?.body ?? attachment?.caption ?? attachment?.filename ?? null,
       mediaId: attachment?.id ?? null,
       mediaMime: attachment?.mime_type ?? null,
+      mediaFileName: attachment?.filename ?? null,
       timestamp: msg.timestamp,
     });
   }
@@ -164,6 +165,8 @@ export async function ingestInboundMessage(input: {
   /** 020: id del binario en Meta, cuando el mensaje trae adjunto. */
   mediaId?: string | null;
   mediaMime?: string | null;
+  /** 026: nombre original de un documento. */
+  mediaFileName?: string | null;
   timestamp: string;
 }): Promise<void> {
   const { organizationId } = input;
@@ -186,7 +189,11 @@ export async function ingestInboundMessage(input: {
     type: input.type,
     text: input.text,
     media: input.mediaId
-      ? { source: { kind: "wa", mediaId: input.mediaId }, mime: input.mediaMime ?? null }
+      ? {
+          source: { kind: "wa", mediaId: input.mediaId },
+          mime: input.mediaMime ?? null,
+          fileName: input.mediaFileName ?? null,
+        }
       : null,
     at: toDate(input.timestamp),
   });
@@ -206,7 +213,7 @@ export async function ingestInboundCore(input: {
   providerMessageId: string;
   type: string;
   text: string | null;
-  media: { source: InboundMediaSource; mime: string | null } | null;
+  media: { source: InboundMediaSource; mime: string | null; fileName?: string | null } | null;
   at: Date;
 }): Promise<typeof schema.message.$inferSelect | null> {
   const db = getDb();
@@ -238,7 +245,7 @@ export async function ingestInboundCore(input: {
       type: input.type,
       text: input.text,
       status: "delivered",
-      mediaState: plan.kind === "process" ? "pending" : null,
+      mediaState: plan.kind === "process" || plan.kind === "store" ? "pending" : null,
       waTimestamp,
     })
     .onConflictDoNothing({
@@ -313,6 +320,21 @@ export async function ingestInboundCore(input: {
       plan,
     });
     return message;
+  }
+
+  // 026: un video o documento se baja para el equipo en segundo plano, y el
+  // turno sale YA — el agente no lo lee, así que no tiene por qué esperar.
+  if (plan.kind === "store" && input.media) {
+    void processInboundMedia({
+      organizationId,
+      conversationId: conversation.id,
+      messageId: message.id,
+      isTest: conversation.isTest,
+      source: input.media.source,
+      declaredMime: input.media.mime,
+      fileName: input.media.fileName ?? null,
+      plan,
+    });
   }
 
   await maybeRunAgentTurn(organizationId, conversation.id);

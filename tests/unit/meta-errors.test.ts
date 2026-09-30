@@ -19,6 +19,13 @@ describe("friendlyDeliveryError", () => {
     );
   });
 
+  it("026: 131053 (Meta no pudo procesar el archivo)", () => {
+    expect(
+      friendlyDeliveryError("Meta rechazó el archivo: (#131053) Media upload error: Unsupported file type")
+    ).toMatch(/no pudo procesar el archivo/);
+    expect(friendlyDeliveryError("Media download error")).toMatch(/no pudo procesar/);
+  });
+
   it("desconocido → texto crudo; vacío → null", () => {
     expect(friendlyDeliveryError("Algo rarísimo 999")).toBe(
       "Algo rarísimo 999"

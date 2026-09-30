@@ -8,12 +8,17 @@ import {
   CheckCheck,
   Clock3,
   Copy,
+  Download,
+  FileText,
+  Film,
   Loader2,
   Mic,
   Paperclip,
+  RotateCw,
   Sparkles,
 } from "lucide-react";
 import type { MessageDto } from "@/lib/types";
+import { formatFileSize, formatLabel, OUTBOUND_KINDS } from "@/lib/outbound-media";
 import { formatElapsed } from "@/lib/audio-record";
 import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { cn } from "@/lib/utils";
@@ -99,12 +104,15 @@ export function MessageThread({
   messages,
   kind = "whatsapp",
   thinkingLabel = null,
+  onRetry,
 }: {
   messages: MessageDto[];
   /** 015: en el hilo del entrenador no hay ticks de entrega ni etiquetas de API. */
   kind?: "whatsapp" | "trainer" | "instagram";
   /** 015: «{agente} está pensando…» mientras se espera la respuesta. */
   thinkingLabel?: string | null;
+  /** 026: reintenta un adjunto fallido; devuelve un error o null. */
+  onRetry?: (messageId: string) => Promise<string | null>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -125,6 +133,10 @@ export function MessageThread({
     setShowJump(false);
     setPendingNew(0);
   }, []);
+
+  function keepPinned() {
+    if (atBottomRef.current) scrollToBottom();
+  }
 
   function onScroll() {
     const el = scrollRef.current;
@@ -150,7 +162,13 @@ export function MessageThread({
       scrollToBottom();
       return;
     }
-    if (added <= 0) return;
+    if (added <= 0) {
+      // 026: un mensaje que CRECE (la línea «No entregado», una
+      // transcripción) no agrega filas: si el operador estaba al final, lo
+      // sigue estando.
+      if (atBottomRef.current) scrollToBottom();
+      return;
+    }
     const last = messages[messages.length - 1];
     // Lo que envía el operador lo sigue; lo que responde la IA cuenta como
     // «nuevo» igual que un entrante: no lo arrastra mientras lee historia.
@@ -164,6 +182,10 @@ export function MessageThread({
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        // 026: una imagen o un video que termina de cargar agranda el hilo
+        // sin disparar `scroll`: si el operador estaba al final, lo sigue.
+        onLoadCapture={keepPinned}
+        onLoadedMetadataCapture={keepPinned}
         data-testid="message-thread"
         className="flex flex-1 flex-col gap-[3px] overflow-y-auto overscroll-y-contain bg-chat px-3 py-4 md:px-[6%] md:py-5"
       >
@@ -189,6 +211,7 @@ export function MessageThread({
                 kind={kind}
                 grouped={grouped}
                 onLongPress={() => setSheetMsg(m)}
+                onRetry={onRetry}
               />
             </div>
           );
@@ -267,11 +290,28 @@ export function MessageThread({
  * Nota de voz (015): reproductor + transcripción con estados. `status`
  * es el estado de la transcripción, no de la entrega.
  */
-function AudioNote({ message: m }: { message: MessageDto }) {
+function AudioNote({ message: m, plain = false }: { message: MessageDto; plain?: boolean }) {
   // 020: `mediaState` (no `status`) — en un entrante `status` ya vale
   // "delivered" desde la ingesta y no puede contar dos historias.
   const state = m.mediaState ?? (m.text ? "ready" : "pending");
   const media = m.media;
+  // 026: un audio que mandó el equipo no se transcribe: solo el reproductor.
+  if (plain && media) {
+    return (
+      <div className="min-w-[220px]" data-testid="audio-message" data-status="sent">
+        <audio
+          controls
+          preload="none"
+          src={media.url}
+          data-testid="audio-player"
+          className="h-9 w-full max-w-[260px]"
+        />
+        {m.text && (
+          <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+        )}
+      </div>
+    );
+  }
   // Sin binario (la descarga falló) no hay reproductor, pero el equipo tiene
   // que ver que el cliente mandó un audio y por qué no se pudo leer.
   if (!media) {
@@ -345,7 +385,13 @@ function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
   // 022: en el hilo del entrenador la imagen la manda el DUEÑO y el agente
   // la LEE (la lectura puede ser larga: una lista de precios entera).
   const ownerImage = kind === "trainer" && m.direction === "out";
-  const alt = ownerImage ? "Imagen que le mandaste a tu agente" : "Imagen enviada por el cliente";
+  // 026: la que mandó el equipo a un cliente.
+  const sentImage = kind !== "trainer" && m.direction === "out";
+  const alt = ownerImage
+    ? "Imagen que le mandaste a tu agente"
+    : sentImage
+      ? "Imagen enviada"
+      : "Imagen enviada por el cliente";
 
   if (!media) {
     return (
@@ -424,7 +470,7 @@ function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
         open={open}
         onClose={() => setOpen(false)}
         size="lg"
-        title={ownerImage ? "Imagen para tu agente" : "Imagen del cliente"}
+        title={ownerImage ? "Imagen para tu agente" : sentImage ? "Imagen enviada" : "Imagen del cliente"}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={media.url} alt={summary || alt} className="max-h-[75vh] w-full object-contain" />
@@ -433,16 +479,165 @@ function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
   );
 }
 
+/**
+ * Adjunto sin binario (026): todavía bajando, o no se pudo guardar. El
+ * equipo igual ve qué mandó el cliente y por qué no está.
+ */
+function MissingAttachment({ message: m, noun }: { message: MessageDto; noun: string }) {
+  const Icon = m.type === "video" ? Film : m.type === "document" ? FileText : Paperclip;
+  return (
+    <span
+      className="inline-flex flex-wrap items-center gap-1.5 text-text-3"
+      data-testid="attachment-missing"
+      data-status={m.mediaState ?? "none"}
+    >
+      <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
+      {m.mediaState === "pending" ? `Descargando ${noun}…` : mediaLabel(m.type)}
+      {m.mediaState !== "pending" && m.text ? ` — ${m.text}` : ""}
+      {m.mediaState === "failed" && m.error ? (
+        <span className="basis-full text-[12px] text-destructive">
+          {m.error}
+          {m.direction === "in" ? ": abrilo desde el celular." : ""}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Video (026): el que mandó el equipo o el que mandó el cliente. */
+function VideoAttachment({ message: m }: { message: MessageDto }) {
+  const media = m.media;
+  if (!media) return <MissingAttachment message={m} noun="video" />;
+  return (
+    <div className="min-w-[200px]" data-testid="video-message">
+      <video
+        controls
+        playsInline
+        preload="metadata"
+        src={media.url}
+        data-testid="video-player"
+        className="max-h-[320px] w-full max-w-[280px] rounded-md bg-black"
+      />
+      {m.text && (
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Documento (026): tarjeta con nombre, formato y tamaño; tocarla lo abre en
+ * otra pestaña (PDF y texto se ven en el navegador; Office se descarga) y
+ * el botón lo baja con su nombre original.
+ */
+function DocumentAttachment({ message: m }: { message: MessageDto }) {
+  const media = m.media;
+  if (!media) return <MissingAttachment message={m} noun="documento" />;
+  const name = media.fileName ?? m.text ?? "Documento";
+  // Un documento entrante sin epígrafe trae su nombre en `text` (020): no
+  // se repite debajo de la tarjeta.
+  const caption = m.text && m.text !== media.fileName ? m.text : null;
+  const meta = [formatLabel(media.mimeType, media.fileName), formatFileSize(media.sizeBytes)]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="w-[240px] max-w-full md:w-[260px]" data-testid="document-message">
+      <div className="flex items-center gap-1 rounded-md border border-brand-soft/60 bg-background/70 p-1.5">
+        <a
+          href={media.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="document-open"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm p-1 hover:bg-accent/60"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-tint text-brand-text">
+            <FileText className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </span>
+          <span className="min-w-0">
+            <span
+              className="line-clamp-2 break-words text-[13px] font-medium leading-snug text-foreground"
+              title={name}
+              data-testid="document-name"
+            >
+              {name}
+            </span>
+            <span className="block text-[11px] text-text-3" data-testid="document-meta">
+              {meta}
+            </span>
+          </span>
+        </a>
+        <a
+          href={`${media.url}?download=1`}
+          download={name}
+          aria-label={`Descargar ${name}`}
+          title="Descargar"
+          data-testid="document-download"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Download className="h-4 w-4" strokeWidth={1.7} />
+        </a>
+      </div>
+      {caption && (
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{caption}</p>
+      )}
+    </div>
+  );
+}
+
+/** «Reintentar» de un adjunto fallido (026): reenvía el binario guardado. */
+function RetryButton({
+  messageId,
+  onRetry,
+}: {
+  messageId: string;
+  onRetry: (messageId: string) => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        disabled={busy}
+        data-testid="message-retry"
+        onClick={async (e) => {
+          e.stopPropagation();
+          setBusy(true);
+          setError(null);
+          const err = await onRetry(messageId);
+          setBusy(false);
+          if (err) setError(err);
+        }}
+        className="inline-flex items-center gap-1 rounded-full border border-destructive/30 px-2.5 py-0.5 text-[11.5px] font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+      >
+        {busy ? (
+          <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.8} />
+        ) : (
+          <RotateCw className="h-3 w-3" strokeWidth={1.8} />
+        )}
+        {busy ? "Reintentando…" : "Reintentar"}
+      </button>
+      {error && (
+        <span className="text-[11px] text-destructive" data-testid="message-retry-error">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function Bubble({
   message: m,
   kind,
   grouped,
   onLongPress,
+  onRetry,
 }: {
   message: MessageDto;
   kind: "whatsapp" | "trainer" | "instagram";
   grouped: boolean;
   onLongPress: () => void;
+  onRetry?: (messageId: string) => Promise<string | null>;
 }) {
   const { handlers } = useLongPress(onLongPress);
   const out = m.direction === "out";
@@ -488,9 +683,13 @@ function Bubble({
         ) : m.type === "text" || m.type === "template" ? (
           <span className="whitespace-pre-wrap break-words">{m.text}</span>
         ) : m.type === "audio" ? (
-          <AudioNote message={m} />
+          <AudioNote message={m} plain={out && wa} />
         ) : m.type === "image" ? (
           <ImageAttachment message={m} kind={kind} />
+        ) : m.type === "video" ? (
+          <VideoAttachment message={m} />
+        ) : m.type === "document" ? (
+          <DocumentAttachment message={m} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />
@@ -540,6 +739,10 @@ function Bubble({
           >
             No entregado:{" "}
             {friendlyDeliveryError(m.error) ?? "el canal no informó el motivo"}
+            {onRetry &&
+              m.source === "cloud" &&
+              (OUTBOUND_KINDS as readonly string[]).includes(m.type) &&
+              m.media && <RetryButton messageId={m.id} onRetry={onRetry} />}
           </span>
         )}
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { Clock3, Mic, Paperclip, Send, X, Zap } from "lucide-react";
+import { Clock3, FileText, Film, Mic, Music, Paperclip, Send, X, Zap } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { filterQuickReplies, quickReplyQuery } from "@/lib/gestures";
@@ -9,6 +9,15 @@ import { composerMode } from "@/lib/trainer";
 import { fileNameFor, formatElapsed } from "@/lib/audio-record";
 import { VOICE_NOTE_MAX_BYTES, VOICE_NOTE_MAX_MS } from "@/lib/voice-note";
 import { looksLikeTrainerImage, TRAINER_IMAGE_MAX_BYTES } from "@/lib/trainer-image";
+import {
+  captionTravelsInline,
+  checkOutboundLocally,
+  formatFileSize,
+  KIND_LABEL,
+  outboundAccept,
+  type OutboundChannel,
+  type OutboundKind,
+} from "@/lib/outbound-media";
 import { useIsMobile } from "@/components/use-media";
 import { formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
@@ -27,11 +36,36 @@ export type SendImage = (
   meta: { caption: string | null }
 ) => Promise<string | null>;
 
+/**
+ * 026: adjunto a un cliente. `persisted` = el servidor ya lo registró (como
+ * fallido, con Reintentar en el hilo): el composer suelta el adjunto.
+ * `captionError` = el archivo salió pero el texto aparte no.
+ */
+export type SendMediaResult = {
+  error: string | null;
+  persisted?: boolean;
+  captionError?: string | null;
+};
+export type SendMedia = (
+  file: File,
+  meta: { caption: string | null; onProgress: (pct: number) => void }
+) => Promise<SendMediaResult>;
+
+type PendingAttachment = { file: File; kind: OutboundKind; previewUrl: string | null };
+
+const KIND_ICON: Record<OutboundKind, typeof FileText> = {
+  image: FileText,
+  video: Film,
+  audio: Music,
+  document: FileText,
+};
+
 export function Composer({
   conversation,
   onSend,
   onSendAudio,
   onSendImage,
+  onSendMedia,
   onSent,
 }: {
   conversation: ConversationDto;
@@ -40,6 +74,8 @@ export function Composer({
   onSendAudio?: SendAudio;
   /** 022: solo la conversación con el agente acepta imágenes. */
   onSendImage?: SendImage;
+  /** 026: imágenes, videos, audios y documentos a un cliente. */
+  onSendMedia?: SendMedia;
   onSent: () => void;
 }) {
   const isMobile = useIsMobile();
@@ -50,6 +86,92 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mediaFileRef = useRef<HTMLInputElement>(null);
+
+  // 026: adjunto a un cliente. No sale al elegirlo: queda pendiente (con
+  // miniatura o nombre) hasta que el operador lo envía, con el texto del
+  // campo como epígrafe. Mandarle a un cliente el archivo equivocado no
+  // tiene «deshacer».
+  const channel: OutboundChannel | null =
+    conversation.kind === "whatsapp" || conversation.kind === "instagram"
+      ? conversation.kind
+      : null;
+  const canAttachMedia = channel !== null && Boolean(onSendMedia);
+  const [pending, setPending] = useState<PendingAttachment | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const pendingRef = useRef<PendingAttachment | null>(null);
+  pendingRef.current = pending;
+
+  function clearPending() {
+    setPending((p) => {
+      if (p?.previewUrl) URL.revokeObjectURL(p.previewUrl);
+      return null;
+    });
+  }
+  // Cambiar de conversación descarta el adjunto (era para otro cliente).
+  useEffect(() => {
+    clearPending();
+    setError(null);
+  }, [conversation.id]);
+  useEffect(
+    () => () => {
+      if (pendingRef.current?.previewUrl) URL.revokeObjectURL(pendingRef.current.previewUrl);
+    },
+    []
+  );
+
+  function stageFile(file: File) {
+    if (!channel) return;
+    const check = checkOutboundLocally(file, channel);
+    if (!check.ok) {
+      setError(check.error);
+      return;
+    }
+    setError(null);
+    clearPending();
+    setPending({
+      file,
+      kind: check.kind,
+      previewUrl: check.kind === "image" ? URL.createObjectURL(file) : null,
+    });
+    taRef.current?.focus();
+  }
+
+  async function sendPending() {
+    const staged = pending;
+    if (!staged || !onSendMedia || !channel || sending) return;
+    setSending(true);
+    setError(null);
+    setProgress(0);
+    const caption = text.trim() || null;
+    const res = await onSendMedia(staged.file, { caption, onProgress: setProgress });
+    setSending(false);
+    setProgress(null);
+    if (res.error && !res.persisted) {
+      // Nada quedó registrado: el adjunto sigue pendiente para reintentar.
+      setError(res.error);
+      return;
+    }
+    clearPending();
+    const captionSent = captionTravelsInline(channel, staged.kind);
+    if (res.error) {
+      // Quedó en el hilo como «No entregado» con el motivo y Reintentar:
+      // acá alcanza con señalarlo, sin repetir el motivo.
+      setError("No se pudo entregar el archivo: el motivo y «Reintentar» están en el mensaje.");
+      if (captionSent) resetText();
+      return;
+    }
+    if (res.captionError) {
+      setError(`El archivo se envió, pero el texto no: ${res.captionError}`);
+      return;
+    }
+    resetText();
+  }
+
+  function resetText() {
+    setText("");
+    if (taRef.current) taRef.current.style.height = "auto";
+  }
 
   // 015: grabador (tap para grabar / tap para enviar) y adjunto de archivo.
   const recorder = useVoiceRecorder({
@@ -139,19 +261,30 @@ export function Composer({
   function onPickFile(list: FileList | null) {
     const file = list?.[0];
     if (!file) return;
-    sendPickedFile(file);
+    if (canAttachMedia) stageFile(file);
+    else sendPickedFile(file);
     if (fileRef.current) fileRef.current.value = "";
+    if (mediaFileRef.current) mediaFileRef.current.value = "";
   }
 
   function onDrop(e: DragEvent) {
-    if (!onSendAudio && !onSendImage) return;
+    if (!onSendAudio && !onSendImage && !canAttachMedia) return;
     e.preventDefault();
     setDragging(false);
     onPickFile(e.dataTransfer.files);
   }
 
   // 022: pegar una captura (⌘V) en el hilo del entrenador la adjunta.
+  // 026: con un cliente, cualquier archivo pegado queda pendiente.
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (canAttachMedia) {
+      const item = Array.from(e.clipboardData.items).find((i) => i.kind === "file");
+      const file = item?.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      stageFile(file);
+      return;
+    }
     if (!onSendImage) return;
     const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
     const file = item?.getAsFile();
@@ -208,6 +341,10 @@ export function Composer({
   }
 
   async function submit() {
+    if (pending) {
+      await sendPending();
+      return;
+    }
     const value = text.trim();
     if (!value || sending) return;
     setSending(true);
@@ -270,7 +407,9 @@ export function Composer({
   const canAttachImage = isTrainer && Boolean(onSendImage);
   const canAttach = canRecord || canAttachImage;
   const recording = recorder.state === "recording" || recorder.state === "requesting";
-  const uploading = recorder.state === "uploading" || sendingImage;
+  const uploadingMedia = progress !== null;
+  const uploading = recorder.state === "uploading" || sendingImage || uploadingMedia;
+  const canSend = text.trim().length > 0 || pending !== null;
   const showMic = canRecord && recorder.supported && text.trim().length === 0;
 
   return (
@@ -280,7 +419,7 @@ export function Composer({
         dragging && "bg-brand-tint"
       )}
       onDragOver={(e) => {
-        if (!canAttach) return;
+        if (!canAttach && !canAttachMedia) return;
         e.preventDefault();
         setDragging(true);
       }}
@@ -300,6 +439,16 @@ export function Composer({
           onChange={(e) => onPickFile(e.target.files)}
         />
       )}
+      {canAttachMedia && channel && (
+        <input
+          ref={mediaFileRef}
+          type="file"
+          accept={outboundAccept(channel)}
+          hidden
+          data-testid="media-file"
+          onChange={(e) => onPickFile(e.target.files)}
+        />
+      )}
       {recording || uploading ? (
         <div className="flex items-center gap-2" data-testid="recording-bar">
           <button
@@ -314,8 +463,14 @@ export function Composer({
           </button>
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[22px] border bg-background px-3 py-2.5 text-sm md:rounded-md">
             {uploading ? (
-              <span className="text-text-2">
-                {sendingImage ? "Enviando imagen…" : "Enviando nota de voz…"}
+              <span className="text-text-2" data-testid="upload-progress">
+                {uploadingMedia && pending
+                  ? (progress ?? 0) < 100
+                    ? `Enviando ${KIND_LABEL[pending.kind]}… ${progress ?? 0}%`
+                    : `Enviando ${KIND_LABEL[pending.kind]} a ${channel === "instagram" ? "Instagram" : "WhatsApp"}…`
+                  : sendingImage
+                    ? "Enviando imagen…"
+                    : "Enviando nota de voz…"}
               </span>
             ) : (
               <>
@@ -364,7 +519,27 @@ export function Composer({
           ))}
         </div>
       )}
+      {pending && !uploading && channel && (
+        <PendingCard
+          pending={pending}
+          captionInline={captionTravelsInline(channel, pending.kind)}
+          channel={channel}
+          onRemove={clearPending}
+        />
+      )}
       <div className={cn("flex items-end gap-1.5 md:gap-2", (recording || uploading) && "hidden")}>
+        {canAttachMedia && (
+          <button
+            type="button"
+            aria-label="Adjuntar archivo"
+            title="Adjuntar una imagen, un video, un audio o un documento"
+            data-testid="media-attach"
+            onClick={() => mediaFileRef.current?.click()}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent md:h-[34px] md:w-[34px]"
+          >
+            <Paperclip className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
+          </button>
+        )}
         {canAttach && (
           // 022: visible también en móvil — desde el celular la imagen sale
           // de la cámara o la galería, y es el caso típico del dueño.
@@ -409,7 +584,9 @@ export function Composer({
             placeholder={
               isTrainer
                 ? `Decile a ${conversation.contact.name} qué tiene que saber o cómo responder…`
-                : "Escribe una respuesta…"
+                : pending
+                  ? "Agregá un comentario (opcional)…"
+                  : "Escribe una respuesta…"
             }
             data-testid="composer-input"
             value={text}
@@ -474,12 +651,12 @@ export function Composer({
         ) : (
           <button
             onClick={() => void submit()}
-            disabled={sending || text.trim().length === 0}
+            disabled={sending || !canSend}
             aria-label="Enviar"
             data-testid="composer-send"
             className={cn(
               "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white transition-opacity hover:bg-brand-hover md:h-[34px] md:w-[34px] md:rounded-[9px]",
-              (sending || !text.trim()) && "opacity-40"
+              (sending || !canSend) && "opacity-40"
             )}
           >
             <Send className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
@@ -507,6 +684,63 @@ export function Composer({
               : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** 026: el adjunto elegido, antes de enviarlo (miniatura o nombre y tamaño). */
+function PendingCard({
+  pending,
+  captionInline,
+  channel,
+  onRemove,
+}: {
+  pending: PendingAttachment;
+  captionInline: boolean;
+  channel: OutboundChannel;
+  onRemove: () => void;
+}) {
+  const Icon = KIND_ICON[pending.kind];
+  const where = channel === "instagram" ? "Instagram" : "WhatsApp";
+  return (
+    <div
+      data-testid="attachment-pending"
+      data-kind={pending.kind}
+      className="mb-2 flex items-center gap-2.5 rounded-md border bg-secondary/60 p-2"
+    >
+      {pending.previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={pending.previewUrl}
+          alt="Vista previa del adjunto"
+          className="h-12 w-12 shrink-0 rounded-sm border object-cover"
+        />
+      ) : (
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-brand-tint text-brand-text">
+          <Icon className="h-5 w-5" strokeWidth={1.7} />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium" data-testid="attachment-name">
+          {pending.file.name || KIND_LABEL[pending.kind]}
+        </p>
+        <p className="text-[11px] leading-snug text-text-3">
+          {KIND_LABEL[pending.kind][0]!.toUpperCase() + KIND_LABEL[pending.kind].slice(1)} ·{" "}
+          {formatFileSize(pending.file.size)} ·{" "}
+          {captionInline
+            ? "el texto va como epígrafe"
+            : `${where} manda el texto como un mensaje aparte`}
+        </p>
+      </div>
+      <button
+        type="button"
+        aria-label="Quitar adjunto"
+        data-testid="attachment-remove"
+        onClick={onRemove}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <X className="h-4 w-4" strokeWidth={1.8} />
+      </button>
     </div>
   );
 }

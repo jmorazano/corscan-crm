@@ -30,6 +30,13 @@ function oggBytes(): Buffer {
  * (FLAC para audio, PNG para imagen — los sentinels del ai-mock).
  */
 export function mockMediaFor(mediaId: string): MockMedia {
+  // 026: video y documento del cliente (se guardan para el equipo, sin IA).
+  if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}video`)) {
+    return { bytes: mp4Bytes(), mimeType: "video/mp4" };
+  }
+  if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}document`)) {
+    return { bytes: pdfBytes(), mimeType: "application/pdf" };
+  }
   const unreadable = mediaId.includes("empty");
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}audio`)) {
     return unreadable
@@ -56,4 +63,26 @@ function pngBytes(): Buffer {
 
 export function isMockMediaId(id: string): boolean {
   return id.startsWith(MOCK_MEDIA_PREFIX);
+}
+
+/** 026: caja `ftyp` isom mínima: `classifyOutboundFile` la reconoce como MP4. */
+function mp4Bytes(): Buffer {
+  return Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x18]),
+    Buffer.from("ftypisom", "ascii"),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from("isomiso2", "ascii"),
+    Buffer.alloc(40),
+  ]);
+}
+
+/** 026: PDF mínimo válido de una página vacía. */
+function pdfBytes(): Buffer {
+  return Buffer.from(
+    "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+      "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n" +
+      "trailer<</Root 1 0 R>>\n%%EOF\n",
+    "latin1"
+  );
 }

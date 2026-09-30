@@ -41,6 +41,9 @@ export async function graphRequest<T>(
     method?: "GET" | "POST" | "DELETE";
     token: string;
     body?: unknown;
+    /** 026: multipart (subida de medios). Excluye `body`; el `fetch` pone
+     * el boundary del Content-Type. */
+    form?: FormData;
   }
 ): Promise<T> {
   const env = getEnv();
@@ -51,11 +54,15 @@ export async function graphRequest<T>(
       method: opts.method ?? "GET",
       headers: {
         Authorization: `Bearer ${opts.token}`,
-        ...(opts.body !== undefined
+        ...(opts.body !== undefined && !opts.form
           ? { "Content-Type": "application/json" }
           : {}),
       },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.form
+        ? opts.form
+        : opts.body !== undefined
+          ? JSON.stringify(opts.body)
+          : undefined,
     });
   } catch (cause) {
     throw new MetaApiError("No se pudo contactar la API de Meta", {
@@ -367,6 +374,42 @@ export async function downloadMediaBinary(
     bytes,
     contentType: (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase(),
   };
+}
+
+/**
+ * Sube un binario para mandarlo en un mensaje (026):
+ * `POST /{phone-number-id}/media` multipart con `file`, `type` y
+ * `messaging_product`. Devuelve el `media_id` (vale 30 días). Es la vía que
+ * recomienda Meta frente al `link`: el rechazo por formato o tamaño llega
+ * acá, sincrónico, y no como un «no entregado» minutos después.
+ */
+export async function uploadWhatsAppMedia(input: {
+  phoneNumberId: string;
+  token: string;
+  bytes: Uint8Array;
+  mimeType: string;
+  fileName: string;
+}): Promise<string> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", input.mimeType);
+  form.append(
+    "file",
+    new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }),
+    input.fileName
+  );
+  const res = await graphRequest<{ id?: string }>(`${input.phoneNumberId}/media`, {
+    method: "POST",
+    token: input.token,
+    form,
+  });
+  if (!res?.id) {
+    throw new MetaApiError("Meta no devolvió el id del archivo subido", {
+      status: 502,
+      details: res,
+    });
+  }
+  return res.id;
 }
 
 /**

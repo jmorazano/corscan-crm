@@ -31,8 +31,15 @@ export type ConversationDto = {
 /** 014: origen externo de un saliente («Enviado por API · <clave>»). */
 export type MessageVia = { kind: "api"; label: string };
 
-/** 015: media adjunta (nota de voz); `url` es privada y por tenant. */
-export type MessageMediaDto = { url: string; mimeType: string; durationMs: number | null };
+/** 015: media adjunta (nota de voz); `url` es privada y por tenant.
+ * 026: `fileName` (documentos) y `sizeBytes` para la tarjeta del archivo. */
+export type MessageMediaDto = {
+  url: string;
+  mimeType: string;
+  durationMs: number | null;
+  fileName: string | null;
+  sizeBytes: number | null;
+};
 
 export type MessageDto = {
   id: string;

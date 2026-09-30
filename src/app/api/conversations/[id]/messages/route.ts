@@ -3,8 +3,10 @@ import { apiError, ownerOnlyError, parseBody, withAuth } from "@/lib/api";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError, sendText } from "@/server/inbox/send";
+import { SEND_ERROR_STATUS } from "@/server/inbox/send-error";
 import { postTrainerMessage, TrainerError } from "@/server/ai/trainer";
 import { canManageConfig } from "@/lib/roles";
+import { toMediaDto } from "@/lib/message-media";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +31,13 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
         r.message,
         r.apiKeyName ? { kind: "api", label: r.apiKeyName } : null,
         r.mediaId
-          ? {
-              url: `/api/message-media/${r.mediaId}`,
-              mimeType: r.mediaMime ?? "audio/wav",
+          ? toMediaDto({
+              id: r.mediaId,
+              mimeType: r.mediaMime ?? "application/octet-stream",
               durationMs: r.mediaDuration,
-            }
+              fileName: r.mediaFileName,
+              sizeBytes: r.mediaSize,
+            })
           : null
       )
     ),
@@ -41,16 +45,6 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
 });
 
 const sendSchema = z.object({ text: z.string().trim().min(1).max(4096) });
-
-const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
-  sandbox_violation: 403,
-  not_connected: 409,
-  reconnect_required: 409,
-  window_closed: 409,
-  opted_out: 409,
-  meta_error: 422,
-  meta_unavailable: 503,
-};
 
 const TRAINER_ERROR_STATUS: Record<TrainerError["code"], number> = {
   ai_not_configured: 409,

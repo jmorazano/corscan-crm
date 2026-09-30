@@ -65,6 +65,7 @@ export async function applyStatusUpdate(
       conversationId: msg.conversationId,
       messageId: msg.id,
       status: next,
+      error,
     },
   });
 }

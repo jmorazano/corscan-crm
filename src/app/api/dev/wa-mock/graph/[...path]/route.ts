@@ -171,6 +171,12 @@ export async function POST(req: Request, ctx: Params) {
     return Response.json({ h: `MOCK_HANDLE:${path[0]!.slice("upload:".length)}` });
   }
 
+  // POST {phoneNumberId}/media → subida multipart de un adjunto (026). Va
+  // antes del parseo JSON: el cuerpo es multipart.
+  if (path.length === 2 && path[1] === "media") {
+    return mockMediaUpload(req, path[0]!);
+  }
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   // POST {phoneNumberId}/messages → registra en el outbox
@@ -191,6 +197,25 @@ export async function POST(req: Request, ctx: Params) {
         },
         { status: 500 }
       );
+    }
+    // 026: un adjunto por id tiene que referir a una subida real (como
+    // Meta: un id inventado es «parámetro inválido»).
+    const mediaType = String(body.type ?? "");
+    if (["image", "video", "audio", "document"].includes(mediaType)) {
+      const ref = (body[mediaType] ?? {}) as { id?: string; link?: string };
+      if (!ref.link && !state.mediaUploads.some((u) => u.id === ref.id)) {
+        return Response.json(
+          {
+            error: {
+              message: "(#100) Invalid parameter",
+              type: "OAuthException",
+              code: 100,
+              error_data: { details: `Media id ${String(ref.id)} not found` },
+            },
+          },
+          { status: 400 }
+        );
+      }
     }
     const n = nextN();
     const to = String(body.to ?? "");
@@ -292,3 +317,80 @@ export async function DELETE(req: Request, ctx: Params) {
 
   return Response.json({ success: true });
 }
+
+/** MIME que acepta `POST {pn}/media` (mensaje de error real de Meta). */
+const MOCK_UPLOAD_TYPES = [
+  "audio/aac",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/amr",
+  "audio/ogg",
+  "application/vnd.ms-powerpoint",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/pdf",
+  "text/plain",
+  "application/vnd.ms-excel",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/3gpp",
+];
+
+/** 026: `POST {pn}/media` — valida el multipart como Meta y guarda la subida. */
+async function mockMediaUpload(req: Request, phoneNumberId: string): Promise<Response> {
+  const state = getWaMockState();
+  const fail = (message: string, code: number, details?: string) =>
+    Response.json(
+      {
+        error: {
+          message,
+          type: "OAuthException",
+          code,
+          ...(details ? { error_data: { details } } : {}),
+          fbtrace_id: "mock",
+        },
+      },
+      { status: 400 }
+    );
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return fail("(#100) The parameter messaging_product is required.", 100);
+  }
+  if (form.get("messaging_product") !== "whatsapp") {
+    return fail("(#100) The parameter messaging_product is required.", 100);
+  }
+  const type = String(form.get("type") ?? "");
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return fail("(#100) The parameter file is required.", 100);
+  }
+  if (!MOCK_UPLOAD_TYPES.includes(type)) {
+    return fail(
+      `(#100) Param file must be a file with one of the following types: ${MOCK_UPLOAD_TYPES.join(", ")}. Received file of type '${type}'.`,
+      100
+    );
+  }
+  if (state.mediaUploadFails) {
+    state.mediaUploadFails = false;
+    return fail("(#131053) Media upload error", 131053, "Unsupported file type or codec");
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const id = `mediaup_${nextN()}`;
+  state.mediaUploads.push({
+    id,
+    phoneNumberId,
+    type,
+    fileName: file.name,
+    size: bytes.byteLength,
+    head: Buffer.from(bytes.subarray(0, 8)).toString("hex"),
+    at: new Date().toISOString(),
+  });
+  return Response.json({ id });
+}
+

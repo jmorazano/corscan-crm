@@ -16,6 +16,19 @@ export type OutboxEntry = {
   at: string;
 };
 
+/** 026: un binario subido con `POST {pn}/media` (lo que recibió «Meta»). */
+export type MockMediaUpload = {
+  id: string;
+  phoneNumberId: string;
+  /** El `type` del multipart (MIME declarado por el CRM). */
+  type: string;
+  fileName: string;
+  size: number;
+  /** Primeros bytes en hex: el guion verifica que llegó el archivo real. */
+  head: string;
+  at: string;
+};
+
 export type MockTemplate = {
   id: string;
   name: string;
@@ -43,6 +56,10 @@ type WaMockState = {
   mediaDownloadFails: boolean;
   /** Knob 020: el próximo adjunto se declara más grande que el tope. */
   mediaTooLarge: boolean;
+  /** 026: binarios subidos para enviar. */
+  mediaUploads: MockMediaUpload[];
+  /** Knob 026: la próxima subida de medios falla con 131053. */
+  mediaUploadFails: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -59,6 +76,8 @@ export function getWaMockState(): WaMockState {
       historyDeclined: false,
       mediaDownloadFails: false,
       mediaTooLarge: false,
+      mediaUploads: [],
+      mediaUploadFails: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
@@ -80,6 +99,12 @@ export function getWaMockState(): WaMockState {
   if (globalForMock.__waMockState.mediaTooLarge === undefined) {
     globalForMock.__waMockState.mediaTooLarge = false;
   }
+  if (globalForMock.__waMockState.mediaUploads === undefined) {
+    globalForMock.__waMockState.mediaUploads = [];
+  }
+  if (globalForMock.__waMockState.mediaUploadFails === undefined) {
+    globalForMock.__waMockState.mediaUploadFails = false;
+  }
   return globalForMock.__waMockState;
 }
 
@@ -98,6 +123,8 @@ export function resetWaMockState(): void {
     historyDeclined: false,
     mediaDownloadFails: false,
     mediaTooLarge: false,
+    mediaUploads: [],
+    mediaUploadFails: false,
   };
 }
 

@@ -150,8 +150,9 @@ export async function sendInstagramConversationText(input: {
   return { messageId: lastId ?? "" };
 }
 
-/** Traduce el error de Instagram al contrato de `SendError`. */
-async function toSendError(err: unknown, organizationId: string): Promise<SendError> {
+/** Traduce el error de Instagram al contrato de `SendError` (026: también
+ * lo usa el envío de adjuntos). */
+export async function toSendError(err: unknown, organizationId: string): Promise<SendError> {
   if (err instanceof SendError) return err;
   if (err instanceof InstagramApiError) {
     if (err.isAuthError) {

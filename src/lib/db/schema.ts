@@ -520,6 +520,8 @@ export const messageMedia = pgTable("message_media", {
   mimeType: text("mime_type").notNull(),
   sizeBytes: integer("size_bytes").notNull(),
   durationMs: integer("duration_ms"),
+  /** 026: nombre original del documento (enviado o recibido), saneado. */
+  fileName: text("file_name"),
   data: bytea("data").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

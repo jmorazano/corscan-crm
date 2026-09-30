@@ -1,0 +1,1 @@
+ALTER TABLE "message_media" ADD COLUMN "file_name" text;

@@ -5,6 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import { readTrainerImage } from "@/lib/ai";
 import { TRAINER_IMAGE_ERRORS, type TrainerImageMime } from "@/lib/trainer-image";
 import type { MessageMediaDto } from "@/lib/types";
+import { toMediaDto } from "@/lib/message-media";
 import { getAiConfig } from "@/server/ai/credentials";
 import { forceTrainerTurn } from "@/server/ai/trainer";
 import { publish } from "@/server/events/bus";
@@ -62,11 +63,12 @@ export async function createTrainerImage(input: {
       .where(eq(schema.conversation.id, input.conversationId));
     return { message, mediaId };
   });
-  const media: MessageMediaDto = {
-    url: `/api/message-media/${mediaId}`,
+  const media: MessageMediaDto = toMediaDto({
+    id: mediaId,
     mimeType: input.mimeType,
     durationMs: null,
-  };
+    sizeBytes: input.bytes.byteLength,
+  });
   publish(input.organizationId, {
     type: "message.new",
     data: { conversationId: input.conversationId, message: serializeMessage(message, null, media) },
@@ -104,11 +106,7 @@ export async function readTrainerImageInBackground(input: {
     .limit(1);
   const media = rows[0];
   if (!media) return;
-  const mediaDto: MessageMediaDto = {
-    url: `/api/message-media/${media.id}`,
-    mimeType: media.mimeType,
-    durationMs: null,
-  };
+  const mediaDto: MessageMediaDto = toMediaDto({ ...media, durationMs: null });
 
   const finish = async (patch: {
     mediaSummary?: string;

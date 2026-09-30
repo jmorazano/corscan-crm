@@ -11,7 +11,9 @@ import {
 } from "@/lib/inbound-media";
 import { downloadMediaBinary, fetchMediaHandle } from "@/lib/meta/client";
 import { downloadInstagramMedia } from "@/lib/instagram/client";
+import { classifyOutboundFile, sanitizeFileName } from "@/lib/outbound-media";
 import type { MessageMediaDto } from "@/lib/types";
+import { toMediaDto } from "@/lib/message-media";
 import { audioFormatForMime, normalizeMime, sniffAudioMime } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
@@ -48,7 +50,9 @@ export async function processInboundMedia(input: {
   isTest: boolean;
   source: InboundMediaSource;
   declaredMime: string | null;
-  plan: Extract<MediaPlan, { kind: "process" }>;
+  /** 026: nombre original del documento (WhatsApp lo manda en el webhook). */
+  fileName?: string | null;
+  plan: Extract<MediaPlan, { kind: "process" | "store" }>;
 }): Promise<void> {
   // D4/FR-010: el sandbox del Laboratorio JAMÁS toca la API real.
   if (input.isTest) {
@@ -59,6 +63,11 @@ export async function processInboundMedia(input: {
   try {
     const bytes = await download(input);
     if (!bytes) return; // `download` ya cerró el mensaje y disparó el turno
+    // 026: video y documento son para el equipo; el agente no los lee.
+    if (input.plan.kind === "store") {
+      await finish(input, { state: "ready" });
+      return;
+    }
     await interpret(input, bytes);
   } catch (err) {
     console.error(
@@ -79,7 +88,8 @@ async function download(input: {
   messageId: string;
   source: InboundMediaSource;
   declaredMime: string | null;
-  plan: Extract<MediaPlan, { kind: "process" }>;
+  fileName?: string | null;
+  plan: Extract<MediaPlan, { kind: "process" | "store" }>;
 }): Promise<{ data: Buffer; mimeType: string } | null> {
   const fetched =
     input.source.kind === "wa"
@@ -87,6 +97,24 @@ async function download(input: {
       : await downloadFromUrl(input, input.source.url);
   if (!fetched) return null;
   const { downloaded, handleMime } = fetched;
+
+  // 026: video y documento se guardan tal cual; el MIME sale de la firma
+  // (y si no se reconoce, del declarado: el visor lo sirve como binario
+  // opaco si no es un tipo seguro).
+  if (input.plan.kind === "store") {
+    const plain = (downloaded.contentType || handleMime || input.declaredMime || "")
+      .split(";")[0]!
+      .trim()
+      .toLowerCase();
+    const classified = classifyOutboundFile(downloaded.bytes, input.fileName ?? "");
+    const mimeType = classified?.mime ?? (plain || "application/octet-stream");
+    const fileName =
+      input.plan.type === "document" || input.fileName
+        ? sanitizeFileName(input.fileName, { mime: mimeType })
+        : null;
+    await saveMedia(input, downloaded.bytes, mimeType, fileName);
+    return { data: downloaded.bytes, mimeType };
+  }
 
   // El MIME declarado no manda: el contenido sí. Un `image/jpeg` que en
   // realidad es otra cosa hace fallar al proveedor con un error opaco.
@@ -122,7 +150,7 @@ type DownloadInput = {
   organizationId: string;
   conversationId: string;
   messageId: string;
-  plan: Extract<MediaPlan, { kind: "process" }>;
+  plan: Extract<MediaPlan, { kind: "process" | "store" }>;
 };
 
 /** WhatsApp: id → URL (con el token de la WABA) → bytes. */
@@ -200,7 +228,8 @@ function isSupportedAudio(mime: string): boolean {
 async function saveMedia(
   input: { organizationId: string; messageId: string },
   bytes: Buffer,
-  mimeType: string
+  mimeType: string,
+  fileName: string | null = null
 ): Promise<void> {
   await getDb()
     .insert(schema.messageMedia)
@@ -211,6 +240,7 @@ async function saveMedia(
       mimeType,
       sizeBytes: bytes.byteLength,
       durationMs: null,
+      fileName,
       data: bytes,
     })
     .onConflictDoNothing({ target: schema.messageMedia.messageId });
@@ -225,7 +255,7 @@ async function interpret(
     organizationId: string;
     conversationId: string;
     messageId: string;
-    plan: Extract<MediaPlan, { kind: "process" }>;
+    plan: Extract<MediaPlan, { kind: "process" | "store" }>;
   },
   media: { data: Buffer; mimeType: string }
 ): Promise<void> {
@@ -265,7 +295,12 @@ async function interpret(
  * ============================================================ */
 
 async function finish(
-  input: { organizationId: string; conversationId: string; messageId: string },
+  input: {
+    organizationId: string;
+    conversationId: string;
+    messageId: string;
+    plan?: MediaPlan;
+  },
   outcome:
     | { state: "ready"; text?: string; summary?: string }
     | { state: "failed"; errorCode: MediaErrorCode }
@@ -296,6 +331,8 @@ async function finish(
       id: schema.messageMedia.id,
       mimeType: schema.messageMedia.mimeType,
       durationMs: schema.messageMedia.durationMs,
+      fileName: schema.messageMedia.fileName,
+      sizeBytes: schema.messageMedia.sizeBytes,
     })
     .from(schema.messageMedia)
     .where(
@@ -307,9 +344,7 @@ async function finish(
     )
     .limit(1);
   const row = mediaRows[0];
-  const media: MessageMediaDto | null = row
-    ? { url: `/api/message-media/${row.id}`, mimeType: row.mimeType, durationMs: row.durationMs }
-    : null;
+  const media: MessageMediaDto | null = row ? toMediaDto(row) : null;
 
   publish(input.organizationId, {
     type: "message.updated",
@@ -318,6 +353,10 @@ async function finish(
       message: serializeMessage(message, null, media),
     },
   });
+
+  // 026: el turno de un video o documento ya salió en la ingesta (no
+  // espera al binario); soltarlo otra vez podría duplicar la respuesta.
+  if (input.plan?.kind === "store") return;
 
   // D9: la BAJA por audio no se puede detectar en la ingesta (ahí todavía no
   // había texto). Se re-evalúa acá con la transcripción, ANTES de soltar el

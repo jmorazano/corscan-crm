@@ -20,6 +20,8 @@ const bodySchema = z.object({
   mediaDownloadFails: z.boolean().optional(),
   /** 020: el próximo adjunto se declara más grande que el tope. */
   mediaTooLarge: z.boolean().optional(),
+  /** 026: la próxima subida de medios (`POST {pn}/media`) falla con 131053. */
+  mediaUploadFails: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -45,11 +47,15 @@ export async function POST(req: Request) {
   if (body.data.mediaTooLarge !== undefined) {
     state.mediaTooLarge = body.data.mediaTooLarge;
   }
+  if (body.data.mediaUploadFails !== undefined) {
+    state.mediaUploadFails = body.data.mediaUploadFails;
+  }
   return Response.json({
     failUploads: state.failUploads,
     failNextSend: state.failNextSend,
     historyDeclined: state.historyDeclined,
     mediaDownloadFails: state.mediaDownloadFails,
     mediaTooLarge: state.mediaTooLarge,
+    mediaUploadFails: state.mediaUploadFails,
   });
 }

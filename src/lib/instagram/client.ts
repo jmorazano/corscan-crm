@@ -110,10 +110,11 @@ export function buildInstagramAuthUrl(state: string): string {
 async function request(
   url: string,
   init: RequestInit,
-  secrets: (string | undefined)[]
+  secrets: (string | undefined)[],
+  timeoutMs: number = TIMEOUT_MS
 ): Promise<{ status: number; json: unknown; text: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(url, { ...init, signal: controller.signal });
@@ -177,6 +178,8 @@ export async function igGraphRequest<T>(
     token: string;
     query?: Record<string, string>;
     body?: unknown;
+    /** 026: un adjunto tarda más (Instagram baja el archivo antes de responder). */
+    timeoutMs?: number;
   }
 ): Promise<T> {
   const url = new URL(`${graphBase()}/${path}`);
@@ -193,7 +196,8 @@ export async function igGraphRequest<T>(
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     },
-    [opts.token]
+    [opts.token],
+    opts.timeoutMs
   );
   return json as T;
 }
@@ -392,6 +396,41 @@ export async function sendInstagramText(input: {
   const res = await igGraphRequest<{ message_id?: string; recipient_id?: string }>(
     `${encodeURIComponent(input.igUserId)}/messages`,
     { method: "POST", token: input.token, body }
+  );
+  if (!res?.message_id) {
+    throw new InstagramApiError("Instagram no devolvió el ID del mensaje", {
+      status: 502,
+    });
+  }
+  return { messageId: res.message_id };
+}
+
+export type InstagramAttachmentType = "image" | "video" | "audio" | "file";
+
+/**
+ * Envía UN adjunto (026) por URL: Instagram baja el archivo de `url` (un
+ * enlace firmado y con vencimiento del CRM) y lo re-aloja. No admite texto
+ * en el mismo mensaje: el epígrafe lo manda el llamador aparte.
+ */
+export async function sendInstagramAttachment(input: {
+  igUserId: string;
+  token: string;
+  recipientId: string;
+  type: InstagramAttachmentType;
+  url: string;
+  humanAgent?: boolean;
+}): Promise<{ messageId: string }> {
+  const body: Record<string, unknown> = {
+    recipient: { id: input.recipientId },
+    message: { attachment: { type: input.type, payload: { url: input.url } } },
+  };
+  if (input.humanAgent) {
+    body.messaging_type = "MESSAGE_TAG";
+    body.tag = "HUMAN_AGENT";
+  }
+  const res = await igGraphRequest<{ message_id?: string; recipient_id?: string }>(
+    `${encodeURIComponent(input.igUserId)}/messages`,
+    { method: "POST", token: input.token, body, timeoutMs: 60_000 }
   );
   if (!res?.message_id) {
     throw new InstagramApiError("Instagram no devolvió el ID del mensaje", {

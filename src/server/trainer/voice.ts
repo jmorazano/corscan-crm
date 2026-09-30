@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { transcribeAudio } from "@/lib/ai";
 import type { MessageMediaDto } from "@/lib/types";
+import { toMediaDto } from "@/lib/message-media";
 import { audioFormatForMime, type VoiceMime } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
 import { forceTrainerTurn } from "@/server/ai/trainer";
@@ -73,11 +74,12 @@ export async function createVoiceNote(input: {
       .where(eq(schema.conversation.id, input.conversationId));
     return { message, mediaId };
   });
-  const media: MessageMediaDto = {
-    url: `/api/message-media/${mediaId}`,
+  const media: MessageMediaDto = toMediaDto({
+    id: mediaId,
     mimeType: input.mimeType,
     durationMs: input.durationMs,
-  };
+    sizeBytes: input.bytes.byteLength,
+  });
   publish(input.organizationId, {
     type: "message.new",
     data: { conversationId: input.conversationId, message: serializeMessage(message, null, media) },
@@ -113,11 +115,7 @@ export async function transcribeVoiceNote(input: {
     .limit(1);
   const media = rows[0];
   if (!media) return;
-  const mediaDto: MessageMediaDto = {
-    url: `/api/message-media/${media.id}`,
-    mimeType: media.mimeType,
-    durationMs: media.durationMs,
-  };
+  const mediaDto: MessageMediaDto = toMediaDto(media);
 
   const finish = async (patch: {
     text?: string;

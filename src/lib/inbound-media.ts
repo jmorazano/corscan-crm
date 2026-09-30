@@ -4,8 +4,9 @@
  * Sin I/O, sin base de datos, sin red: recibe datos y devuelve datos. Acá
  * viven las tres decisiones que el resto del código solo ejecuta:
  *
- * 1. QUÉ se descarga (`planInboundMedia`): solo audio e imagen. Un video de
- *    16 MB no aporta nada al agente y sí llena Postgres.
+ * 1. QUÉ se descarga (`planInboundMedia`): audio e imagen se descargan Y
+ *    se le dan a la IA; desde 026 video y documento se descargan SOLO para
+ *    que el equipo los vea en el hilo (el agente no los lee).
  * 2. CUÁNTO se acepta (`MEDIA_MAX_BYTES`): el tope se aplica dos veces —
  *    con el `file_size` que declara Meta, antes de bajar el cuerpo, y otra
  *    vez sobre los bytes reales.
@@ -34,12 +35,18 @@ export type MediaType = (typeof MEDIA_TYPES)[number];
 
 /** Los únicos que se descargan y se le dan a la IA (D10). */
 export type ProcessedMediaType = "audio" | "image";
+/** 026: se descargan y se guardan para el equipo, sin IA. */
+export type StoredMediaType = "video" | "document";
 
-export const MEDIA_MAX_BYTES: Record<ProcessedMediaType, number> = {
+export const MEDIA_MAX_BYTES: Record<ProcessedMediaType | StoredMediaType, number> = {
   /** Mismo tope que la nota de voz del entrenador (015). */
   audio: 8 * 1024 * 1024,
   /** Mismo tope que el encabezado de plantilla (008). */
   image: 5 * 1024 * 1024,
+  /** 026: el máximo que WhatsApp deja mandar. */
+  video: 16 * 1024 * 1024,
+  /** 026: el mismo tope que el equipo tiene para enviar (decisión del dueño). */
+  document: 25 * 1024 * 1024,
 };
 
 /**
@@ -52,6 +59,11 @@ export const ATTACHMENT_MARKER = "[ADJUNTO]";
 export type MediaPlan =
   /** Se descarga y se manda a la IA. */
   | { kind: "process"; type: ProcessedMediaType; maxBytes: number }
+  /**
+   * 026: se descarga y se guarda para verlo en el hilo; NO retiene el turno
+   * del agente (su marcador no depende del binario).
+   */
+  | { kind: "store"; type: StoredMediaType; maxBytes: number }
   /** No se descarga, pero el agente se entera de que llegó. */
   | { kind: "acknowledge"; type: MediaType }
   /** Mensaje sin adjunto (texto, ubicación, contacto…). */
@@ -67,6 +79,9 @@ export function planInboundMedia(type: string, mediaId: string | null | undefine
   const media = type as MediaType;
   if ((media === "audio" || media === "image") && mediaId) {
     return { kind: "process", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
+  }
+  if ((media === "video" || media === "document") && mediaId) {
+    return { kind: "store", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
   }
   return { kind: "acknowledge", type: media };
 }

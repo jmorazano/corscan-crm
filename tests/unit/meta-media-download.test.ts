@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadMediaBinary, fetchMediaHandle, MetaApiError } from "@/lib/meta/client";
+import {
+  downloadMediaBinary,
+  fetchMediaHandle,
+  MetaApiError,
+  uploadWhatsAppMedia,
+} from "@/lib/meta/client";
 
 /**
  * 020 (D2): la URL del binario sale de un payload EXTERNO (respuesta de Meta,
@@ -141,3 +146,77 @@ describe("descarga de adjuntos de Meta", () => {
     expect(out.bytes.toString()).toBe("x");
   });
 });
+
+/** 026: subida de un adjunto para enviarlo (`POST {pn}/media`, multipart). */
+describe("uploadWhatsAppMedia", () => {
+  beforeEach(() => {
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
+    vi.stubEnv("DATABASE_URL", "postgresql://t:t@localhost:5432/t");
+    vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
+    vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
+    vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
+    vi.stubEnv("META_GRAPH_BASE_URL", "https://graph.facebook.com");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("manda multipart con file/type/messaging_product y devuelve el id", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "media_123" }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const id = await uploadWhatsAppMedia({
+      phoneNumberId: "pn_1",
+      token: "tok",
+      bytes: Buffer.from("%PDF-1.4 hola"),
+      mimeType: "application/pdf",
+      fileName: "presupuesto.pdf",
+    });
+    expect(id).toBe("media_123");
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toMatch(/\/v\d+\.\d+\/pn_1\/media$/);
+    expect(init.method).toBe("POST");
+    // El boundary lo pone fetch: NO se fuerza Content-Type JSON.
+    expect(init.headers["Content-Type"]).toBeUndefined();
+    expect(init.headers.Authorization).toBe("Bearer tok");
+    const form = init.body as FormData;
+    expect(form.get("messaging_product")).toBe("whatsapp");
+    expect(form.get("type")).toBe("application/pdf");
+    const file = form.get("file") as File;
+    expect(file.name).toBe("presupuesto.pdf");
+    expect(file.type).toBe("application/pdf");
+    expect(Buffer.from(await file.arrayBuffer()).toString()).toBe("%PDF-1.4 hola");
+  });
+
+  it("el rechazo de Meta llega como MetaApiError con el detalle", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "(#131053) Media upload error",
+              code: 131053,
+              error_data: { details: "Unsupported file type" },
+            },
+          }),
+          { status: 400 }
+        )
+      )
+    );
+    const err = await uploadWhatsAppMedia({
+      phoneNumberId: "pn_1",
+      token: "tok",
+      bytes: Buffer.from("x"),
+      mimeType: "image/jpeg",
+      fileName: "a.jpg",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MetaApiError);
+    expect((err as MetaApiError).code).toBe(131053);
+    expect((err as MetaApiError).message).toContain("Unsupported file type");
+    expect((err as MetaApiError).isAuthError).toBe(false);
+  });
+});
+

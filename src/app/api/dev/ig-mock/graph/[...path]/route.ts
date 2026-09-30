@@ -189,11 +189,19 @@ export async function POST(req: Request, ctx: Params) {
   if (path.length === 2 && path[1] === "messages") {
     const body = (await req.json().catch(() => null)) as {
       recipient?: { id?: string };
-      message?: { text?: string };
+      message?: {
+        text?: string;
+        attachment?: { type?: string; payload?: { url?: string } };
+      };
       tag?: string;
     } | null;
     const recipientId = body?.recipient?.id;
     const text = body?.message?.text ?? "";
+    // 026: adjunto por URL — Instagram BAJA el archivo antes de responder.
+    const attachment = body?.message?.attachment;
+    if (recipientId && attachment) {
+      return mockAttachmentSend(path[0]!, recipientId, attachment, body?.tag === "HUMAN_AGENT");
+    }
     if (!recipientId || !text) return err(400, 100, "Falta recipient o message.text");
     if (Buffer.byteLength(text, "utf8") > 1000) {
       return err(400, 100, "Message text exceeds the 1000 byte limit");
@@ -243,3 +251,78 @@ export async function DELETE(req: Request, ctx: Params) {
   }
   return err(404, 100, `ruta no simulada: ${path.join("/")}`);
 }
+
+/**
+ * 026: envío de un adjunto. Como Instagram real: no admite texto en el mismo
+ * mensaje, baja la URL (si no puede, el envío falla) y manda el eco con el
+ * adjunto. Lo bajado queda en el outbox para que el guion lo verifique.
+ */
+async function mockAttachmentSend(
+  igUserId: string,
+  recipientId: string,
+  attachment: { type?: string; payload?: { url?: string } },
+  humanAgent: boolean
+): Promise<Response> {
+  const s = getIgMockState();
+  const type = attachment.type ?? "";
+  const url = attachment.payload?.url ?? "";
+  if (!["image", "video", "audio", "file"].includes(type) || !url) {
+    return err(400, 100, "Invalid attachment type or missing payload.url");
+  }
+  if (s.failNextSend) {
+    const kind = s.failNextSend;
+    s.failNextSend = null;
+    if (kind === "auth") return err(401, 190, "Error validating access token");
+    if (kind === "down") return err(503, 2, "Service temporarily unavailable");
+    return err(400, 10, "This message is sent outside of allowed window.", 2018278);
+  }
+  let fetchedStatus = 0;
+  let contentType: string | null = null;
+  let bytes = new Uint8Array();
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "facebookexternalua" } });
+    fetchedStatus = res.status;
+    contentType = res.headers.get("content-type");
+    if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+  } catch {
+    fetchedStatus = 0;
+  }
+  if (fetchedStatus !== 200 || bytes.byteLength === 0) {
+    return err(400, 100, `(#100) Upload attachment failure: could not fetch the URL (status ${fetchedStatus})`);
+  }
+  const mid = `mock.ig.out.${nextIgN()}`;
+  s.outbox.push({
+    mid,
+    igUserId,
+    recipientId,
+    text: "",
+    humanAgent,
+    attachment: {
+      type,
+      url,
+      fetchedStatus,
+      contentType,
+      size: bytes.byteLength,
+      head: Buffer.from(bytes.subarray(0, 8)).toString("hex"),
+    },
+    at: new Date().toISOString(),
+  });
+  if (s.echoSends) {
+    setTimeout(() => {
+      void deliverToInstagramWebhook(
+        instagramPayload(igUserId, {
+          sender: { id: igUserId },
+          recipient: { id: recipientId },
+          timestamp: Date.now(),
+          message: {
+            mid,
+            is_echo: true,
+            attachments: [{ type, payload: { url: `https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=${mid}` } }],
+          },
+        })
+      ).catch(() => {});
+    }, 50);
+  }
+  return Response.json({ recipient_id: recipientId, message_id: mid });
+}
+

@@ -253,6 +253,9 @@ export async function listMessages(
     mediaId: string | null;
     mediaMime: string | null;
     mediaDuration: number | null;
+    /** 026: nombre y tamaño para la tarjeta del documento. */
+    mediaFileName: string | null;
+    mediaSize: number | null;
   }[]
 > {
   const db = getDb();
@@ -263,6 +266,8 @@ export async function listMessages(
       mediaId: schema.messageMedia.id,
       mediaMime: schema.messageMedia.mimeType,
       mediaDuration: schema.messageMedia.durationMs,
+      mediaFileName: schema.messageMedia.fileName,
+      mediaSize: schema.messageMedia.sizeBytes,
     })
     .from(schema.message)
     .leftJoin(schema.apiKey, eq(schema.apiKey.id, schema.message.apiKeyId))

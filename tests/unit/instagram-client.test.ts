@@ -129,6 +129,34 @@ describe("sendInstagramText", () => {
   });
 });
 
+describe("sendInstagramAttachment (026)", () => {
+  it("adjunto por URL, sin texto, con HUMAN_AGENT opcional", async () => {
+    const { sendInstagramAttachment } = await import("@/lib/instagram/client");
+    const calls = stubFetch(200, { recipient_id: "c1", message_id: "mid-9" });
+    const res = await sendInstagramAttachment({
+      igUserId: "178",
+      token: "tok",
+      recipientId: "c1",
+      type: "file",
+      url: "https://crm.test/api/media-link/mm_1?e=1&s=x",
+      humanAgent: true,
+    });
+    expect(res).toEqual({ messageId: "mid-9" });
+    expect(calls[0]!.url).toBe("https://graph.instagram.com/v25.0/178/messages");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
+      recipient: { id: "c1" },
+      message: {
+        attachment: {
+          type: "file",
+          payload: { url: "https://crm.test/api/media-link/mm_1?e=1&s=x" },
+        },
+      },
+      messaging_type: "MESSAGE_TAG",
+      tag: "HUMAN_AGENT",
+    });
+  });
+});
+
 describe("hosts de adjuntos", () => {
   it("solo CDN de Meta/Instagram", async () => {
     const { isAllowedInstagramMediaHost } = await import("@/lib/instagram/client");

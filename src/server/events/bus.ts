@@ -12,7 +12,8 @@ export type SseEvent =
   | { type: "message.updated"; data: { conversationId: string; message: unknown } }
   | {
       type: "message.status";
-      data: { conversationId: string; messageId: string; status: string };
+      /** 026: `error` = motivo de un fallo asincrónico (null si no falló). */
+      data: { conversationId: string; messageId: string; status: string; error?: string | null };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
   /** Cambio en bloque (006): un solo evento por operación, no uno por fila. */

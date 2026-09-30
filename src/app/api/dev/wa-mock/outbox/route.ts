@@ -7,7 +7,11 @@ export async function GET() {
   const guard = mockGuard();
   if (guard) return guard;
   const state = getWaMockState();
-  return Response.json({ outbox: state.outbox, syncRequests: state.syncRequests });
+  return Response.json({
+    outbox: state.outbox,
+    syncRequests: state.syncRequests,
+    mediaUploads: state.mediaUploads,
+  });
 }
 
 export async function DELETE() {

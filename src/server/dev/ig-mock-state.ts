@@ -10,8 +10,18 @@ export type IgMockSend = {
   mid: string;
   igUserId: string;
   recipientId: string;
+  /** "" en un adjunto (Instagram no admite texto junto al adjunto). */
   text: string;
   humanAgent: boolean;
+  /** 026: adjunto por URL, con lo que obtuvo el mock al BAJARLO. */
+  attachment?: {
+    type: string;
+    url: string;
+    fetchedStatus: number;
+    contentType: string | null;
+    size: number;
+    head: string;
+  };
   at: string;
 };
 

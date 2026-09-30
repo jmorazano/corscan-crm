@@ -18,6 +18,8 @@ const schema = z.object({
   /** 020: adjunto. Sin esto el mock emite el id `mediamock_<tipo>_<n>`. */
   mediaId: z.string().optional(),
   mediaMime: z.string().optional(),
+  /** 026: nombre del documento entrante. */
+  filename: z.string().optional(),
   waMessageId: z.string().optional(),
   timestamp: z.number().optional(),
 });
