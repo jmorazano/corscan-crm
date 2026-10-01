@@ -77,6 +77,8 @@ type RoomTypeView = {
 type ProviderSettingsView = {
   hotelId: string;
   rateCode: string;
+  /** Moneda que informó MiniHotel al verificar este hotel con esta tarifa. */
+  currency: string | null;
   bookingEngineHost: string | null;
   showPrices: boolean;
   showNonRefundable: boolean;
@@ -182,12 +184,13 @@ const ERROR_TEXT: Record<string, string> = {
   http_error: "No se pudo conectar con el servidor.",
   // 028: motivos y rechazos de MiniHotel (espejo de PROVIDER_REASON_TEXT).
   auth: "El sistema del hotel rechazó el usuario o la contraseña. Revisalos y volvé a cargarlos.",
-  hotel: "El sistema del hotel no reconoce el código de hotel. Avisale al administrador de la instancia.",
+  hotel: "El sistema del hotel no reconoce el código de hotel. Revisalo en la configuración del conector.",
   ip_not_authorized:
     "El sistema del hotel todavía no autorizó la IP de este servidor. Hay que pedirle al proveedor que la agregue.",
   not_configured:
-    "Falta completar la configuración del hotel (código de hotel y tarifa). Avisale al administrador de la instancia.",
-  rate_code: "El sistema del hotel no reconoce el código de tarifa. Avisale al administrador de la instancia.",
+    "Falta completar la configuración del hotel (código de hotel y tarifa) en la tarjeta del conector.",
+  rate_code:
+    "El sistema del hotel no reconoce el código de tarifa. Revisalo en la configuración del conector (el hotel lo ve en MiniHotel).",
   hotel_settings:
     "El sistema del hotel tiene la configuración de precios u ocupación incompleta. Hay que revisarla en MiniHotel.",
   invalid_dates: "El sistema del hotel no aceptó esas fechas.",
@@ -198,7 +201,32 @@ const ERROR_TEXT: Record<string, string> = {
 };
 
 /** 028: los motivos que vale la pena mostrar en el aviso de reconexión. */
-const RECONNECT_REASONS = new Set(["auth", "hotel", "ip_not_authorized"]);
+const RECONNECT_REASONS = new Set(["auth", "hotel", "ip_not_authorized", "rate_code"]);
+
+/** 028: mismo patrón que el servidor para el código de hotel y la tarifa. */
+const MH_CODE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+
+const CURRENCY_NAMES: Record<string, string> = {
+  ARS: "pesos argentinos (ARS)",
+  USD: "dólares (USD)",
+  EUR: "euros (EUR)",
+  BRL: "reales (BRL)",
+  CLP: "pesos chilenos (CLP)",
+  UYU: "pesos uruguayos (UYU)",
+};
+
+function currencyLabel(code: string): string {
+  return CURRENCY_NAMES[code] ?? code;
+}
+
+/** Aviso de «Verificar» con lo que contestó el hotel (la moneda de la tarifa). */
+function verifiedNotice(view: IntegrationView | null | undefined): string {
+  const ps = view?.providerSettings;
+  if (!ps) return "Conexión verificada: el servidor respondió correctamente.";
+  return ps.currency
+    ? `Conexión verificada: MiniHotel respondió y la tarifa ${ps.rateCode} cotiza en ${currencyLabel(ps.currency)}.`
+    : `Conexión verificada: MiniHotel respondió con la tarifa ${ps.rateCode}.`;
+}
 
 const FALLBACK_ERROR = "No se pudo conectar con el servidor.";
 
@@ -396,6 +424,9 @@ function ConnectionCard({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [editingHotel, setEditingHotel] = useState(false);
+  const [hotelDraft, setHotelDraft] = useState(integration.providerSettings?.hotelId ?? "");
+  const [rateDraft, setRateDraft] = useState(integration.providerSettings?.rateCode ?? "");
 
   const badge = STATUS_BADGE[integration.status];
   const hasCredential = integration.credentialLast4 !== null;
@@ -405,6 +436,52 @@ function ConnectionCard({
   const canSubmit = isMiniHotel
     ? mhUser.trim() !== "" && mhPass.trim() !== ""
     : credential.trim().length >= 8;
+  // 028: sin hotel o tarifa válidos el editor queda abierto (no se puede consultar).
+  const showHotelForm = isMiniHotel && (editingHotel || !settings);
+  const hotelChanged =
+    hotelDraft.trim() !== (settings?.hotelId ?? "") || rateDraft.trim() !== (settings?.rateCode ?? "");
+  const canSaveHotel =
+    MH_CODE_RE.test(hotelDraft.trim()) && MH_CODE_RE.test(rateDraft.trim()) && hotelChanged;
+
+  function openHotelEditor() {
+    setHotelDraft(settings?.hotelId ?? "");
+    setRateDraft(settings?.rateCode ?? "");
+    setEditingHotel(true);
+  }
+
+  /** Guardar hotel/tarifa y, si ya hay credencial, verificar en el mismo gesto. */
+  async function saveHotel() {
+    const hotelId = hotelDraft.trim();
+    const rateCode = rateDraft.trim();
+    const body: Record<string, string> = {};
+    if (hotelId !== (settings?.hotelId ?? "")) body.hotelId = hotelId;
+    if (rateCode !== (settings?.rateCode ?? "")) body.rateCode = rateCode;
+    if (Object.keys(body).length === 0) {
+      setEditingHotel(false);
+      return;
+    }
+    setBusy(true);
+    onError(null);
+    onNotice(null);
+    const res = await fetch("/api/integrations/mcp", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setBusy(false);
+      onError(messageFromError(await readApiError(res)));
+      return;
+    }
+    setEditingHotel(false);
+    if (hasCredential) {
+      await verify({ silent: true });
+    } else {
+      onNotice("Guardado. Cargá el usuario y la contraseña de la API para verificarlo.");
+      await onChanged();
+    }
+    setBusy(false);
+  }
 
   /** Cargar/rotar la credencial y verificar en el mismo gesto. */
   async function connect() {
@@ -452,7 +529,8 @@ function ConnectionCard({
       await onChanged();
       return;
     }
-    onNotice("Conexión verificada: el servidor respondió correctamente.");
+    const data = (await res.json().catch(() => null)) as { integration?: IntegrationView } | null;
+    onNotice(verifiedNotice(data?.integration));
     await onChanged();
   }
 
@@ -488,7 +566,7 @@ function ConnectionCard({
         </div>
         <CardDescription>
           {isMiniHotel
-            ? "La dirección y los datos del hotel los carga el administrador de la instancia. Acá van el usuario y la contraseña de la API que te dio MiniHotel."
+            ? "La dirección de la API y el enlace del motor de reservas los carga el administrador de la instancia. Acá van el usuario y la contraseña de la API que te dio MiniHotel, el código del hotel y la tarifa con la que cotiza el asistente."
             : "La dirección del servidor la carga el administrador de la instancia. Acá solo va la credencial que te pasó el proveedor."}
         </CardDescription>
       </CardHeader>
@@ -505,7 +583,14 @@ function ConnectionCard({
               <Row label="Hotel">
                 <span data-testid="mh-hotel">{settings.hotelId}</span>
               </Row>
-              <Row label="Tarifa">{settings.rateCode}</Row>
+              <Row label="Tarifa">
+                <span data-testid="mh-rate">{settings.rateCode}</span>
+                {settings.currency && (
+                  <span className="text-muted-foreground" data-testid="mh-currency">
+                    {` · cotiza en ${currencyLabel(settings.currency)}`}
+                  </span>
+                )}
+              </Row>
               <Row label="Motor de reservas">
                 {settings.bookingEngineHost ?? (
                   <span className="text-muted-foreground">Sin cargar (el agente no manda enlace)</span>
@@ -557,6 +642,53 @@ function ConnectionCard({
 
         {canManage ? (
           <fieldset disabled={busy} className="min-w-0 space-y-3">
+            {showHotelForm && (
+              <div className="space-y-3 rounded-md border p-3" data-testid="mh-hotel-form">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="mh-hotel-id">Código de hotel</Label>
+                    <Input
+                      id="mh-hotel-id"
+                      data-testid="mh-hotel-id"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={hotelDraft}
+                      onChange={(e) => setHotelDraft(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="mh-rate-code">Código de tarifa</Label>
+                    <Input
+                      id="mh-rate-code"
+                      data-testid="mh-rate-code"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={rateDraft}
+                      onChange={(e) => setRateDraft(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Los dos los da el hotel desde MiniHotel. La tarifa define la
+                  moneda: para cotizar en pesos, usá el código de la tarifa en
+                  pesos. Al guardar se verifica con una consulta de prueba.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => void saveHotel()}
+                    disabled={!canSaveHotel}
+                    data-testid="mh-hotel-save"
+                  >
+                    {busy ? "Guardando…" : hasCredential ? "Guardar y verificar" : "Guardar"}
+                  </Button>
+                  {settings && (
+                    <Button variant="ghost" onClick={() => setEditingHotel(false)}>
+                      Cancelar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
             {showForm && isMiniHotel && (
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
@@ -634,6 +766,11 @@ function ConnectionCard({
               {hasCredential && !editing && (
                 <Button variant="outline" onClick={() => setEditing(true)}>
                   Cambiar credencial
+                </Button>
+              )}
+              {isMiniHotel && settings && !editingHotel && (
+                <Button variant="outline" onClick={openHotelEditor} data-testid="mh-hotel-edit">
+                  Cambiar hotel o tarifa
                 </Button>
               )}
               {hasCredential && (

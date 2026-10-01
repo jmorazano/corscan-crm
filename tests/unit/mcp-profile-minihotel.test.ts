@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { AvailabilityPayload, RangeResult, RoomCatalogPayload } from "@/lib/minihotel";
 import { MCP_MARKER, TOOL_MARKER_LITERAL } from "@/server/mcp/markers";
 import { getProfile, type SearchStaysAction, type StayCatalog } from "@/server/mcp/profiles";
-import { formatMoney, minihotel } from "@/server/mcp/profiles/minihotel";
+import {
+  availabilityCurrency,
+  formatMoney,
+  miniHotelProbeArgs,
+  minihotel,
+} from "@/server/mcp/profiles/minihotel";
 import {
   buildMiniHotelAdminConfig,
+  cleanCurrency,
+  miniHotelOwnerSettingsSchema,
   readMiniHotelConfig,
+  verifiedCurrencyOf,
   withMiniHotelOwnerSettings,
 } from "@/server/mcp/profiles/minihotel-config";
 
@@ -97,6 +105,56 @@ describe("parseCatalog — capacidad y atributos garantizados del TIPO", () => {
     expect(c.maxGuests).toBe(6);
   });
 
+  it("sin habitaciones (getRooms caído): conserva la última lectura completa del MISMO hotel", () => {
+    const full = minihotel.parseCatalog(CATALOG_PAYLOAD, OPTS)!;
+    expect(full.roomsHotelId).toBe("sandbox");
+    const typesOnly = { roomTypes: CATALOG_PAYLOAD.roomTypes, rooms: null };
+    expect(minihotel.parseCatalog(typesOnly, { ...OPTS, previousCatalog: full })).toBe(full);
+    // Otro hotel, o un anterior que también era incompleto: se arma con los tipos solos.
+    const other = minihotel.parseCatalog(typesOnly, {
+      providerConfig: { ...CONFIG, hotelId: "otro" },
+      previousCatalog: full,
+    })!;
+    expect(other.roomsHotelId).toBeUndefined();
+    expect(other.roomTypes?.map((t) => t.code)).toEqual(["DBL", "FAM", "SUITE"]);
+    const again = minihotel.parseCatalog(typesOnly, { ...OPTS, previousCatalog: other })!;
+    expect(again.roomTypes?.every((t) => t.maxAdults === null)).toBe(true);
+  });
+
+  it("capacidad desconocida no descarta el tipo; atributos sin letras (coordenadas) no son atributos", () => {
+    const c = minihotel.parseCatalog({
+      roomTypes: [{ code: "Executive", description: "Executive Room", image: null }],
+      rooms: [
+        {
+          number: "1",
+          type: "Executive",
+          mapped: null,
+          maxAdults: null,
+          maxChildren: null,
+          maxBabies: null,
+          attributes: [
+            { code: "1", description: "Vista al bosque" },
+            { code: "2", description: "32.07530801101282" },
+          ],
+        },
+      ],
+    } satisfies RoomCatalogPayload)!;
+    expect(c.roomTypes?.[0]).toMatchObject({ maxAdults: null, attributes: ["Vista al bosque"] });
+    // El grupo no se descarta por una capacidad que el hotel no cargó: decide MiniHotel.
+    const out = minihotel.render(
+      search({ adults: 4 }),
+      {
+        ...payload(),
+        guests: { adults: 4, children: 0, babies: 0 },
+        ranges: [{ from: "2026-11-10", to: "2026-11-12", nights: 2, error: null, rooms: [room("Executive", 1)] }],
+      },
+      c,
+      OPTS
+    );
+    expect(out.toolText).not.toContain("No alcanza");
+    expect(out.toolText).toContain("Executive");
+  });
+
   it("payload roto ⇒ null", () => {
     expect(minihotel.parseCatalog({ nope: true })).toBeNull();
   });
@@ -148,9 +206,19 @@ describe("validate — antes de gastar una consulta", () => {
         children: 1,
         babies: 0,
         alternatives: true,
+        // La tarifa viaja en los argumentos: clave de caché y bitácora.
+        rate_code: "USD",
         conversation_id: "cv_1",
       },
     });
+  });
+
+  it("la tarifa que eligió la empresa es la que se consulta (y cambia la clave de caché)", () => {
+    const v = minihotel.validate(search(), catalog(), NOW, {
+      ...OPTS,
+      providerConfig: { ...CONFIG, rateCode: "ARS" },
+    });
+    expect(v.ok && v.args.rate_code).toBe("ARS");
   });
 
   it("comparación: hasta 3 rangos, sin alternativas; más de 3 se rechaza", () => {
@@ -415,5 +483,56 @@ describe("minihotel-config — dos dueños", () => {
       rateCode: "r",
       showPrices: false,
     });
+  });
+
+  it("la empresa también elige hotel y tarifa (1-oct-2026); el formato se valida", () => {
+    expect(
+      withMiniHotelOwnerSettings(
+        { hotelId: "sandbox", rateCode: "USD", bookingEngineUrl: BOOKING },
+        { hotelId: "bosque-douglas", rateCode: "ARS_WEB" }
+      )
+    ).toEqual({ hotelId: "bosque-douglas", rateCode: "ARS_WEB", bookingEngineUrl: BOOKING });
+    expect(miniHotelOwnerSettingsSchema.safeParse({ rateCode: "ARS WEB" }).success).toBe(false);
+    expect(miniHotelOwnerSettingsSchema.safeParse({ hotelId: "<x>" }).success).toBe(false);
+    expect(miniHotelOwnerSettingsSchema.safeParse({ hotelId: " h1 ", rateCode: "Hotdeal" }).data).toEqual({
+      hotelId: "h1",
+      rateCode: "Hotdeal",
+    });
+  });
+
+  it("la moneda verificada vale SOLO para el mismo hotel y la misma tarifa", () => {
+    const raw = {
+      ...CONFIG,
+      verifiedQuote: { hotelId: "sandbox", rateCode: "USD", currency: "usd" },
+    };
+    expect(verifiedCurrencyOf(raw, { hotelId: "sandbox", rateCode: "USD" })).toBe("USD");
+    expect(verifiedCurrencyOf(raw, { hotelId: "sandbox", rateCode: "ARS" })).toBeNull();
+    expect(verifiedCurrencyOf(raw, { hotelId: "otro", rateCode: "USD" })).toBeNull();
+    expect(verifiedCurrencyOf(CONFIG, { hotelId: "sandbox", rateCode: "USD" })).toBeNull();
+    // Texto del proveedor: solo un código ISO de tres letras.
+    expect(cleanCurrency("ARS")).toBe("ARS");
+    expect(cleanCurrency("<b>ARS</b>")).toBeNull();
+    expect(cleanCurrency(null)).toBeNull();
+    // El super admin reconfigurando no la pierde (el lector decide si aplica).
+    const built = buildMiniHotelAdminConfig(
+      { hotelId: "sandbox", rateCode: "USD", bookingEngineUrl: BOOKING },
+      raw
+    );
+    expect(built.ok && verifiedCurrencyOf(built.config, { hotelId: "sandbox", rateCode: "USD" })).toBe("USD");
+  });
+
+  it("consulta de prueba de «Verificar»: una noche, un adulto, a 30 días, con la tarifa y alternativas", () => {
+    // Con alternativas: Immediate no valida la tarifa (vacío = «sin lugar»), Bulk sí.
+    expect(miniHotelProbeArgs("ARS", "2026-10-01")).toEqual({
+      ranges: [{ from: "2026-10-31", to: "2026-11-01" }],
+      adults: 1,
+      children: 0,
+      babies: 0,
+      alternatives: true,
+      rate_code: "ARS",
+    });
+    expect(availabilityCurrency({ hotel: { name: "x", currency: "ARS" }, ranges: [] })).toBe("ARS");
+    expect(availabilityCurrency({ hotel: { currency: "pesos" } })).toBeNull();
+    expect(availabilityCurrency(null)).toBeNull();
   });
 });

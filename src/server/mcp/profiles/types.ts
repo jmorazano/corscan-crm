@@ -31,7 +31,15 @@ export type LinkHostOptions = { linkHosts?: readonly string[] };
 export type ProviderConfig = Record<string, unknown> | null;
 
 /** Opciones que el runtime le pasa a TODAS las funciones del perfil. */
-export type ProfileOptions = LinkHostOptions & { providerConfig?: ProviderConfig };
+export type ProfileOptions = LinkHostOptions & {
+  providerConfig?: ProviderConfig;
+  /**
+   * 028: el catálogo guardado. Si la lectura nueva viene incompleta (el hotel
+   * respondió los tipos pero no las habitaciones), el perfil conserva la
+   * última completa en vez de degradarla.
+   */
+  previousCatalog?: StayCatalog | null;
+};
 
 /** Claves del enum `mcp_integration.profile`: son las de `PROFILES`. */
 export type McpProfileKey = "generic" | "altos_de_calamuchita" | "minihotel";
@@ -105,6 +113,11 @@ export type StayCatalog = {
    * habitación puntual). Ausente en los perfiles de alquiler temporario.
    */
   roomTypes?: StayRoomType[];
+  /**
+   * 028: hotel cuyas HABITACIONES (capacidad, atributos y asignación) están
+   * en `roomTypes`. Ausente si el catálogo se armó solo con los tipos.
+   */
+  roomsHotelId?: string;
 };
 
 export type StayRoomType = {

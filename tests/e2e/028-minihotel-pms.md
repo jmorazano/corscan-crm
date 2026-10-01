@@ -31,6 +31,9 @@ Fechas: `D1` = hoy + 30, `D2` = D1 + 2 (2 noches).
 | 17 | Laboratorio: persona de alojamiento | Cero llamadas al simulador; filas `is_test` en la bitácora |
 | 18 | Logs del servidor | La contraseña de prueba no aparece |
 | 19 | Restaurar el conector de Altos desde la copia | Fila idéntica a la original |
+| 20 | Integraciones → «Cambiar hotel o tarifa» → tarifa `ARS` → «Guardar y verificar» | Catálogo + 1 Immediate de prueba; «la tarifa ARS cotiza en …» |
+| 21 | Tarifa inexistente (`NOEXISTE`) | «…no reconoce el código de tarifa…» + «Requiere reconexión»; volver a `USD` → «Conectada» |
+| 22 | Hotel inexistente | «…no reconoce el código de hotel…»; se borra el catálogo del hotel anterior; volver a `sandbox` → catálogo de nuevo |
 
 ## Corrida 1-oct-2026 — 19/19 ✅
 
@@ -51,3 +54,44 @@ Evidencia (dev server del worktree, empresa `principal`):
 - 19: fila de Altos restaurada idéntica (credencial cifrada incluida); Verificar → 3 herramientas; búsqueda → 6 alojamientos.
 - Móvil 375 px: sin desborde; vista previa con alternativas legible.
 - Gotchas del guion: el número `5493515550101` ya existía con BAJA (el agente calla, correcto); usar números nuevos. `javascript_tool` corta a los 45 s: mandar y sondear en llamadas separadas. El `<select>` controlado de React no toma `form_input`: setter nativo + `change`.
+
+## Corrida contra el sandbox REAL de MiniHotel — 1-oct-2026
+
+Credenciales públicas del sandbox cargadas por el dueño en `principal`
+(Integraciones). Todo por la UI o por `POST /api/integrations/mcp/preview` (la
+misma consulta que el botón «Probar una consulta»), y una conversación por
+wa-mock con el ai-mock (el modelo es el simulador; los datos, del sandbox).
+
+- **Verificar**: `getRoomTypes` + `getRooms` (28 habitaciones, 17 asignadas,
+  34 KB) + Immediate de prueba (~300 ms) → «Conectada», «la tarifa USD cotiza
+  en dólares (USD)». Catálogo: 5 tipos asignados (DBL hasta 2 adultos,
+  Executive hasta 3, SNG/TRP/Twin sin ocupación configurada en el sandbox).
+- **Tarifa `ARS`**: el sandbox la ACEPTA, con otra lista de precios (doble, 2
+  noches: 40.580 contra 980 de `USD`) pero informa `Currency="USD"` en las
+  dos. Pregunta abierta para MiniHotel: ¿`Currency` es la moneda de la tarifa
+  o la del hotel?
+- **Tarifa inexistente (`NOEXISTE`)**: *Immediate ARI* NO la rechaza —devuelve
+  una respuesta vacía (596 B), igual que «sin lugar»—; *Bulk ARI* sí (ERR 308).
+  La primera versión de la consulta de prueba (sin alternativas) daba
+  «Conectada» con una tarifa inválida: corregido (tasks F2) → ahora «…no
+  reconoce el código de tarifa…» + «Requiere reconexión», sin moneda vieja en
+  la tarjeta; volver a `USD` → «Conectada», «cotiza en dólares (USD)».
+- **Hotel inexistente**: «…no reconoce el código de hotel…» + «Requiere
+  reconexión»; volver a `sandbox` → «Conectada» con el catálogo de nuevo.
+- **`to` = salida (SC3)**: 10→11 = 490 (BB) contra 10→12 = 980 → confirmado.
+- **Con chicos**: 2 adultos + 1 niño + 1 bebé → MiniHotel devuelve solo la
+  triple (1.280); enlace con `nChilds=1&nBabies=1&roomType=TRP`.
+- **Grupo grande (5 adultos)**: el sandbox ofrece la triple (sin ocupación
+  configurada allá: decide MiniHotel). Para producción, el hotel tiene que
+  tener cargados los máximos por tipo en MiniHotel.
+- **Fecha pasada**: 422 propio en 61 ms, sin llamar a MiniHotel.
+- **WhatsApp**: «Del 2026-11-10 al 2026-11-12, somos 2 adultos» → doble y
+  Executive con el total por régimen en USD y UN enlace al motor del sandbox
+  con `from`/`to`/`nAdults`/`currency`/`language`.
+- **Latencia del sandbox**: muy variable (Immediate 0,3–7,4 s; `getRoomTypes`
+  0,4 s a más de 10 s). Dos verificaciones se cortaron a los **5 s** con plazo
+  de 10 → causa: agente HTTP global de Node (ver tasks F5), corregido; después
+  solo cortes reales a los 10 s, que degradan bien (texto propio, la
+  integración sigue «Conectada», reintentar anda).
+- **Hallazgos corregidos en la corrida**: ocupación «0 adultos», coordenadas
+  como atributo, catálogo degradado por un `getRooms` fallido (tasks F4).

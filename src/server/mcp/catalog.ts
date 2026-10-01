@@ -126,6 +126,7 @@ async function fetchCatalog(
     // 022: el `search_link.base` del catálogo es del sitio de esta empresa.
     linkHosts: integration.endpointHost ? [integration.endpointHost] : [],
     providerConfig: integration.providerConfig ?? null,
+    previousCatalog: integration.catalog,
   });
   if (!parsed) return integration.catalog;
 

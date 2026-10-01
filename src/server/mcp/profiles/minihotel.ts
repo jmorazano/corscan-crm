@@ -36,7 +36,11 @@ import {
 } from "@/lib/minihotel";
 import { toLocalParts, WEEKDAY_ES_LONG } from "@/lib/time";
 import { TOOL_MARKER_LITERAL, MCP_MARKER } from "@/server/mcp/markers";
-import { readMiniHotelConfig, type MiniHotelProviderConfig } from "@/server/mcp/profiles/minihotel-config";
+import {
+  cleanCurrency,
+  readMiniHotelConfig,
+  type MiniHotelProviderConfig,
+} from "@/server/mcp/profiles/minihotel-config";
 import { safeLink, safeName, sanitizeForeignText } from "@/server/mcp/sanitize";
 import type {
   LinkHostOptions,
@@ -104,6 +108,39 @@ function resolveTimezone(tz: string | null | undefined): string {
   return tz && tz.trim() !== "" ? tz : DEFAULT_TIMEZONE;
 }
 
+/** A cuántos días se hace la consulta de prueba de «Verificar». */
+export const PROBE_OFFSET_DAYS = 30;
+
+/**
+ * 028: la consulta mínima con la que «Verificar» prueba la TARIFA, que la API
+ * de contenido no usa: una noche, un adulto, a 30 días. Misma forma que lo
+ * que arma `validate`, así la bitácora la muestra como cualquier consulta.
+ *
+ * CON alternativas a propósito. Visto en el sandbox real (1-oct-2026):
+ * *Immediate ARI* NO valida la tarifa —con un código inexistente devuelve una
+ * respuesta vacía, igual que «no hay lugar»—; *Bulk ARI* sí (ERR 308). Si la
+ * fecha de prueba viene sin habitaciones, el camino de alternativas pasa por
+ * Bulk y una tarifa inválida queda en evidencia como error de configuración.
+ */
+export function miniHotelProbeArgs(rateCode: string, today: string): Record<string, unknown> {
+  const from = addDays(today, PROBE_OFFSET_DAYS);
+  return {
+    ranges: [{ from, to: addDays(from, 1) }],
+    adults: 1,
+    children: 0,
+    babies: 0,
+    alternatives: true,
+    rate_code: rateCode,
+  };
+}
+
+/** La moneda que informó MiniHotel en una respuesta de disponibilidad. */
+export function availabilityCurrency(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const hotel = (data as { hotel?: { currency?: unknown } }).hotel;
+  return cleanCurrency(hotel?.currency);
+}
+
 export function localToday(now: Date, timezone: string | null | undefined): string {
   const p = toLocalParts(resolveTimezone(timezone), now);
   return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
@@ -164,10 +201,18 @@ function minOf(values: Array<number | null>): number | null {
   return known.length === 0 ? null : Math.min(...known);
 }
 
-function parseCatalog(raw: unknown): StayCatalog | null {
+function parseCatalog(raw: unknown, opts?: ProfileOptions): StayCatalog | null {
   const root = asRecord(raw) as Partial<RoomCatalogPayload> | null;
   if (!root || !Array.isArray(root.roomTypes)) return null;
-  const rooms = Array.isArray(root.rooms) ? root.rooms : [];
+  const hotelId = configOf(opts)?.hotelId ?? null;
+  const withRooms = Array.isArray(root.rooms);
+  // Visto en el sandbox real (1-oct-2026): `getRooms` falla de a ratos. Sin
+  // habitaciones, el catálogo pierde capacidad, atributos y el filtro de
+  // asignadas; no se pisa uno completo DEL MISMO HOTEL con eso: se conserva
+  // la última lectura completa hasta la próxima.
+  const previous = opts?.previousCatalog ?? null;
+  if (!withRooms && hotelId && previous?.roomsHotelId === hotelId) return previous;
+  const rooms = withRooms ? (root.rooms ?? []) : [];
   // D5: si MiniHotel marca habitaciones asignadas al usuario que consulta,
   // solo esas cuentan: las demás no aparecen en la disponibilidad.
   const anyMapped = rooms.some((r) => r.mapped === true);
@@ -180,12 +225,13 @@ function parseCatalog(raw: unknown): StayCatalog | null {
     const pool = anyMapped ? its.filter((r) => r.mapped === true) : its;
     if (anyMapped && pool.length === 0) continue;
 
-    // Atributos que tienen TODAS las habitaciones del tipo.
+    // Atributos que tienen TODAS las habitaciones del tipo. Sin una sola letra
+    // no es un atributo para un huésped (el sandbox real trae coordenadas).
     let common: string[] | null = null;
     for (const room of pool) {
       const own = room.attributes
         .map((a) => sanitizeForeignText(a.description, MAX_ATTRIBUTE_CHARS))
-        .filter((a) => a !== "");
+        .filter((a) => /\p{L}/u.test(a));
       common = common === null ? own : common.filter((a) => own.includes(a));
     }
 
@@ -212,6 +258,7 @@ function parseCatalog(raw: unknown): StayCatalog | null {
     maxGuests: capacities.length > 0 ? Math.max(...capacities) : null,
     searchBase: null,
     roomTypes,
+    ...(withRooms && hotelId ? { roomsHotelId: hotelId } : {}),
   };
 }
 
@@ -437,6 +484,10 @@ function validate(
     children,
     babies,
     alternatives: ranges.length === 1,
+    // La tarifa viaja en los argumentos a propósito: es parte de la clave de
+    // la caché de `callGuarded` (cambiarla no puede devolver precios de la
+    // anterior) y queda en la bitácora con cada consulta.
+    rate_code: config.rateCode,
   };
 
   if (search.room_type) {

@@ -146,6 +146,26 @@ describe("postGuardedText — mismo socket protegido, cuerpo de texto", () => {
     expect(seen).toHaveLength(0);
   });
 
+  it("conexión propia por pedido: el keep-alive de 5 s del agente global no corta antes del plazo", async () => {
+    handler = (_req, _body, res) => send(res, "<A/>", "text/xml");
+    let agent: unknown = "sin tocar";
+    await postGuardedText({
+      endpointUrl: `${base}/gds`,
+      body: "<x/>",
+      contentType: "text/xml",
+      accept: "text/xml",
+      allowedContentTypes: ["text/xml"],
+      timeoutMs: 2_000,
+      maxResponseBytes: 1024,
+      sandbox: false,
+      request: ((options: http.RequestOptions, cb: (res: IncomingMessage) => void) => {
+        agent = options.agent;
+        return http.request(options, cb);
+      }) as never,
+    });
+    expect(agent).toBe(false);
+  });
+
   it("no parte un carácter multibyte que cae entre dos pedazos", async () => {
     handler = (_req, _body, res) => {
       const buf = Buffer.from("<A>Habitación</A>", "utf8");
@@ -239,6 +259,41 @@ describe("availability", () => {
       code: "unauthorized",
       providerCode: "ip_not_authorized",
     });
+  });
+
+  it("tarifa rechazada (ERR 308 / 803) → unauthorized con motivo `rate_code`: es configuración", async () => {
+    for (const err of ["ERR 308: Incorrect rate code", "ERR 803: Incorrect rate code"]) {
+      handler = (_req, _body, res) => send(res, err, "text/html");
+      await expect(miniHotelCallTool(cfg(), "availability", ONE_RANGE)).rejects.toMatchObject({
+        code: "unauthorized",
+        providerCode: "rate_code",
+      });
+    }
+  });
+
+  it("tarifa inexistente como en el sandbox real: Immediate VACÍO (no valida) + Bulk ERR 308 → rate_code", async () => {
+    handler = (_req, body, res) =>
+      body.includes('ResponseType="05"')
+        ? send(res, "ERR 308: Incorrect rate code", "text/html")
+        : send(res, immediateXml([]));
+    await expect(
+      miniHotelCallTool(cfg(), "availability", { ...ONE_RANGE, rate_code: "NOEXISTE" })
+    ).rejects.toMatchObject({ code: "unauthorized", providerCode: "rate_code" });
+    // Sin alternativas (comparar rangos) el vacío NO se puede distinguir de «sin lugar».
+    seen = [];
+    const out = await miniHotelCallTool(cfg(), "availability", {
+      ...ONE_RANGE,
+      alternatives: false,
+      rate_code: "NOEXISTE",
+    });
+    expect(out.outcome.ok).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("la tarifa del pedido manda sobre la de la config (la que quedó en la bitácora)", async () => {
+    handler = (_req, _body, res) => send(res, immediateXml([{ id: "DBL", alloc: 1 }]));
+    await miniHotelCallTool(cfg(), "availability", { ...ONE_RANGE, rate_code: "ARS" });
+    expect(seen[0]?.body).toContain('rateCode="ARS"');
   });
 
   it("error de la CONSULTA (ERR 106) → outcome con código, para que el modelo corrija", async () => {

@@ -81,14 +81,14 @@ const FALLBACK_TEXT = "No se pudo conectar con el servidor.";
 export const PROVIDER_REASON_TEXT: Record<string, string> = {
   auth: "El sistema del hotel rechazó el usuario o la contraseña. Revisalos y volvé a cargarlos.",
   hotel:
-    "El sistema del hotel no reconoce el código de hotel. Avisale al administrador de la instancia.",
+    "El sistema del hotel no reconoce el código de hotel. Revisalo en la configuración del conector.",
+  rate_code:
+    "El sistema del hotel no reconoce el código de tarifa. Revisalo en la configuración del conector (el hotel lo ve en MiniHotel).",
   ip_not_authorized:
     "El sistema del hotel todavía no autorizó la IP de este servidor. Hay que pedirle al proveedor que la agregue.",
   not_configured:
-    "Falta completar la configuración del hotel (código de hotel y tarifa). Avisale al administrador de la instancia.",
+    "Falta completar la configuración del hotel (código de hotel y tarifa) en la tarjeta del conector.",
   // Rechazos de una CONSULTA puntual (vista previa del dueño).
-  rate_code:
-    "El sistema del hotel no reconoce el código de tarifa. Avisale al administrador de la instancia.",
   hotel_settings:
     "El sistema del hotel tiene la configuración de precios u ocupación incompleta. Hay que revisarla en MiniHotel.",
   invalid_dates: "El sistema del hotel no aceptó esas fechas.",

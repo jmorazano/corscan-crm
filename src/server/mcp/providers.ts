@@ -96,4 +96,9 @@ export const MINIHOTEL_HANDSHAKE_TOOLS: McpTool[] = [
 ];
 
 /** Motivos de reconexión que vale la pena distinguir en la interfaz (D8). */
-export const PROVIDER_REASONS: ReadonlySet<string> = new Set(["auth", "hotel", "ip_not_authorized"]);
+export const PROVIDER_REASONS: ReadonlySet<string> = new Set([
+  "auth",
+  "hotel",
+  "ip_not_authorized",
+  "rate_code",
+]);

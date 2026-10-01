@@ -7,11 +7,14 @@ import type { ProviderConfig } from "@/server/mcp/profiles/types";
  * `mcp_integration.provider_config`. PURA.
  *
  * Dos dueños distintos, igual que la URL y la credencial en 016:
- * - el SUPER ADMIN fija lo que define a dónde se consulta y a dónde se manda
- *   al huésped: código de hotel, código de tarifa y enlace del motor de
- *   reservas (Constitución II, cat. 5, letra b);
- * - la EMPRESA decide su regla comercial: si el asistente informa precios
- *   por WhatsApp y si menciona la tarifa no reembolsable.
+ * - el SUPER ADMIN fija lo que es una DIRECCIÓN: la de la API (en
+ *   `endpoint_url`) y el enlace del motor de reservas al que se manda al
+ *   huésped (Constitución II, cat. 5, letra b). Al habilitar carga también el
+ *   código de hotel y la tarifa iniciales;
+ * - la EMPRESA decide su regla comercial (si el asistente informa precios
+ *   y si menciona la tarifa no reembolsable) y, desde el 1-oct-2026, el
+ *   código de hotel y la tarifa: no son direcciones, y MiniHotel solo
+ *   contesta por los hoteles que habilitó para la credencial cargada.
  */
 
 export type MiniHotelProviderConfig = {
@@ -35,10 +38,17 @@ export const miniHotelAdminConfigSchema = z.object({
 
 export type MiniHotelAdminConfigInput = z.infer<typeof miniHotelAdminConfigSchema>;
 
-/** Lo que decide la empresa. */
+/**
+ * Lo que decide la empresa: su regla comercial. La TARIFA también es suya
+ * (con qué tarifa —y por lo tanto en qué moneda— cotiza el asistente); no es
+ * una dirección ni un enlace, así que no toca la letra (b) de la categoría 5.
+ */
 export const miniHotelOwnerSettingsSchema = z.object({
   showPrices: z.boolean().optional(),
   showNonRefundable: z.boolean().optional(),
+  rateCode: z.string().trim().regex(CODE_RE, "Código de tarifa inválido.").optional(),
+  /** Pedido del dueño (1-oct-2026): el hotel también se configura desde la empresa. */
+  hotelId: z.string().trim().regex(CODE_RE, "Código de hotel inválido.").optional(),
 });
 
 export type MiniHotelOwnerSettings = z.infer<typeof miniHotelOwnerSettingsSchema>;
@@ -76,6 +86,10 @@ export function buildMiniHotelAdminConfig(
       bookingEngineUrl: booking,
       showPrices: prev.showPrices !== false,
       showNonRefundable: prev.showNonRefundable === true,
+      // Solo se muestra si sigue siendo del mismo hotel y tarifa.
+      ...(prev[VERIFIED_QUOTE_KEY] !== undefined
+        ? { [VERIFIED_QUOTE_KEY]: prev[VERIFIED_QUOTE_KEY] }
+        : {}),
     },
   };
 }
@@ -89,6 +103,8 @@ export function withMiniHotelOwnerSettings(
   const next: Record<string, unknown> = { ...current };
   if (patch.showPrices !== undefined) next.showPrices = patch.showPrices;
   if (patch.showNonRefundable !== undefined) next.showNonRefundable = patch.showNonRefundable;
+  if (patch.rateCode !== undefined) next.rateCode = patch.rateCode;
+  if (patch.hotelId !== undefined) next.hotelId = patch.hotelId;
   return next;
 }
 
@@ -115,4 +131,41 @@ export function readMiniHotelConfig(raw: ProviderConfig | undefined): MiniHotelP
     showPrices: o.showPrices !== false,
     showNonRefundable: o.showNonRefundable === true,
   };
+}
+
+/* ============================================================
+ * Moneda verificada
+ * ============================================================ */
+
+/**
+ * Dónde guarda «Verificar» lo que contestó MiniHotel con la consulta de
+ * prueba: la moneda de la tarifa. La moneda la define la tarifa dentro de
+ * MiniHotel (no hay forma de pedirla aparte), así que es la única manera de
+ * que la empresa vea, antes del primer huésped, si cotiza en pesos.
+ */
+export const VERIFIED_QUOTE_KEY = "verifiedQuote";
+
+export type MiniHotelVerifiedQuote = {
+  hotelId: string;
+  rateCode: string;
+  currency: string | null;
+};
+
+/** ISO 4217 de tres letras o `null`: el atributo es texto del proveedor. */
+export function cleanCurrency(raw: unknown): string | null {
+  const c = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  return /^[A-Z]{3}$/.test(c) ? c : null;
+}
+
+/**
+ * La moneda verificada, SOLO si se verificó con el hotel y la tarifa de hoy:
+ * otro hotel u otra tarifa pueden cotizar en otra moneda.
+ */
+export function verifiedCurrencyOf(
+  raw: ProviderConfig | undefined,
+  config: Pick<MiniHotelProviderConfig, "hotelId" | "rateCode">
+): string | null {
+  const quote = asRecord(asRecord(raw)[VERIFIED_QUOTE_KEY] as ProviderConfig | undefined);
+  if (quote.hotelId !== config.hotelId || quote.rateCode !== config.rateCode) return null;
+  return cleanCurrency(quote.currency);
 }

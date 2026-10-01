@@ -4,7 +4,8 @@ import type { SQL } from "drizzle-orm";
 /**
  * 028 — MiniHotel por la MISMA puerta única (`callGuarded`): despacho por
  * transporte, credencial `{usuario, contraseña}`, config del proveedor,
- * motivo de reconexión y la verificación que trae el catálogo SIN caché.
+ * motivo de reconexión y la verificación (catálogo + consulta de prueba de
+ * la tarifa) SIN caché.
  */
 
 type Row = Record<string, unknown>;
@@ -23,6 +24,8 @@ const state = vi.hoisted(() => {
     calls: [] as { cfg: Record<string, unknown>; tool: string; args: Record<string, unknown> }[],
     next: null as unknown,
     throws: null as Error | null,
+    /** Respuesta o excepción por herramienta (pisa `next`/`throws`). */
+    byTool: {} as Record<string, { data?: unknown; outcome?: unknown; throws?: Error }>,
   };
 });
 
@@ -32,6 +35,16 @@ vi.mock("@/lib/db", async (importOriginal) => {
   const render = (cond: unknown) => new PgDialect().sqlToQuery(cond as SQL);
   const matching = (q: { params: unknown[] }) =>
     state.rows.filter((r) => q.params.includes(r.organizationId) || q.params.includes(r.id));
+  // `provider_config || $1::jsonb` (merge en SQL): se emula con el parámetro JSON.
+  const applySet = (row: Row, set: Row): Row => {
+    const pc = set.providerConfig;
+    if (!pc || typeof pc !== "object" || !("queryChunks" in pc)) return set;
+    const patch = render(pc).params.find((v) => typeof v === "string" && v.startsWith("{"));
+    return {
+      ...set,
+      providerConfig: { ...((row.providerConfig as Row | null) ?? {}), ...JSON.parse(String(patch)) },
+    };
+  };
   return {
     ...actual,
     getDb: () => ({
@@ -39,12 +52,12 @@ vi.mock("@/lib/db", async (importOriginal) => {
         from: () => ({
           where: (cond: unknown) => {
             const rows = matching(render(cond));
-            return {
+            return Object.assign(Promise.resolve(rows), {
               limit: () => Promise.resolve(rows),
               orderBy: () => ({ limit: () => Promise.resolve(rows) }),
-            };
+            });
           },
-          innerJoin: () => ({ where: () => Promise.resolve([]) }),
+          innerJoin: () => Object.assign(Promise.resolve([]), { where: () => Promise.resolve([]) }),
         }),
       }),
       insert: () => ({
@@ -58,7 +71,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
           where: (cond: unknown) => {
             const q = render(cond);
             state.updates.push({ set });
-            for (const r of matching(q)) Object.assign(r, set);
+            for (const r of matching(q)) Object.assign(r, applySet(r, set));
             return Object.assign(Promise.resolve(), { returning: () => Promise.resolve(matching(q)) });
           },
         }),
@@ -80,13 +93,20 @@ vi.mock("@/lib/minihotel", async (importOriginal) => {
     ...actual,
     miniHotelCallTool: async (cfg: Record<string, unknown>, tool: string, args: Record<string, unknown>) => {
       state.calls.push({ cfg, tool, args });
-      if (state.throws) throw state.throws;
-      return { outcome: { ok: true, data: state.next }, raw: null, httpStatus: 200, bytes: 512 };
+      const custom = state.byTool[tool];
+      const thrown = custom?.throws ?? state.throws;
+      if (thrown) throw thrown;
+      const outcome = custom?.outcome ?? {
+        ok: true,
+        data: custom && "data" in custom ? custom.data : state.next,
+      };
+      return { outcome, raw: null, httpStatus: 200, bytes: 512 };
     },
   };
 });
 
 const { callGuarded, handshakeGuarded, resetMcpCallCache } = await import("@/server/mcp/calls");
+const { enableMcpIntegration, updateMcpSettings } = await import("@/server/mcp/integration");
 const { McpError, mcpErrorText } = await import("@/lib/mcp");
 const { encryptSecret } = await import("@/lib/crypto");
 const { serializeMiniHotelCredential } = await import("@/lib/minihotel");
@@ -102,7 +122,7 @@ const CONFIG = {
   showPrices: true,
   showNonRefundable: false,
 };
-const SECRET = serializeMiniHotelCredential({ username: "Test", password: "3657488" });
+const SECRET = serializeMiniHotelCredential({ username: "Test", password: "clave-de-prueba-1234" });
 
 function integration(overrides: Partial<McpIntegration> = {}): McpIntegration {
   return {
@@ -141,7 +161,7 @@ function dbRow(overrides: Row = {}): Row {
     endpointUrl: "https://sandbox.minihotel.cloud/gds",
     authScheme: "bearer",
     credential: encryptSecret(SECRET),
-    credentialLast4: "7488",
+    credentialLast4: "1234",
     status: "enabled",
     sessionMode: "stateless",
     serverName: null,
@@ -174,6 +194,13 @@ const CATALOG_DATA = {
   roomTypes: [{ code: "DBL", description: "Habitación doble", image: null }],
   rooms: [{ number: "1", type: "DBL", mapped: true, maxAdults: 2, maxChildren: 1, maxBabies: 1, attributes: [] }],
 };
+/** Lo que contesta la consulta de prueba de «Verificar». */
+const PROBE_DATA = {
+  hotel: { name: "Test Hotel MiniHotel", currency: "ARS" },
+  guests: { adults: 1, children: 0, babies: 0 },
+  ranges: [],
+  alternatives: null,
+};
 
 beforeEach(() => {
   state.rows = [];
@@ -182,6 +209,7 @@ beforeEach(() => {
   state.calls = [];
   state.next = { ranges: [] };
   state.throws = null;
+  state.byTool = {};
   resetMcpCallCache();
   resetRateLimit();
 });
@@ -202,14 +230,14 @@ describe("callGuarded con transporte MiniHotel", () => {
     expect(cfg).toMatchObject({
       ariEndpoint: "https://sandbox.minihotel.cloud/gds",
       username: "Test",
-      password: "3657488",
+      password: "clave-de-prueba-1234",
       hotelId: "sandbox",
       rateCode: "USD",
       sandbox: false,
     });
     expect(cfg.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // La bitácora guarda NUESTROS argumentos, jamás la credencial.
-    expect(JSON.stringify(state.inserted)).not.toContain("3657488");
+    expect(JSON.stringify(state.inserted)).not.toContain("clave-de-prueba-1234");
   });
 
   it("herramienta fuera de la allowlist del perfil: ni siquiera sale", async () => {
@@ -280,27 +308,66 @@ describe("callGuarded con transporte MiniHotel", () => {
   });
 });
 
-describe("handshakeGuarded para MiniHotel = catálogo de habitaciones", () => {
-  it("prueba la credencial, guarda el catálogo y queda Conectado", async () => {
+describe("handshakeGuarded para MiniHotel = catálogo + consulta de prueba de la tarifa", () => {
+  it("prueba la credencial, guarda el catálogo, prueba la tarifa y queda Conectado con la moneda", async () => {
     state.rows = [dbRow()];
     state.next = CATALOG_DATA;
+    state.byTool.availability = { data: PROBE_DATA };
     const out = await handshakeGuarded("org_mh");
     expect(out.ok).toBe(true);
-    expect(state.calls.map((c) => c.tool)).toEqual(["room_catalog"]);
+    expect(state.calls.map((c) => c.tool)).toEqual(["room_catalog", "availability"]);
+    // Una noche, un adulto, sin alternativas y con la tarifa de la empresa.
+    const probe = state.calls[1]!.args as { ranges: Array<{ from: string; to: string }> };
+    expect(probe).toMatchObject({ adults: 1, children: 0, babies: 0, alternatives: true, rate_code: "USD" });
+    expect(probe.ranges).toHaveLength(1);
     expect(state.rows[0]).toMatchObject({ status: "connected", serverName: "MiniHotel (hotel)" });
     const saved = state.rows[0]!.catalog as { roomTypes: Array<{ code: string; maxAdults: number }> };
     expect(saved.roomTypes[0]).toMatchObject({ code: "DBL", maxAdults: 2 });
     if (!out.ok) throw new Error("debía andar");
-    expect(out.integration.providerSettings).toMatchObject({ hotelId: "sandbox", showPrices: true });
+    expect(out.integration.providerSettings).toMatchObject({
+      hotelId: "sandbox",
+      rateCode: "USD",
+      currency: "ARS",
+      showPrices: true,
+    });
     expect(out.integration.catalog?.roomTypes[0]?.code).toBe("DBL");
+    // Las dos consultas quedan en la bitácora (evidencia para MiniHotel).
+    expect(state.inserted.map((r) => r.tool)).toEqual(["room_catalog", "availability"]);
   });
 
   it("SIN caché: verificar dos veces seguidas consulta dos veces (credencial recién cambiada)", async () => {
     state.rows = [dbRow()];
     state.next = CATALOG_DATA;
+    state.byTool.availability = { data: PROBE_DATA };
     await handshakeGuarded("org_mh");
     await handshakeGuarded("org_mh");
-    expect(state.calls).toHaveLength(2);
+    expect(state.calls.map((c) => c.tool)).toEqual([
+      "room_catalog",
+      "availability",
+      "room_catalog",
+      "availability",
+    ]);
+  });
+
+  it("tarifa que MiniHotel no reconoce ⇒ «Requiere reconexión» con el motivo, sin «Conectada»", async () => {
+    state.rows = [dbRow()];
+    state.next = CATALOG_DATA;
+    state.byTool.availability = {
+      throws: new McpError("unauthorized", { providerCode: "rate_code" }),
+    };
+    const out = await handshakeGuarded("org_mh");
+    expect(out).toMatchObject({ ok: false, code: "unauthorized", reason: "rate_code" });
+    expect(state.rows[0]).toMatchObject({ status: "reconnect_required", lastErrorCode: "rate_code" });
+    expect(mcpErrorText("rate_code")).toContain("código de tarifa");
+  });
+
+  it("error de la consulta de prueba (precios del hotel incompletos) ⇒ no queda Conectada, con motivo", async () => {
+    state.rows = [dbRow()];
+    state.next = CATALOG_DATA;
+    state.byTool.availability = { outcome: { ok: false, code: "hotel_settings", details: null } };
+    const out = await handshakeGuarded("org_mh");
+    expect(out).toMatchObject({ ok: false, code: "bad_payload", reason: "hotel_settings" });
+    expect(state.rows[0]).toMatchObject({ status: "enabled" });
   });
 
   it("desde «Requiere reconexión» igual se reintenta (verificar es el reintento)", async () => {
@@ -316,6 +383,68 @@ describe("handshakeGuarded para MiniHotel = catálogo de habitaciones", () => {
     const out = await handshakeGuarded("org_mh");
     expect(out).toMatchObject({ ok: false, code: "not_configured" });
     expect(state.calls).toHaveLength(0);
+  });
+
+  it("la empresa cambia de hotel ⇒ vuelve a «sin verificar» y se olvida el catálogo del anterior", async () => {
+    state.rows = [
+      dbRow({
+        status: "connected",
+        catalog: { roomTypes: [{ code: "DBL" }] },
+        catalogFetchedAt: new Date(),
+        lastHandshakeAt: new Date(),
+      }),
+    ];
+    const ok = await updateMcpSettings("org_mh", {
+      providerConfig: { ...CONFIG, hotelId: "otro-hotel" },
+      resetConnection: true,
+    });
+    expect(ok).toBe(true);
+    expect(state.rows[0]).toMatchObject({
+      status: "enabled",
+      catalog: null,
+      catalogFetchedAt: null,
+      lastHandshakeAt: null,
+      providerConfig: { hotelId: "otro-hotel" },
+    });
+  });
+
+  it("el super admin cambia SOLO el hotel ⇒ volver a verificar, sin borrar la credencial", async () => {
+    state.rows = [dbRow({ status: "connected", catalog: { roomTypes: [{ code: "DBL" }] } })];
+    await enableMcpIntegration({
+      organizationId: "org_mh",
+      userId: "usr_admin",
+      profile: "minihotel",
+      label: "Bosque Douglas (hotel)",
+      endpointUrl: "https://sandbox.minihotel.cloud/gds",
+      authScheme: "bearer",
+      timezone: "America/Argentina/Cordoba",
+      timeoutMs: 10_000,
+      maxResponseBytes: 524_288,
+      catalogTtlMinutes: 60,
+      providerConfig: { ...CONFIG, hotelId: "bosque-douglas" },
+    });
+    expect(state.rows[0]).toMatchObject({ status: "enabled", catalog: null, credentialLast4: "1234" });
+    expect(state.rows[0]!.credential).not.toBeNull();
+  });
+
+  it("verificar con `getRooms` caído conserva el catálogo completo anterior del MISMO hotel", async () => {
+    const complete = {
+      propertyTypes: ["Habitación doble"],
+      cities: [],
+      facilities: [],
+      window: null,
+      currency: "",
+      maxGuests: 3,
+      searchBase: null,
+      roomTypes: [{ code: "DBL", name: "Habitación doble", maxAdults: 2, maxChildren: 1, maxBabies: 1, attributes: [] }],
+      roomsHotelId: "sandbox",
+    };
+    state.rows = [dbRow({ status: "connected", catalog: complete })];
+    state.next = { roomTypes: CATALOG_DATA.roomTypes, rooms: null };
+    state.byTool.availability = { data: PROBE_DATA };
+    const out = await handshakeGuarded("org_mh");
+    expect(out.ok).toBe(true);
+    expect(state.rows[0]!.catalog).toEqual(complete);
   });
 
   it("credencial rechazada ⇒ unauthorized y la fila con el motivo", async () => {

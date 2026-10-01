@@ -45,7 +45,36 @@ Estado durable del loop. `[x]` = hecho y verificado.
   capacidad y ofrece repartir o derivar; (2) cambiar de PERFIL conservaba la
   credencial del otro proveedor (formato incompatible): ahora se borra igual
   que al cambiar la dirección; (3) placeholder de contraseña y plurales.
-- **Pendiente (fuera de esta rama)**: commit/merge/deploy con OK del dueño;
-  prueba contra el sandbox REAL de MiniHotel con las credenciales públicas que
-  carga el dueño (SC3, incluida la verificación de que `to` = salida);
+- **Pendiente (fuera de esta rama)**: merge/deploy con OK del dueño;
   después, credenciales de producción + IPs autorizadas.
+
+## Fase F — Sandbox REAL y pedidos del dueño (1-oct-2026)
+
+El dueño cargó las credenciales públicas del sandbox en `principal` y pidió
+que hotel y tarifa sean configurables («la tarifa debiera ser en pesos»).
+
+- [x] F1 La EMPRESA (owner) edita código de hotel y tarifa: `rateCode`/`hotelId`
+  en `miniHotelOwnerSettingsSchema` + `PUT /api/integrations/mcp`; otro hotel ⇒
+  `RESET_ON_HOTEL_CHANGE` (catálogo y verificación del anterior fuera, la
+  credencial queda); lo mismo si lo cambia el super admin. UI: «Cambiar hotel
+  o tarifa» → «Guardar y verificar».
+- [x] F2 «Verificar» = catálogo + consulta de prueba de UNA noche a 30 días
+  (`miniHotelProbeArgs`): prueba la TARIFA (que el catálogo no usa) y guarda la
+  moneda informada (`provider_config.verifiedQuote`, solo vale para el mismo
+  hotel y tarifa, y solo se muestra con la conexión sana) → «la tarifa X
+  cotiza en …» en la tarjeta. CON alternativas: en el sandbox real *Immediate*
+  no valida la tarifa (vacío = «sin lugar») y *Bulk* sí (ERR 308).
+- [x] F3 Tarifa rechazada (ERR 308/309/803) = error de CONFIGURACIÓN →
+  «Requiere reconexión» con motivo `rate_code` (antes fallaba cada consulta
+  con la integración «Conectada»).
+- [x] F4 Hallazgos del sandbox real: «máximo 0 adultos» = ocupación SIN
+  configurar (null, decide MiniHotel; con adultos configurados, 0 niños sí es
+  «no admite»); atributos sin letras (coordenadas) fuera; `getRooms` caído no
+  pisa el último catálogo completo del MISMO hotel (`roomsHotelId`) + log con
+  el motivo.
+- [x] F5 Transporte: conexión propia por pedido (`agent: false`). El agente
+  global de Node ≥ 19 (keep-alive, timeout de socket 5 s) cortaba a los 5 s
+  una conexión lenta aunque el plazo fuera 10 s (reproducido con un DNS de
+  5,5 s: 5005 ms → `timeout`; con el arreglo, OK a 5512 ms). Afecta también al
+  conector MCP de 016.
+- [x] F6 Corrida contra el sandbox REAL (ver `tests/e2e/028-minihotel-pms.md`).

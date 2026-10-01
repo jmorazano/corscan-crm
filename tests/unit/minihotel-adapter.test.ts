@@ -169,10 +169,10 @@ describe("dates", () => {
 
 describe("credential", () => {
   it("serializa, lee y muestra solo los últimos 4 de la contraseña", () => {
-    const c = normalizeMiniHotelCredential({ username: " Test ", password: " 3657488 " });
-    expect(c).toEqual({ username: "Test", password: "3657488" });
+    const c = normalizeMiniHotelCredential({ username: " Test ", password: " clave-de-prueba-1234 " });
+    expect(c).toEqual({ username: "Test", password: "clave-de-prueba-1234" });
     expect(parseMiniHotelCredential(serializeMiniHotelCredential(c!))).toEqual(c);
-    expect(miniHotelCredentialLast4(c!)).toBe("7488");
+    expect(miniHotelCredentialLast4(c!)).toBe("1234");
   });
 
   it("corrupto o incompleto ⇒ null, nunca lanza", () => {
@@ -301,6 +301,21 @@ describe("responses — Bulk ARI y contenido", () => {
         maxBabies: 1,
         attributes: [{ code: "1", description: "Garden view" }],
       },
+    ]);
+  });
+
+  it("«máximo 0 adultos» (sandbox real) = ocupación sin configurar; con adultos, 0 niños sí es «no admite»", () => {
+    const gst = (a: number, c: number, b: number) =>
+      `<ArrayOfRec_rooms_gst_max><rec_rooms_gst_max><rgm_gst_type>A</rgm_gst_type><rgm_max>${a}</rgm_max></rec_rooms_gst_max><rec_rooms_gst_max><rgm_gst_type>C</rgm_gst_type><rgm_max>${c}</rgm_max></rec_rooms_gst_max><rec_rooms_gst_max><rgm_gst_type>B</rgm_gst_type><rgm_max>${b}</rgm_max></rec_rooms_gst_max></ArrayOfRec_rooms_gst_max>`;
+    const rooms = parseRooms(
+      parseXml(
+        `<Response><ArrayOfRnm_struct_room><rnm_struct_room><rm_type>DBL</rm_type>${gst(0, 0, 0)}</rnm_struct_room><rnm_struct_room><rm_type>TRP</rm_type>${gst(3, 0, 0)}</rnm_struct_room><rnm_struct_room><rm_type>SNG</rm_type></rnm_struct_room></ArrayOfRnm_struct_room></Response>`
+      )
+    );
+    expect(rooms?.map((r) => [r.type, r.maxAdults, r.maxChildren, r.maxBabies])).toEqual([
+      ["DBL", null, null, null],
+      ["TRP", 3, 0, 0],
+      ["SNG", null, null, null],
     ]);
   });
 });

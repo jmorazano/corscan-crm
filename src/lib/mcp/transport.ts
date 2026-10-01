@@ -322,6 +322,14 @@ function send<T>(
     // #2: una sola conexión. Con Happy Eyeballs, Node resuelve y prueba
     // varias familias; acotarlo reduce la superficie del lookup.
     autoSelectFamily: false,
+    // 028: conexión PROPIA por pedido. Desde Node 19 el agente global usa
+    // keep-alive con un timeout de socket de 5 s que rige mientras se
+    // CONECTA (DNS + TCP + TLS), antes de que `req.setTimeout` lo reemplace:
+    // una conexión lenta se cortaba como `timeout` a los 5 s aunque la
+    // empresa tuviera 10 o 30 (visto con el sandbox de MiniHotel, 1-oct-2026,
+    // y reproducido con un DNS de 5,5 s). El plazo lo ponen el timer de abajo
+    // y `req.setTimeout`, nadie más.
+    agent: false,
     // `rejectUnauthorized` JAMÁS se toca: el mock vive en http://localhost
     // bajo el gate de mocks, que es la única puerta.
   } as RequestOptions;

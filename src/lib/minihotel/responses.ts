@@ -31,7 +31,7 @@ import {
  * ============================================================ */
 
 /**
- * Códigos estables que entiende el resto del sistema. Los tres primeros son
+ * Códigos estables que entiende el resto del sistema. Los cuatro primeros son
  * de CONFIGURACIÓN (el modelo no puede corregirlos: la integración necesita
  * atención); el resto son de la CONSULTA y le sirven al modelo para
  * corregirse en la vuelta siguiente.
@@ -40,10 +40,10 @@ export type MiniHotelErrorCode =
   | "auth"
   | "hotel"
   | "ip_not_authorized"
+  | "rate_code"
   | "past_date"
   | "too_many_nights"
   | "invalid_dates"
-  | "rate_code"
   | "hotel_settings"
   | "invalid_request"
   | "provider_error";
@@ -52,6 +52,9 @@ export const CONFIG_ERROR_CODES: ReadonlySet<MiniHotelErrorCode> = new Set([
   "auth",
   "hotel",
   "ip_not_authorized",
+  // Una tarifa que MiniHotel no reconoce falla en TODAS las consultas: no es
+  // algo que el modelo pueda corregir, es la configuración de la empresa.
+  "rate_code",
 ]);
 
 /** Lista de códigos documentada (`/reference/error-codes`) → código estable. */
@@ -336,6 +339,15 @@ export function parseRooms(doc: XmlNode): RoomInfo[] | null {
       if (kind === "A") maxAdults = max;
       else if (kind === "C") maxChildren = max;
       else if (kind === "B") maxBabies = max;
+    }
+    // Visto en el sandbox real (1-oct-2026): «máximo 0 adultos» en casi todas
+    // las habitaciones. Una habitación no aloja a cero adultos: es ocupación
+    // SIN CONFIGURAR, y entonces tampoco valen los 0 de niños y bebés. Con
+    // adultos configurados, un 0 en niños o bebés sí es «no admite».
+    if (maxAdults === null || maxAdults <= 0) {
+      maxAdults = null;
+      maxChildren = null;
+      maxBabies = null;
     }
     const attributes: RoomAttribute[] = [];
     for (const a of findAll(firstChild(room, "ArrayOfRnm_struct_room_attributes"), "rnm_attribute")) {

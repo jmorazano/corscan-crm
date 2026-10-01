@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
@@ -27,7 +27,12 @@ import {
   type StayCatalog,
   type StayRoomType,
 } from "@/server/mcp/profiles";
-import { readMiniHotelConfig } from "@/server/mcp/profiles/minihotel-config";
+import {
+  VERIFIED_QUOTE_KEY,
+  readMiniHotelConfig,
+  verifiedCurrencyOf,
+  type MiniHotelVerifiedQuote,
+} from "@/server/mcp/profiles/minihotel-config";
 
 /**
  * Conexión MCP POR EMPRESA (016, design §C.2) — patrón calcado de
@@ -83,6 +88,8 @@ export type McpCatalogView = {
 export type ProviderSettingsView = {
   hotelId: string;
   rateCode: string;
+  /** Moneda que informó MiniHotel al verificar ESTE hotel con ESTA tarifa. */
+  currency: string | null;
   bookingEngineHost: string | null;
   showPrices: boolean;
   showNonRefundable: boolean;
@@ -238,6 +245,7 @@ function toCatalog(raw: unknown): StayCatalog | null {
   };
   const roomTypes = toRoomTypes(r.roomTypes);
   if (roomTypes.length > 0) catalog.roomTypes = roomTypes;
+  if (typeof r.roomsHotelId === "string") catalog.roomsHotelId = r.roomsHotelId;
   return catalog;
 }
 
@@ -280,6 +288,9 @@ function providerSettingsOf(row: Row): ProviderSettingsView | null {
   return {
     hotelId: config.hotelId,
     rateCode: config.rateCode,
+    // Solo con la conexión sana: una tarifa que después MiniHotel rechazó no
+    // puede seguir mostrando «cotiza en …».
+    currency: row.status === "connected" ? verifiedCurrencyOf(row.providerConfig ?? null, config) : null,
     bookingEngineHost: host,
     showPrices: config.showPrices,
     showNonRefundable: config.showNonRefundable,
@@ -522,6 +533,26 @@ const RESET_ON_ENDPOINT_CHANGE = {
 };
 
 /**
+ * 028: otro HOTEL con la misma dirección y la misma credencial. El catálogo,
+ * la verificación y el último error eran del anterior: hay que volver a
+ * verificar. La credencial NO se toca (es la misma cuenta de MiniHotel).
+ */
+const RESET_ON_HOTEL_CHANGE = {
+  catalog: null,
+  catalogFetchedAt: null,
+  tools: null,
+  lastHandshakeAt: null,
+  lastErrorCode: null,
+  lastErrorAt: null,
+};
+
+function hotelOf(config: unknown): string | null {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return null;
+  const id = (config as Record<string, unknown>).hotelId;
+  return typeof id === "string" ? id : null;
+}
+
+/**
  * Habilita (crea) o reconfigura la integración de una empresa. Upsert por
  * `organization_id`: hay a lo sumo una fila, y su EXISTENCIA es la
  * habilitación (D2). **No dispara red**: verificar es del `owner`, así que un
@@ -577,7 +608,15 @@ export async function enableMcpIntegration(
   // sirve para el otro (un token de MCP no es {usuario, contraseña}) y el
   // catálogo tampoco. Mismo efecto que cambiar la dirección.
   const profileChanged = existing.profile !== input.profile;
-  if (endpointChanged || profileChanged) Object.assign(patch, RESET_ON_ENDPOINT_CHANGE);
+  if (endpointChanged || profileChanged) {
+    Object.assign(patch, RESET_ON_ENDPOINT_CHANGE);
+  } else if (
+    input.providerConfig !== undefined &&
+    hotelOf(input.providerConfig) !== hotelOf(existing.providerConfig)
+  ) {
+    Object.assign(patch, RESET_ON_HOTEL_CHANGE);
+    if (existing.status !== "disabled") patch.status = "enabled";
+  }
   // Una credencial nueva en el mismo PUT gana sobre el borrado de arriba: el
   // super admin la está cargando A PROPÓSITO para el endpoint nuevo.
   if (enc) {
@@ -749,6 +788,11 @@ export async function updateMcpSettings(
     label?: string;
     /** 028: config del proveedor YA mezclada por el caller (decisiones de la empresa). */
     providerConfig?: Record<string, unknown>;
+    /**
+     * 028: el cambio apunta a OTRO hotel: el catálogo y la verificación del
+     * anterior no valen. Vuelve a «sin verificar» hasta que se verifique.
+     */
+    resetConnection?: boolean;
   }
 ): Promise<boolean> {
   const set: Partial<typeof schema.mcpIntegration.$inferInsert> = { updatedAt: new Date() };
@@ -759,6 +803,11 @@ export async function updateMcpSettings(
   if (patch.timezone !== undefined) set.timezone = patch.timezone;
   if (patch.label !== undefined) set.label = patch.label;
   if (patch.providerConfig !== undefined) set.providerConfig = patch.providerConfig;
+  if (patch.resetConnection) {
+    const row = await getRow(organizationId);
+    Object.assign(set, RESET_ON_HOTEL_CHANGE);
+    if (row && row.status !== "disabled") set.status = "enabled";
+  }
   const db = getDb();
   const updated = await db
     .update(schema.mcpIntegration)
@@ -817,6 +866,26 @@ export async function saveCatalog(
     .set({
       catalog: catalog as unknown as Record<string, unknown>,
       catalogFetchedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(scoped(schema.mcpIntegration.organizationId, organizationId));
+}
+
+/**
+ * 028: lo que contestó MiniHotel a la consulta de prueba de «Verificar» (la
+ * moneda de la tarifa). Merge en SQL sobre `provider_config`, sin pisar lo
+ * que la empresa o el super admin hayan guardado mientras tanto.
+ */
+export async function recordVerifiedQuote(
+  organizationId: string,
+  quote: MiniHotelVerifiedQuote
+): Promise<void> {
+  const patch = JSON.stringify({ [VERIFIED_QUOTE_KEY]: quote });
+  const db = getDb();
+  await db
+    .update(schema.mcpIntegration)
+    .set({
+      providerConfig: sql`coalesce(${schema.mcpIntegration.providerConfig}, '{}'::jsonb) || ${patch}::jsonb`,
       updatedAt: new Date(),
     })
     .where(scoped(schema.mcpIntegration.organizationId, organizationId));

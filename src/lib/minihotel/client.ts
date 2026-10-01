@@ -49,8 +49,8 @@ import {
  * - `room_catalog`: `getRoomTypes` + `getRooms` en paralelo.
  *
  * Todas las subconsultas comparten UN deadline (`timeoutMs` de la llamada):
- * el turno del agente nunca espera más que eso. Nada de acá loguea: el
- * cuerpo XML lleva la credencial.
+ * el turno del agente nunca espera más que eso. Nada de acá loguea
+ * contenido (el cuerpo XML lleva la credencial): a lo sumo un código propio.
  *
  * Errores:
  * - de CONFIGURACIÓN (`auth`, `hotel`, `ip_not_authorized`) → lanza
@@ -142,6 +142,8 @@ type AvailabilityArgs = {
   babies: number;
   roomType: string | null;
   alternatives: boolean;
+  /** La del pedido si viene (es la que quedó en la bitácora); si no, la de la config. */
+  rateCode: string | null;
 };
 
 function readAvailabilityArgs(args: Record<string, unknown>): AvailabilityArgs | null {
@@ -165,6 +167,10 @@ function readAvailabilityArgs(args: Record<string, unknown>): AvailabilityArgs |
     typeof args.room_type === "string" && /^[\w.-]{1,32}$/.test(args.room_type)
       ? args.room_type
       : null;
+  const rateCode =
+    typeof args.rate_code === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(args.rate_code)
+      ? args.rate_code
+      : null;
   return {
     ranges,
     adults,
@@ -172,6 +178,7 @@ function readAvailabilityArgs(args: Record<string, unknown>): AvailabilityArgs |
     babies,
     roomType,
     alternatives: args.alternatives === true && ranges.length === 1,
+    rateCode,
   };
 }
 
@@ -239,7 +246,7 @@ async function immediate(
       adults: q.adults,
       children: q.children,
       babies: q.babies,
-      rateCode: cfg.rateCode,
+      rateCode: q.rateCode ?? cfg.rateCode,
       roomType: q.roomType,
     }),
     deadline,
@@ -280,6 +287,7 @@ async function availability(
     children: args.children,
     babies: args.babies,
     roomType: args.roomType,
+    rateCode: args.rateCode,
   };
 
   const firsts = await Promise.all(
@@ -346,7 +354,11 @@ async function findAlternatives(
   const body = await post(
     cfg,
     cfg.ariEndpoint,
-    buildBulkAriRequest(auth(cfg), { from: range.from, to: range.to, rateCode: cfg.rateCode }),
+    buildBulkAriRequest(auth(cfg), {
+      from: range.from,
+      to: range.to,
+      rateCode: args.rateCode ?? cfg.rateCode,
+    }),
     deadline,
     stats
   );
@@ -387,12 +399,14 @@ async function roomCatalog(
   deadline: number,
   stats: Stats
 ): Promise<McpToolUnwrap> {
+  let roomsFailure: string | null = null;
   const [typesBody, roomsBody] = await Promise.all([
     content(cfg, "getRoomTypes", deadline, stats),
     // `getRooms` es un plus (capacidad y atributos): si falla, el catálogo
     // igual sirve con los tipos. Solo la credencial rota sube.
     content(cfg, "getRooms", deadline, stats).catch((err: unknown) => {
       if (err instanceof McpError && err.code === "unauthorized") throw err;
+      roomsFailure = err instanceof McpError ? err.code : "error";
       return { kind: "unreadable" } as const;
     }),
   ]);
@@ -405,8 +419,14 @@ async function roomCatalog(
   if (!roomTypes) throw new McpError("bad_payload", { httpStatus: stats.httpStatus });
 
   let rooms: RoomInfo[] | null = null;
-  if (roomsBody.kind === "error") triage(roomsBody.error, stats);
+  if (roomsBody.kind === "error") roomsFailure = `provider_${triage(roomsBody.error, stats)}`;
   else if (roomsBody.kind === "xml") rooms = parseRooms(roomsBody.doc);
+  if (rooms === null) {
+    // Solo el MOTIVO (nuestro código, nunca texto del hotel): sin esto, un
+    // catálogo sin capacidades ni atributos no dice por qué.
+    const reason = roomsFailure ?? (roomsBody.kind === "xml" ? "unparseable" : roomsBody.kind);
+    console.warn(`[minihotel] getRooms sin datos: ${reason}`);
+  }
 
   const payload: RoomCatalogPayload = { roomTypes, rooms };
   return { ok: true, data: payload };

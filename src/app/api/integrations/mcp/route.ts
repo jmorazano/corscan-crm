@@ -82,6 +82,10 @@ const putSchema = z
     /** 028: regla comercial del hotel. Solo con el perfil `minihotel`. */
     showPrices: z.boolean().optional(),
     showNonRefundable: z.boolean().optional(),
+    /** 028: con qué tarifa de MiniHotel cotiza el asistente (define la moneda). */
+    rateCode: z.string().trim().regex(/^[A-Za-z0-9_.-]{1,64}$/, "Código de tarifa inválido").optional(),
+    /** 028: el código de hotel en MiniHotel (Hotel ID). */
+    hotelId: z.string().trim().regex(/^[A-Za-z0-9_.-]{1,64}$/, "Código de hotel inválido").optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "Nada que actualizar");
 
@@ -97,12 +101,17 @@ export const PUT = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 
-  const { credential, minihotel, showPrices, showNonRefundable, ...settings } = body.data;
+  const { credential, minihotel, showPrices, showNonRefundable, rateCode, hotelId, ...settings } =
+    body.data;
 
   // 028: lo propio de MiniHotel exige que el conector SEA de MiniHotel. Un
   // token plano en un hotel (o usuario/contraseña en un MCP) no se guarda.
   const wantsMiniHotel =
-    minihotel !== undefined || showPrices !== undefined || showNonRefundable !== undefined;
+    minihotel !== undefined ||
+    showPrices !== undefined ||
+    showNonRefundable !== undefined ||
+    rateCode !== undefined ||
+    hotelId !== undefined;
   const current =
     wantsMiniHotel || credential !== undefined
       ? await getMcpIntegration(session.organizationId)
@@ -132,12 +141,25 @@ export const PUT = withAuth(async (session, req: Request) => {
     if (!result.ok) return apiError(404, "not_enabled", NOT_ENABLED);
   }
 
-  if (showPrices !== undefined || showNonRefundable !== undefined) {
+  if (
+    showPrices !== undefined ||
+    showNonRefundable !== undefined ||
+    rateCode !== undefined ||
+    hotelId !== undefined
+  ) {
+    const previousHotel =
+      typeof current?.providerConfig?.hotelId === "string" ? current.providerConfig.hotelId : null;
     const providerConfig = withMiniHotelOwnerSettings(current?.providerConfig ?? null, {
       ...(showPrices !== undefined ? { showPrices } : {}),
       ...(showNonRefundable !== undefined ? { showNonRefundable } : {}),
+      ...(rateCode !== undefined ? { rateCode } : {}),
+      ...(hotelId !== undefined ? { hotelId } : {}),
     });
-    const ok = await updateMcpSettings(session.organizationId, { providerConfig });
+    const ok = await updateMcpSettings(session.organizationId, {
+      providerConfig,
+      // Otro hotel = otra conexión: hay que volver a verificar.
+      ...(hotelId !== undefined && hotelId !== previousHotel ? { resetConnection: true } : {}),
+    });
     if (!ok) return apiError(404, "not_enabled", NOT_ENABLED);
   }
 
