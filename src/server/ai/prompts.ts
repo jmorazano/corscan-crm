@@ -94,6 +94,12 @@ export function buildAgentSystemPrompt(input: {
    */
   mcpSection?: string | null;
   /**
+   * 028: las líneas del menú de acciones que da el PERFIL del conector (un
+   * hotel pide adultos/niños y no tiene fichas por código). `null` = las de
+   * 016 (`search_stays` con `guests` + `show_stay`).
+   */
+  mcpActionMenu?: readonly string[] | null;
+  /**
    * 016 (research D15): con un conector de datos en vivo, el knowledge base
    * DEJA de ser la única fuente de verdad. Sin esto el prompt tiene dos
    * defectos graves y silenciosos: (a) un KB con precios viejos le gana a
@@ -159,10 +165,12 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
       ...(input.mcpSection
-        ? [
-            '- {"action":"search_stays","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":4} — consultar el sistema de reservas (ver la sección de alojamientos para los filtros opcionales). Te respondo con las opciones y vos volvés a contestarle al cliente.',
-            '- {"action":"show_stay","property":"AC-003"} — el detalle de UNA propiedad por código, slug o enlace.',
-          ]
+        ? input.mcpActionMenu && input.mcpActionMenu.length > 0
+          ? [...input.mcpActionMenu]
+          : [
+              '- {"action":"search_stays","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":4} — consultar el sistema de reservas (ver la sección de alojamientos para los filtros opcionales). Te respondo con las opciones y vos volvés a contestarle al cliente.',
+              '- {"action":"show_stay","property":"AC-003"} — el detalle de UNA propiedad por código, slug o enlace.',
+            ]
         : []),
       ...(input.listingsSection
         ? [

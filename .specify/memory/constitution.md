@@ -1,7 +1,28 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.8.0 → 1.8.1
+Versión: 1.8.1 → 1.9.0
+
+Cambios (feature 028-minihotel-pms, 1-oct-2026) — MINOR:
+  - Principio II, categoría 5: pasa de «servidores MCP de terceros POR
+    EMPRESA» a «sistemas de terceros POR EMPRESA vía MCP O VÍA LA API DEL
+    PROVEEDOR». Motivo: el PMS hotelero MiniHotel (cliente Bosque Douglas)
+    no publica un servidor MCP: expone una API XML por POST. Se mantienen
+    TODAS las condiciones (a)–(j) sin cambios de fondo; (c) aclara que la
+    credencial puede viajar en el CUERPO del pedido cuando la API lo exige
+    (MiniHotel), y que ese cuerpo jamás se registra ni vuelve en un error;
+    (e) pasa a «transporte genérico (MCP o la API del proveedor) más un
+    perfil por proveedor».
+  - Listas de adaptadores dedicados (Principio II y Restricciones): se agrega
+    el adaptador de MiniHotel (`src/lib/minihotel/`) sobre el mismo POST
+    protegido del transporte de 016.
+  - Motivación escrita: pedido del dueño (24/28-sep-2026, propuesta de Fase 1
+    en Google Docs) y aprobación explícita de la enmienda el 1-oct-2026, tras
+    la respuesta de MiniHotel de validar primero en su sandbox.
+  - Plantillas: sin cambios (el Constitution Check sigue siendo genérico).
+  - CLAUDE.md: ⚠ actualizar la línea de soberanía y el mapa del código.
+
+Versión anterior: 1.8.0 → 1.8.1
 
 Cambios (feature 025-mercadolibre-listings, 26-sep-2026) — PATCH, sin
 categoría nueva:
@@ -252,10 +273,13 @@ dependencias externas en runtime es CERRADA:
      quiere; (d) el producto funciona completo sin activarla; (e) un fallo
      del push jamás afecta la ingesta ni el envío de mensajes; (f) el
      sandbox del Laboratorio nunca notifica.
-  5. **Servidores MCP de terceros POR EMPRESA** (desde 1.7.0; el primero: el
-     PMS de Altos de Calamuchita). Un servidor Model Context Protocol remoto
-     —JSON-RPC 2.0 sobre HTTP— que la empresa cliente YA opera, cuyas
-     herramientas de SOLO LECTURA el agente consulta para responder con datos
+  5. **Sistemas de terceros POR EMPRESA, vía MCP o vía la API del
+     proveedor** (desde 1.7.0 los servidores MCP —el primero: el PMS de Altos
+     de Calamuchita—; desde 1.9.0 también la API propia de un proveedor que
+     no publica MCP —la primera: MiniHotel, PMS hotelero—). Un servidor Model
+     Context Protocol remoto —JSON-RPC 2.0 sobre HTTP— o la API HTTP del
+     proveedor, del sistema que la empresa cliente YA opera, cuyas
+     operaciones de SOLO LECTURA el agente consulta para responder con datos
      reales del negocio (disponibilidad, precios, enlaces). Condiciones NO
      negociables: (a) sin el conector el producto funciona completo y el
      agente sigue atendiendo con su conocimiento propio; (b) el SUPER ADMIN de
@@ -264,14 +288,17 @@ dependencias externas en runtime es CERRADA:
      de empresa; la empresa conecta su credencial con consentimiento explícito
      y puede desconectarla cuando quiera; (c) la credencial se guarda cifrada
      en reposo (AES-256-GCM), jamás sale al cliente, a un log ni a un mensaje
-     de error, y viaja únicamente al origen exacto validado, nunca a través de
-     una redirección; (d) el destino se valida contra SSRF al guardarlo y DE
+     de error, y viaja únicamente al origen exacto validado —en un encabezado
+     o, cuando la API del proveedor lo exige, dentro del cuerpo del pedido, que
+     jamás se registra ni vuelve en un error—, nunca a través de una
+     redirección; (d) el destino se valida contra SSRF al guardarlo y DE
      NUEVO en cada conexión, sobre la IP resuelta (solo HTTPS —salvo loopback
      bajo el gate de mocks del self-test—, sin userinfo, fuera de rangos
      privados, de loopback, link-local y de metadata de nube; 3xx rechazados),
      con timeout, tope de tamaño de respuesta y límite de tasa por empresa;
-     (e) se aísla tras un transporte MCP genérico más un perfil por proveedor,
-     sin acoplar el dominio; (f) las herramientas son de SOLO LECTURA y el
+     (e) se aísla tras un transporte genérico (MCP o la API del proveedor, sobre
+     el mismo POST protegido) más un perfil por proveedor, sin acoplar el
+     dominio; (f) las herramientas son de SOLO LECTURA y el
      conector solo invoca las de una allowlist propia: no ejecuta escrituras,
      reservas, pagos ni acciones irreversibles en el sistema del tercero, y el
      agente nunca promete una reserva; (g) el instalador NO lo necesita; (h)
@@ -293,7 +320,8 @@ dependencias externas en runtime es CERRADA:
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
   (cliente Graph API propio; adaptador LLM; adaptador OAuth/REST de Google;
   adaptador OAuth/REST de Mercado Libre; transporte MCP genérico + perfil por
-  proveedor) para no acoplar el dominio a ellas.
+  proveedor; adaptador XML de MiniHotel sobre el mismo transporte) para no
+  acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -451,7 +479,7 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   través de adaptadores dedicados (cliente Graph API propio, cliente de
   Instagram propio, adaptador LLM OpenRouter-compatible, adaptadores OAuth/REST
   de Google y de Mercado Libre, transporte MCP genérico + perfil por
-  proveedor), no dispersas por el dominio.
+  proveedor, adaptador XML de MiniHotel), no dispersas por el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
@@ -492,4 +520,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.8.1 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-26
+**Version**: 1.9.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-01

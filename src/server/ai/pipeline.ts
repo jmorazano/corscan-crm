@@ -355,7 +355,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     // promesa intacta.
     let finalText = guarded.text;
     let fallback: string | null = null;
-    if (mcp.profile.hidePricesInReply) {
+    // 028: la decisión puede ser de la EMPRESA (un hotel informa precios y
+    // otro no), no solo del proveedor: el contexto ya la resolvió.
+    if (mcp.hidePrices) {
       const priced = stripPrices(finalText, { link: lastStayLink });
       if (priced.replaced) {
         console.warn(
@@ -385,6 +387,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
         transactionalNotice: transactional?.notice ?? null,
         mcpSection,
+        mcpActionMenu: mcp?.profile.actionMenu ?? null,
         mcpOverridesKb: mcpSection !== null,
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
         listingsSection,

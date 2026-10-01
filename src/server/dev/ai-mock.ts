@@ -412,6 +412,9 @@ function dispatchStays(
   system: string
 ): string | null {
   if (!system.includes(MCP_MARKER)) return null;
+  // 028: el perfil de MiniHotel escribe «sistema de reservas del hotel»: se
+  // cotiza por adultos/niños/bebés, se comparan rangos y hay alternativas.
+  const isHotel = system.includes("sistema de reservas del hotel");
 
   const last = messages[messages.length - 1];
   const lastText = last ? textOf(last.content) : "";
@@ -457,6 +460,35 @@ function dispatchStays(
         text: "¡Listo! Te la reservo para esas fechas y quedás confirmado.",
       });
     }
+    if (isHotel) {
+      const hotelLink = lastText.match(/https:\/\/\S+/)?.[0] ?? "";
+      if (lastText.includes("COMPARACIÓN DE FECHAS")) {
+        const blocks = lastText
+          .split("\n")
+          .filter((l) => l.startsWith("Hay lugar del") || / NO hay lugar /.test(l));
+        return JSON.stringify({
+          action: "reply",
+          text: `Te comparo las fechas:\n${blocks.join("\n")}${hotelLink ? `\nReservá acá: ${hotelLink}` : ""}`,
+        });
+      }
+      if (lastText.includes("SIN LUGAR")) {
+        const alts = lastText.split("\n").filter((l) => l.startsWith("Alternativa del"));
+        if (alts.length > 0) {
+          return JSON.stringify({
+            action: "reply",
+            text: `Para esas fechas no me queda lugar, pero tengo estas opciones cercanas:\n${alts
+              .map((a) => `- ${a.replace(/^Alternativa /, "").replace(/:$/, "")}`)
+              .join("\n")}\nTe paso el enlace de la primera: ${hotelLink}`,
+          });
+        }
+        return JSON.stringify({
+          action: "reply",
+          text: lastText.includes("Tampoco hay lugar")
+            ? "Para esas fechas no tenemos lugar, y tampoco en los días cercanos. ¿Querés que te contacte alguien del equipo para ver otras opciones?"
+            : "Para esas fechas no tenemos lugar. ¿Querés que probemos con otras fechas?",
+        });
+      }
+    }
     const lines = lastText.split("\n").filter((l) => l.startsWith("- ")).slice(0, 2);
     const link = lastText.match(/https:\/\/\S+/)?.[0] ?? "";
     // 021: el nombre que dijo en el chat viaja con la respuesta.
@@ -498,22 +530,28 @@ function dispatchStays(
     if (!raw) return null;
     return /^\d+$/.test(raw) ? Number(raw) : (WORD_NUM[raw] ?? null);
   };
-  let guests =
+  const baseGuests =
     num(todo.match(/\bsomos\s+(\d{1,2}|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/)?.[1]) ??
     num(todo.match(/\b(\d{1,2})\s*(?:personas?|hu[eé]spedes?|adultos?|pax)\b/)?.[1]) ??
     num(todo.match(/\bpara\s+(\d{1,2})\s*(?:personas?|$|\s)/)?.[1]);
+  let guests = baseGuests;
   // Los chicos CUENTAN (FR-008 / corrección #50): "somos 4 y dos nenes" = 6.
   const kids = todo.match(
     /\b(\d{1,2}|un|una|dos|tres|cuatro|cinco)\s*(?:nen[eo]s?|chic[oa]s?|ni[ñn][oa]s?|menores|peques?)\b/
   );
-  if (guests !== null && kids) guests += num(kids[1]) ?? 0;
+  const kidsCount = kids ? (num(kids[1]) ?? 0) : 0;
+  if (guests !== null && kids) guests += kidsCount;
 
   // Resultado de herramienta YA presente en el contexto: un modelo sensato
   // responde con eso en vez de volver a consultar lo mismo cada turno.
   const previo = [...messages]
     .reverse()
     .map((m) => textOf(m.content))
-    .find((t) => t.startsWith("[HERRAMIENTA]") && t.includes("ALOJAMIENTOS"));
+    .find(
+      (t) =>
+        t.startsWith("[HERRAMIENTA]") &&
+        (t.includes("ALOJAMIENTOS") || t.includes("DISPONIBILIDAD") || t.includes("SIN LUGAR"))
+    );
   const enlacePrevio = previo?.match(/https:\/\/\S+/)?.[0] ?? null;
 
   // Pedido explícito de que reserve el agente. El servicio SOLO INFORMA
@@ -547,6 +585,24 @@ function dispatchStays(
   const codigo = todo.match(/\bac-?\s?0?(\d{2,3})\b/i);
   if (codigo && /ficha|detalle|cont[aá]|c[oó]mo es|info|qu[eé] tiene|entorno|barrio|r[ií]o|arroyo/.test(todo)) {
     return JSON.stringify({ action: "show_stay", property: `AC-${codigo[1]!.padStart(3, "0")}` });
+  }
+
+  // 028: un hotel cotiza por ocupación; y «del X al Y o del Z al W» compara.
+  if (isHotel && dates.length >= 2 && baseGuests !== null) {
+    const compare = dates.length >= 4 && /\bo del\b|compar/.test(todo);
+    return JSON.stringify({
+      action: "search_stays",
+      ...(compare
+        ? {
+            ranges: [
+              { check_in: dates[dates.length - 4], check_out: dates[dates.length - 3] },
+              { check_in: dates[dates.length - 2], check_out: dates[dates.length - 1] },
+            ],
+          }
+        : { check_in: dates[dates.length - 2], check_out: dates[dates.length - 1] }),
+      adults: baseGuests,
+      children: kidsCount,
+    });
   }
 
   if (dates.length >= 2 && guests !== null) {

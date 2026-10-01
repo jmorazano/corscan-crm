@@ -1254,6 +1254,10 @@ function EnableDialog({
               </option>
             ))}
           </select>
+          <p className="text-xs text-muted-foreground">
+            ¿Un hotel con MiniHotel? Habilitalo desde la empresa (Empresas → la empresa →
+            Conector): ahí se cargan el código de hotel, la tarifa y el motor de reservas.
+          </p>
         </div>
 
         <div className="space-y-1.5">

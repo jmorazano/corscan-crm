@@ -23,8 +23,11 @@ import {
   isProfileKey,
   type McpProfile,
   type McpProfileKey,
+  type ProviderConfig,
   type StayCatalog,
+  type StayRoomType,
 } from "@/server/mcp/profiles";
+import { readMiniHotelConfig } from "@/server/mcp/profiles/minihotel-config";
 
 /**
  * Conexión MCP POR EMPRESA (016, design §C.2) — patrón calcado de
@@ -68,6 +71,21 @@ export type McpCatalogView = {
   window: { from: string; to: string } | null;
   currency: string;
   maxGuests: number | null;
+  /** 028: tipos de habitación de un hotel (MiniHotel). */
+  roomTypes: StayRoomType[];
+};
+
+/**
+ * 028: lo que una empresa ve de la configuración de MiniHotel. El código de
+ * hotel, la tarifa y el host del motor no son secretos (el enlace lo recibe
+ * cualquier huésped); lo que sí decide la empresa son los dos interruptores.
+ */
+export type ProviderSettingsView = {
+  hotelId: string;
+  rateCode: string;
+  bookingEngineHost: string | null;
+  showPrices: boolean;
+  showNonRefundable: boolean;
 };
 
 /**
@@ -97,6 +115,8 @@ export type McpIntegrationView = {
   lastErrorCode: string | null;
   lastErrorAt: string | null;
   enabledAt: string;
+  /** 028: solo perfiles con configuración propia (MiniHotel); si no, `null`. */
+  providerSettings: ProviderSettingsView | null;
 };
 
 /** Otra empresa de la instancia apuntando al MISMO host (corrección #23). */
@@ -134,6 +154,8 @@ export type McpAdminView = {
   enabledBy: string | null;
   enabledAt: string;
   sharedWith: McpSharedWith[];
+  /** 028: configuración no secreta del proveedor, completa (super admin). */
+  providerConfig: Record<string, unknown> | null;
 };
 
 /**
@@ -162,6 +184,8 @@ export type McpIntegration = {
   catalog: StayCatalog | null;
   catalogFetchedAt: Date | null;
   catalogTtlMinutes: number;
+  /** 028: configuración no secreta del proveedor (la interpreta el perfil). */
+  providerConfig?: ProviderConfig;
   hasCredential: boolean;
   /** Descifra en el momento del uso. `null` = habilitada sin conectar. */
   resolveCredential: () => string | null;
@@ -203,7 +227,7 @@ function toCatalog(raw: unknown): StayCatalog | null {
       win = { from: w.from, to: w.to };
     }
   }
-  return {
+  const catalog: StayCatalog = {
     propertyTypes: strings(r.propertyTypes),
     cities: strings(r.cities),
     facilities: strings(r.facilities),
@@ -211,6 +235,54 @@ function toCatalog(raw: unknown): StayCatalog | null {
     currency: typeof r.currency === "string" ? r.currency : "ARS",
     maxGuests: typeof r.maxGuests === "number" ? r.maxGuests : null,
     searchBase: typeof r.searchBase === "string" ? r.searchBase : null,
+  };
+  const roomTypes = toRoomTypes(r.roomTypes);
+  if (roomTypes.length > 0) catalog.roomTypes = roomTypes;
+  return catalog;
+}
+
+/** 028: los tipos de habitación guardados (ya saneados por el perfil). */
+function toRoomTypes(raw: unknown): StayRoomType[] {
+  if (!Array.isArray(raw)) return [];
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const out: StayRoomType[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const t = item as Record<string, unknown>;
+    if (typeof t.code !== "string" || typeof t.name !== "string") continue;
+    out.push({
+      code: t.code,
+      name: t.name,
+      maxAdults: n(t.maxAdults),
+      maxChildren: n(t.maxChildren),
+      maxBabies: n(t.maxBabies),
+      attributes: Array.isArray(t.attributes)
+        ? t.attributes.filter((a): a is string => typeof a === "string")
+        : [],
+    });
+  }
+  return out;
+}
+
+/** 028: la parte de la config de MiniHotel que puede ver la empresa. */
+function providerSettingsOf(row: Row): ProviderSettingsView | null {
+  if (row.profile !== "minihotel") return null;
+  const config = readMiniHotelConfig(row.providerConfig ?? null);
+  if (!config) return null;
+  let host: string | null = null;
+  if (config.bookingEngineUrl) {
+    try {
+      host = new URL(config.bookingEngineUrl).hostname;
+    } catch {
+      host = null;
+    }
+  }
+  return {
+    hotelId: config.hotelId,
+    rateCode: config.rateCode,
+    bookingEngineHost: host,
+    showPrices: config.showPrices,
+    showNonRefundable: config.showNonRefundable,
   };
 }
 
@@ -247,6 +319,7 @@ function toIntegration(row: Row): McpIntegration {
     catalog: toCatalog(row.catalog),
     catalogFetchedAt: row.catalogFetchedAt,
     catalogTtlMinutes: row.catalogTtlMinutes,
+    providerConfig: row.providerConfig ?? null,
     hasCredential: blob !== null && blob !== undefined,
     resolveCredential: () => {
       if (!blob) return null;
@@ -305,6 +378,7 @@ export function toMcpIntegrationView(row: Row): McpIntegrationView {
           window: catalog.window,
           currency: catalog.currency,
           maxGuests: catalog.maxGuests,
+          roomTypes: catalog.roomTypes ?? [],
         }
       : null,
     catalogFetchedAt: row.catalogFetchedAt?.toISOString() ?? null,
@@ -312,6 +386,7 @@ export function toMcpIntegrationView(row: Row): McpIntegrationView {
     lastErrorCode: row.lastErrorCode,
     lastErrorAt: row.lastErrorAt?.toISOString() ?? null,
     enabledAt: row.enabledAt.toISOString(),
+    providerSettings: providerSettingsOf(row),
   };
 }
 
@@ -389,6 +464,7 @@ export async function getMcpAdminView(
     enabledBy: row.enabledBy,
     enabledAt: row.enabledAt.toISOString(),
     sharedWith: shared,
+    providerConfig: row.providerConfig ?? null,
   };
 }
 
@@ -410,6 +486,10 @@ export type EnableMcpInput = {
   timeoutMs: number;
   maxResponseBytes: number;
   catalogTtlMinutes: number;
+  /** 028: config no secreta del proveedor (MiniHotel). `undefined` = no tocar. */
+  providerConfig?: Record<string, unknown> | null;
+  /** 028: últimos 4 a mostrar cuando la credencial no es un token plano. */
+  credentialLast4?: string;
 };
 
 /** Últimos 4 caracteres (patrón `tokenLast4`, `ai/credentials.ts:91-101`). */
@@ -453,7 +533,9 @@ export async function enableMcpIntegration(
   const db = getDb();
   const existing = await getRow(input.organizationId);
   const enc = input.credential ? encryptSecret(input.credential) : null;
-  const last4 = input.credential ? credentialLast4(input.credential) : null;
+  const last4 = input.credential
+    ? (input.credentialLast4 ?? credentialLast4(input.credential))
+    : null;
 
   if (!existing) {
     await db.insert(schema.mcpIntegration).values({
@@ -470,6 +552,7 @@ export async function enableMcpIntegration(
       timeoutMs: input.timeoutMs,
       maxResponseBytes: input.maxResponseBytes,
       catalogTtlMinutes: input.catalogTtlMinutes,
+      providerConfig: input.providerConfig ?? null,
       enabledBy: input.userId,
     });
     return getMcpAdminView(input.organizationId);
@@ -489,7 +572,12 @@ export async function enableMcpIntegration(
     catalogTtlMinutes: input.catalogTtlMinutes,
     updatedAt: new Date(),
   };
-  if (endpointChanged) Object.assign(patch, RESET_ON_ENDPOINT_CHANGE);
+  if (input.providerConfig !== undefined) patch.providerConfig = input.providerConfig;
+  // 028: cambiar de PERFIL es cambiar de proveedor: la credencial de uno no
+  // sirve para el otro (un token de MCP no es {usuario, contraseña}) y el
+  // catálogo tampoco. Mismo efecto que cambiar la dirección.
+  const profileChanged = existing.profile !== input.profile;
+  if (endpointChanged || profileChanged) Object.assign(patch, RESET_ON_ENDPOINT_CHANGE);
   // Una credencial nueva en el mismo PUT gana sobre el borrado de arriba: el
   // super admin la está cargando A PROPÓSITO para el endpoint nuevo.
   if (enc) {
@@ -601,6 +689,8 @@ export async function setMcpCredential(input: {
   organizationId: string;
   userId: string;
   credential: string;
+  /** 028: lo visible cuando la credencial no es un token plano (MiniHotel). */
+  last4?: string;
 }): Promise<CredentialResult> {
   const row = await getRow(input.organizationId);
   if (!row) return { ok: false, code: "not_enabled" };
@@ -610,7 +700,7 @@ export async function setMcpCredential(input: {
     .update(schema.mcpIntegration)
     .set({
       credential: enc,
-      credentialLast4: credentialLast4(input.credential),
+      credentialLast4: input.last4 ?? credentialLast4(input.credential),
       status: row.status === "disabled" ? "disabled" : "enabled",
       connectedBy: input.userId,
       connectedAt: new Date(),
@@ -657,6 +747,8 @@ export async function updateMcpSettings(
     timezone?: string;
     /** Rótulo visible de la empresa. No toca dirección ni perfil (FR-002). */
     label?: string;
+    /** 028: config del proveedor YA mezclada por el caller (decisiones de la empresa). */
+    providerConfig?: Record<string, unknown>;
   }
 ): Promise<boolean> {
   const set: Partial<typeof schema.mcpIntegration.$inferInsert> = { updatedAt: new Date() };
@@ -666,6 +758,7 @@ export async function updateMcpSettings(
   }
   if (patch.timezone !== undefined) set.timezone = patch.timezone;
   if (patch.label !== undefined) set.label = patch.label;
+  if (patch.providerConfig !== undefined) set.providerConfig = patch.providerConfig;
   const db = getDb();
   const updated = await db
     .update(schema.mcpIntegration)
@@ -780,7 +873,12 @@ export async function recordHandshake(
  * Handshake en vivo
  * ============================================================ */
 
-export type HandshakeFailureCode = McpErrorCode | "not_enabled" | "no_credential";
+export type HandshakeFailureCode =
+  | McpErrorCode
+  | "not_enabled"
+  | "no_credential"
+  /** 028: el super admin no completó la config del proveedor (hotel, tarifa). */
+  | "not_configured";
 
 export type HandshakeResult =
   | { ok: true; integration: McpIntegrationView }
@@ -789,6 +887,8 @@ export type HandshakeResult =
       code: HandshakeFailureCode;
       /** Nombres de NUESTRA lista, nunca texto del remoto. */
       missingTools?: string[];
+      /** 028: motivo concreto de un rechazo (`auth`, `hotel`, `ip_not_authorized`). */
+      reason?: string;
     };
 
 /**

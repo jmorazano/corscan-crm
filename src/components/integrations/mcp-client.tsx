@@ -60,6 +60,26 @@ type CatalogView = {
   window: { from: string; to: string } | null;
   currency: string;
   maxGuests?: number | null;
+  /** 028: habitaciones de un hotel (MiniHotel). */
+  roomTypes?: RoomTypeView[];
+};
+
+type RoomTypeView = {
+  code: string;
+  name: string;
+  maxAdults: number | null;
+  maxChildren: number | null;
+  maxBabies: number | null;
+  attributes: string[];
+};
+
+/** 028: lo que la empresa ve de la configuración de MiniHotel. */
+type ProviderSettingsView = {
+  hotelId: string;
+  rateCode: string;
+  bookingEngineHost: string | null;
+  showPrices: boolean;
+  showNonRefundable: boolean;
 };
 
 type IntegrationView = {
@@ -85,6 +105,7 @@ type IntegrationView = {
   lastErrorCode: string | null;
   lastErrorAt: string | null;
   enabledAt: string;
+  providerSettings: ProviderSettingsView | null;
 };
 
 type Response_ = {
@@ -130,6 +151,8 @@ type ApiErrorBody = {
   providerCode?: string;
   missingTools?: string[];
   retryInSeconds?: number;
+  /** 028: motivo concreto de un rechazo (MiniHotel). */
+  reason?: string;
 };
 
 /* ============================================================
@@ -157,7 +180,25 @@ const ERROR_TEXT: Record<string, string> = {
   sandbox_violation:
     "Las conversaciones de prueba no consultan el servidor real.",
   http_error: "No se pudo conectar con el servidor.",
+  // 028: motivos y rechazos de MiniHotel (espejo de PROVIDER_REASON_TEXT).
+  auth: "El sistema del hotel rechazó el usuario o la contraseña. Revisalos y volvé a cargarlos.",
+  hotel: "El sistema del hotel no reconoce el código de hotel. Avisale al administrador de la instancia.",
+  ip_not_authorized:
+    "El sistema del hotel todavía no autorizó la IP de este servidor. Hay que pedirle al proveedor que la agregue.",
+  not_configured:
+    "Falta completar la configuración del hotel (código de hotel y tarifa). Avisale al administrador de la instancia.",
+  rate_code: "El sistema del hotel no reconoce el código de tarifa. Avisale al administrador de la instancia.",
+  hotel_settings:
+    "El sistema del hotel tiene la configuración de precios u ocupación incompleta. Hay que revisarla en MiniHotel.",
+  invalid_dates: "El sistema del hotel no aceptó esas fechas.",
+  past_date: "La fecha de entrada ya pasó.",
+  too_many_nights: "La estadía supera el máximo de noches que acepta el hotel.",
+  invalid_request: "El sistema del hotel no aceptó la consulta.",
+  provider_error: "El sistema del hotel respondió con un error.",
 };
+
+/** 028: los motivos que vale la pena mostrar en el aviso de reconexión. */
+const RECONNECT_REASONS = new Set(["auth", "hotel", "ip_not_authorized"]);
 
 const FALLBACK_ERROR = "No se pudo conectar con el servidor.";
 
@@ -188,6 +229,9 @@ async function readApiError(res: Response | null): Promise<ApiErrorBody> {
 
 /** Mensaje mostrable de una respuesta fallida (jamás texto del remoto). */
 function messageFromError(err: ApiErrorBody): string {
+  // 028: con motivo concreto se dice QUÉ arreglar (IP, usuario, hotel).
+  if (err.reason && ERROR_TEXT[err.reason]) return ERROR_TEXT[err.reason]!;
+  if (err.providerCode && ERROR_TEXT[err.providerCode]) return ERROR_TEXT[err.providerCode]!;
   if (err.mcpCode) return errorTextFor(err.mcpCode);
   if (err.message) return err.message;
   return errorTextFor(err.code);
@@ -318,9 +362,12 @@ export function McpClient() {
         onChanged={refetch}
         onError={setError}
       />
-      {integration.status === "connected" && (
-        <PreviewCard integration={integration} canManage={data.canManage} />
-      )}
+      {integration.status === "connected" &&
+        (integration.profile === "minihotel" ? (
+          <MiniHotelPreviewCard canManage={data.canManage} />
+        ) : (
+          <PreviewCard integration={integration} canManage={data.canManage} />
+        ))}
       <KbConflictCard />
     </div>
   );
@@ -344,6 +391,8 @@ function ConnectionCard({
   onNotice: (m: string | null) => void;
 }) {
   const [credential, setCredential] = useState("");
+  const [mhUser, setMhUser] = useState("");
+  const [mhPass, setMhPass] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -351,6 +400,11 @@ function ConnectionCard({
   const badge = STATUS_BADGE[integration.status];
   const hasCredential = integration.credentialLast4 !== null;
   const showForm = !hasCredential || editing;
+  const isMiniHotel = integration.profile === "minihotel";
+  const settings = integration.providerSettings;
+  const canSubmit = isMiniHotel
+    ? mhUser.trim() !== "" && mhPass.trim() !== ""
+    : credential.trim().length >= 8;
 
   /** Cargar/rotar la credencial y verificar en el mismo gesto. */
   async function connect() {
@@ -360,7 +414,9 @@ function ConnectionCard({
     const put = await fetch("/api/integrations/mcp", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ credential }),
+      body: JSON.stringify(
+        isMiniHotel ? { minihotel: { username: mhUser, password: mhPass } } : { credential }
+      ),
     }).catch(() => null);
     if (!put?.ok) {
       setBusy(false);
@@ -368,6 +424,8 @@ function ConnectionCard({
       return;
     }
     setCredential("");
+    setMhUser("");
+    setMhPass("");
     setEditing(false);
     await verify({ silent: true });
     setBusy(false);
@@ -429,8 +487,9 @@ function ConnectionCard({
           </Badge>
         </div>
         <CardDescription>
-          La dirección del servidor la carga el administrador de la instancia.
-          Acá solo va la credencial que te pasó el proveedor.
+          {isMiniHotel
+            ? "La dirección y los datos del hotel los carga el administrador de la instancia. Acá van el usuario y la contraseña de la API que te dio MiniHotel."
+            : "La dirección del servidor la carga el administrador de la instancia. Acá solo va la credencial que te pasó el proveedor."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-4 pb-4 md:px-5 md:pb-5">
@@ -441,10 +500,25 @@ function ConnectionCard({
             </span>
           </Row>
           <Row label="Perfil">{integration.profileName}</Row>
+          {isMiniHotel && settings && (
+            <>
+              <Row label="Hotel">
+                <span data-testid="mh-hotel">{settings.hotelId}</span>
+              </Row>
+              <Row label="Tarifa">{settings.rateCode}</Row>
+              <Row label="Motor de reservas">
+                {settings.bookingEngineHost ?? (
+                  <span className="text-muted-foreground">Sin cargar (el agente no manda enlace)</span>
+                )}
+              </Row>
+            </>
+          )}
           <Row label="Credencial">
             {hasCredential ? (
               <span data-testid="mcp-credential-last4">
-                Cargada (termina en ••••{integration.credentialLast4})
+                {isMiniHotel
+                  ? `Cargada (contraseña terminada en ••••${integration.credentialLast4})`
+                  : `Cargada (termina en ••••${integration.credentialLast4})`}
               </span>
             ) : (
               <span className="text-muted-foreground">Sin cargar</span>
@@ -454,8 +528,9 @@ function ConnectionCard({
 
         {integration.status === "enabled" && !hasCredential && (
           <p className="text-sm text-muted-foreground" data-testid="mcp-empty">
-            Este servidor todavía no está conectado. Pegá la credencial que te
-            pasó el proveedor y tocá Conectar.
+            {isMiniHotel
+              ? "Todavía no está conectado. Cargá el usuario y la contraseña de la API de MiniHotel y tocá Conectar."
+              : "Este servidor todavía no está conectado. Pegá la credencial que te pasó el proveedor y tocá Conectar."}
           </p>
         )}
 
@@ -465,8 +540,11 @@ function ConnectionCard({
             role="alert"
             data-testid="mcp-reconnect-banner"
           >
-            El servidor rechazó la credencial. Mientras tanto el agente no
-            consulta disponibilidad: avisa que el equipo la confirma.
+            {integration.lastErrorCode && RECONNECT_REASONS.has(integration.lastErrorCode)
+              ? `${errorTextFor(integration.lastErrorCode)} `
+              : "El servidor rechazó la credencial. "}
+            Mientras tanto el agente no consulta disponibilidad: avisa que el
+            equipo la confirma.
           </p>
         )}
 
@@ -479,7 +557,37 @@ function ConnectionCard({
 
         {canManage ? (
           <fieldset disabled={busy} className="min-w-0 space-y-3">
-            {showForm && (
+            {showForm && isMiniHotel && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="mh-username">Usuario de la API</Label>
+                  <Input
+                    id="mh-username"
+                    data-testid="mh-username"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={mhUser}
+                    onChange={(e) => setMhUser(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="mh-password">Contraseña de la API</Label>
+                  <Input
+                    id="mh-password"
+                    data-testid="mh-password"
+                    type="password"
+                    autoComplete="off"
+                    value={mhPass}
+                    onChange={(e) => setMhPass(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground md:col-span-2">
+                  Se guardan cifrados y no se vuelven a mostrar: solo verás los
+                  últimos 4 caracteres de la contraseña.
+                </p>
+              </div>
+            )}
+            {showForm && !isMiniHotel && (
               <div className="space-y-1.5">
                 <Label htmlFor="mcp-credential">
                   Credencial del proveedor
@@ -503,7 +611,7 @@ function ConnectionCard({
               {showForm && (
                 <Button
                   onClick={() => void connect()}
-                  disabled={credential.trim().length < 8}
+                  disabled={!canSubmit}
                   data-testid="mcp-connect"
                 >
                   <KeyRound className="h-4 w-4" strokeWidth={1.7} />
@@ -516,6 +624,8 @@ function ConnectionCard({
                   onClick={() => {
                     setEditing(false);
                     setCredential("");
+                    setMhUser("");
+                    setMhPass("");
                   }}
                 >
                   Cancelar
@@ -878,7 +988,39 @@ function ServerCard({
           </ul>
         </div>
 
-        {catalog && (
+        {catalog && catalog.roomTypes && catalog.roomTypes.length > 0 && (
+          <div className="space-y-2 rounded-md border p-3 text-sm" data-testid="mh-rooms">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Habitaciones del hotel ({catalog.roomTypes.length})
+            </p>
+            <ul className="space-y-1.5">
+              {catalog.roomTypes.map((t) => (
+                <li key={t.code}>
+                  <span className="font-medium">{t.name}</span>{" "}
+                  <code className="text-xs text-muted-foreground">{t.code}</code>
+                  <span className="text-muted-foreground">
+                    {t.maxAdults !== null
+                      ? ` · hasta ${t.maxAdults} ${t.maxAdults === 1 ? "adulto" : "adultos"}`
+                      : ""}
+                    {t.maxChildren ? ` · ${t.maxChildren} ${t.maxChildren === 1 ? "niño" : "niños"}` : ""}
+                    {t.maxBabies ? ` · ${t.maxBabies} ${t.maxBabies === 1 ? "bebé" : "bebés"}` : ""}
+                  </span>
+                  {t.attributes.length > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      {t.attributes.join(" · ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              Capacidad = lo que admiten todas las habitaciones del tipo · actualizado{" "}
+              {formatDateTime(integration.catalogFetchedAt)}
+            </p>
+          </div>
+        )}
+
+        {catalog && !(catalog.roomTypes && catalog.roomTypes.length > 0) && (
           <div className="space-y-1 rounded-md border p-3 text-sm">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Catálogo del proveedor
@@ -955,12 +1097,19 @@ function AgentCard({
   const [saving, setSaving] = useState(false);
 
   async function toggle(value: boolean) {
+    await put({ agentToolsEnabled: value });
+  }
+
+  /** 028: regla comercial del hotel (solo MiniHotel). */
+  const settings = integration.profile === "minihotel" ? integration.providerSettings : null;
+
+  async function put(body: Record<string, unknown>) {
     setSaving(true);
     onError(null);
     const res = await fetch("/api/integrations/mcp", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentToolsEnabled: value }),
+      body: JSON.stringify(body),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -996,6 +1145,36 @@ function AgentCard({
             no consulta nada y deriva al equipo.
           </span>
         </label>
+        {settings && (
+          <>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={settings.showPrices}
+                disabled={!canManage || saving}
+                onChange={(e) => void put({ showPrices: e.target.checked })}
+                data-testid="mh-show-prices"
+              />
+              <span>
+                Informar precios por WhatsApp (el total de la estadía por
+                régimen). Si está apagado, el agente informa la disponibilidad y
+                pasa el enlace: los precios se ven en el motor de reservas.
+              </span>
+            </label>
+            <label className="flex items-start gap-2 pl-6 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={settings.showNonRefundable}
+                disabled={!canManage || saving || !settings.showPrices}
+                onChange={(e) => void put({ showNonRefundable: e.target.checked })}
+                data-testid="mh-show-nrf"
+              />
+              <span>Mencionar también la tarifa no reembolsable.</span>
+            </label>
+          </>
+        )}
         <p className="rounded-md border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
           El agente informa y pasa el enlace. Nunca confirma ni promete una
           reserva.
@@ -1233,6 +1412,272 @@ function PreviewCard({
               Precios en {currency}, tal como los devuelve el servidor: no se
               convierten ni se recalculan.
             </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ============================================================
+ * 028 — Consulta de prueba de MiniHotel (también sirve para la
+ * validación del sandbox: cada consulta queda en la bitácora)
+ * ============================================================ */
+
+type MhBoard = { board: string; label: string; value: number | null; valueNrf: number | null };
+type MhRoom = {
+  code: string;
+  name: string;
+  available: number | null;
+  minNights: number | null;
+  fits: boolean;
+  boards: MhBoard[];
+};
+type MhRange = {
+  from: string;
+  to: string;
+  nights: number;
+  error: string | null;
+  rooms: MhRoom[];
+  link: string | null;
+};
+type MhPreview = {
+  hotelName: string | null;
+  currency: string | null;
+  ranges: MhRange[];
+  alternatives: { searched: boolean; windows: MhRange[] } | null;
+};
+
+/** Montos con centavos cuando los hay: un hotel en USD cotiza con decimales. */
+function formatAmount(value: number | null, currency: string | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const code = (currency ?? "").toUpperCase();
+  try {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: /^[A-Z]{3}$/.test(code) ? code : "ARS",
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${code} ${value}`;
+  }
+}
+
+function MhRangeBlock({
+  range,
+  currency,
+  title,
+}: {
+  range: MhRange;
+  currency: string | null;
+  title: string;
+}) {
+  const free = range.rooms.filter((r) => (r.available ?? 0) > 0);
+  return (
+    <div className="space-y-2 rounded-md border p-3" data-testid="mh-preview-range">
+      <p className="text-sm font-medium">
+        {title} · {range.from} → {range.to} ({range.nights}{" "}
+        {range.nights === 1 ? "noche" : "noches"})
+      </p>
+      {range.error && (
+        <p className="text-sm text-[#a2504c]">{errorTextFor(range.error)}</p>
+      )}
+      {!range.error && free.length === 0 && (
+        <p className="text-sm text-muted-foreground">Sin lugar.</p>
+      )}
+      <ul className="space-y-1.5">
+        {free.map((room) => (
+          <li key={room.code} className="text-sm" data-testid={`mh-preview-room-${room.code}`}>
+            <span className="font-medium">{room.name}</span>{" "}
+            <code className="text-xs text-muted-foreground">{room.code}</code>
+            <span className="text-muted-foreground">
+              {room.available !== null ? ` · quedan ${room.available}` : ""}
+              {room.minNights && room.minNights > 1 ? ` · mínimo ${room.minNights} noches` : ""}
+            </span>
+            {!room.fits && (
+              <Badge variant="warning" className="ml-2">
+                No alcanza para el grupo
+              </Badge>
+            )}
+            <span className="block text-xs text-muted-foreground">
+              {room.boards
+                .map(
+                  (b) =>
+                    `${b.label}: ${formatAmount(b.value, currency)}${
+                      b.valueNrf !== null ? ` (no reembolsable ${formatAmount(b.valueNrf, currency)})` : ""
+                    }`
+                )
+                .join(" · ")}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {range.link && (
+        <a
+          href={range.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-sm text-brand underline"
+          data-testid="mh-preview-link"
+        >
+          Abrir el motor de reservas con esta búsqueda
+        </a>
+      )}
+    </div>
+  );
+}
+
+function MiniHotelPreviewCard({ canManage }: { canManage: boolean }) {
+  const [checkIn, setCheckIn] = useState(() => isoPlusDays(30));
+  const [checkOut, setCheckOut] = useState(() => isoPlusDays(32));
+  const [adults, setAdults] = useState(2);
+  const [children, setChildren] = useState(0);
+  const [babies, setBabies] = useState(0);
+  const [result, setResult] = useState<{ message: string; preview: MhPreview } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function run() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    const res = await fetch("/api/integrations/mcp/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ check_in: checkIn, check_out: checkOut, adults, children, babies }),
+    }).catch(() => null);
+    setLoading(false);
+    if (!res?.ok) {
+      setError(messageFromError(await readApiError(res)));
+      return;
+    }
+    setResult((await res.json()) as { message: string; preview: MhPreview });
+  }
+
+  const preview = result?.preview ?? null;
+
+  return (
+    <Card data-testid="mh-preview">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-brand" strokeWidth={1.7} />
+          Probar una consulta
+        </CardTitle>
+        <CardDescription>
+          Consulta REAL al sistema del hotel, la misma que hace el agente. Cada
+          prueba queda registrada (sirve como evidencia para la validación de
+          MiniHotel). Acá ves todos los importes: son tus datos.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4 pb-4 md:px-5 md:pb-5">
+        {canManage ? (
+          <fieldset disabled={loading} className="min-w-0 space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="mh-preview-in">Entrada</Label>
+                <Input
+                  id="mh-preview-in"
+                  data-testid="mh-preview-in"
+                  type="date"
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mh-preview-out">Salida</Label>
+                <Input
+                  id="mh-preview-out"
+                  data-testid="mh-preview-out"
+                  type="date"
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="mh-preview-adults">Adultos</Label>
+                <Input
+                  id="mh-preview-adults"
+                  data-testid="mh-preview-adults"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={adults}
+                  onChange={(e) => setAdults(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mh-preview-children">Niños</Label>
+                <Input
+                  id="mh-preview-children"
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={children}
+                  onChange={(e) => setChildren(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mh-preview-babies">Bebés</Label>
+                <Input
+                  id="mh-preview-babies"
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={babies}
+                  onChange={(e) => setBabies(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </div>
+            </div>
+            <Button onClick={() => void run()} data-testid="mh-preview-run">
+              <Search className="h-4 w-4" strokeWidth={1.7} />
+              {loading ? "Consultando…" : "Consultar"}
+            </Button>
+          </fieldset>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Solo el propietario puede probar consultas.
+          </p>
+        )}
+
+        {error && (
+          <p className="text-sm text-[#a2504c]" role="alert" data-testid="mh-preview-error">
+            {error}
+          </p>
+        )}
+
+        {result && preview && (
+          <div className="space-y-3" data-testid="mh-preview-result">
+            <p className="text-sm" data-testid="mh-preview-message">
+              {result.message}
+              {preview.hotelName ? ` (${preview.hotelName}` : ""}
+              {preview.hotelName && preview.currency ? `, ${preview.currency})` : preview.hotelName ? ")" : ""}
+            </p>
+            {preview.ranges.map((r) => (
+              <MhRangeBlock key={`${r.from}-${r.to}`} range={r} currency={preview.currency} title="Fechas pedidas" />
+            ))}
+            {preview.alternatives && preview.alternatives.windows.length > 0 && (
+              <div className="space-y-2" data-testid="mh-preview-alternatives">
+                <p className="text-sm font-medium">
+                  Fechas cercanas con lugar (misma cantidad de noches, ±7 días):
+                </p>
+                {preview.alternatives.windows.map((w) => (
+                  <MhRangeBlock key={`${w.from}-${w.to}`} range={w} currency={preview.currency} title="Alternativa" />
+                ))}
+              </div>
+            )}
+            {preview.alternatives &&
+              preview.alternatives.windows.length === 0 &&
+              (preview.alternatives.searched ? (
+                <p className="text-sm text-muted-foreground">
+                  Tampoco hay lugar con la misma cantidad de noches en los 7 días anteriores o posteriores.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No se pudieron buscar fechas alternativas en este momento.
+                </p>
+              ))}
           </div>
         )}
       </CardContent>

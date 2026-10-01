@@ -78,6 +78,24 @@ export const AgentAction = z.discriminatedUnion("action", [
     facilities: z.array(z.string().trim()).max(20).optional(),
     /** Al menos una (OR): la forma de preguntar por "cochera" o "pileta". */
     facilities_any: z.array(z.string().trim()).max(20).optional(),
+    /**
+     * 028 (hoteles): el precio depende de la ocupación. Opcionales por la
+     * misma razón que el resto (D14): si faltan, el perfil pregunta.
+     */
+    adults: z.coerce.number().int().optional(),
+    children: z.coerce.number().int().optional(),
+    babies: z.coerce.number().int().optional(),
+    room_type: z.string().trim().max(60).optional(),
+    /** 028: comparar rangos. El perfil corta en 3 y lo dice. */
+    ranges: z
+      .array(
+        z.object({
+          check_in: z.string().trim().optional(),
+          check_out: z.string().trim().optional(),
+        })
+      )
+      .max(10)
+      .optional(),
   }),
   z.object({
     action: z.literal("show_stay"),

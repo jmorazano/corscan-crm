@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http";
+import { StringDecoder } from "node:string_decoder";
 import { McpError, toMcpError } from "./errors";
 import { checkEndpointSyntax, guardedLookup } from "./ssrf";
 
@@ -109,31 +110,194 @@ export async function postJsonRpc(
 
   // 2) Sintaxis, acá adentro y no solo en el caller: la fila que guarda la URL
   //    puede cambiar entre la validación y el uso (S-1).
-  const check = checkEndpointSyntax(o.endpointUrl);
-  if (!check.ok) {
-    throw new McpError(check.reason === "bad_host" ? "blocked_host" : "invalid_url");
-  }
-  const url = check.url;
+  const url = checkedUrl(o.endpointUrl);
   const payload = Buffer.from(JSON.stringify(o.body ?? null), "utf8");
   const expectedId = extractId(o.body);
 
   const done = await acquire(o.timeoutMs);
   try {
-    return await send(url, payload, expectedId, o);
+    return await send(
+      url,
+      payload,
+      {
+        headers: o.headers,
+        contentType: "application/json",
+        accept: "application/json, text/event-stream",
+        allowedContentTypes: ALLOWED_CONTENT_TYPES,
+        timeoutMs: o.timeoutMs,
+        maxResponseBytes: o.maxResponseBytes,
+        ...(o.request ? { request: o.request } : {}),
+      },
+      jsonRpcReader(expectedId)
+    );
   } finally {
     done();
   }
 }
 
-function send(
+/* ------------------------------------------------------------------ */
+/* 028: el mismo POST protegido para APIs de proveedor que no son MCP  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * MiniHotel habla XML por POST, con la credencial DENTRO del cuerpo. Pasa
+ * por exactamente los mismos controles que `postJsonRpc` —fusible de
+ * sandbox, sintaxis, semáforo, `guardedLookup` sobre la IP resuelta, sin
+ * redirecciones, sin compresión, tope de bytes, deadline total— porque la
+ * Constitución II (cat. 5, letras c y d) no distingue el protocolo: lo que
+ * se protege es el socket.
+ *
+ * Igual que acá arriba: este módulo NO loguea el cuerpo (que lleva la
+ * credencial) ni lo devuelve en ningún error.
+ */
+export type GuardedTextOptions = {
+  endpointUrl: string;
+  headers?: Record<string, string>;
+  /** Cuerpo ya armado (p. ej. el XML). Nunca se loguea. */
+  body: string;
+  /** `Content-Type` del pedido, p. ej. `text/xml; charset=utf-8`. */
+  contentType: string;
+  accept: string;
+  /** Tipos aceptados en la respuesta, sin parámetros y en minúsculas. */
+  allowedContentTypes: readonly string[];
+  timeoutMs: number;
+  maxResponseBytes: number;
+  /** D4: `true` ⇒ excepción ANTES de cualquier I/O. */
+  sandbox: boolean;
+  request?: McpRequestFn;
+};
+
+export type GuardedTextResult = {
+  text: string;
+  httpStatus: number;
+  bytes: number;
+  headers: Record<string, string>;
+};
+
+export async function postGuardedText(o: GuardedTextOptions): Promise<GuardedTextResult> {
+  if (o.sandbox) throw new McpError("sandbox_violation");
+  const url = checkedUrl(o.endpointUrl);
+  const payload = Buffer.from(o.body, "utf8");
+
+  const done = await acquire(o.timeoutMs);
+  try {
+    return await send(
+      url,
+      payload,
+      {
+        headers: o.headers ?? {},
+        contentType: o.contentType,
+        accept: o.accept,
+        allowedContentTypes: o.allowedContentTypes,
+        timeoutMs: o.timeoutMs,
+        maxResponseBytes: o.maxResponseBytes,
+        ...(o.request ? { request: o.request } : {}),
+      },
+      TEXT_READER
+    );
+  } finally {
+    done();
+  }
+}
+
+function checkedUrl(endpointUrl: string): URL {
+  const check = checkEndpointSyntax(endpointUrl);
+  if (!check.ok) {
+    throw new McpError(check.reason === "bad_host" ? "blocked_host" : "invalid_url");
+  }
+  return check.url;
+}
+
+/* ------------------------------------------------------------------ */
+/* Núcleo: un POST protegido y un lector intercambiable               */
+/* ------------------------------------------------------------------ */
+
+type SendSpec = {
+  headers: Record<string, string>;
+  contentType: string;
+  accept: string;
+  allowedContentTypes: readonly string[];
+  timeoutMs: number;
+  maxResponseBytes: number;
+  request?: McpRequestFn;
+};
+
+type ReadContext = {
+  status: number;
+  bytes: number;
+  headers: Record<string, string>;
+  contentType: string;
+};
+
+type ResponseReader<T> = {
+  /**
+   * Con el buffer acumulado: o el resultado (y se corta el socket), o el
+   * resto que hay que conservar. Opcional: sin él, se acumula todo.
+   */
+  onChunk?: (
+    buffer: string,
+    ctx: ReadContext
+  ) => { done: true; value: T } | { done: false; rest: string };
+  /** Cuerpo completo. Puede lanzar `McpError` (nunca con bytes del remoto). */
+  onEnd: (buffer: string, ctx: ReadContext) => T;
+};
+
+function jsonRpcReader(expectedId: string | number | null): ResponseReader<McpTransportResult> {
+  return {
+    onChunk: (buffer, ctx) => {
+      if (ctx.contentType !== "text/event-stream") return { done: false, rest: buffer };
+      // #12: cortar con `destroy()` en cuanto llega el primer objeto
+      // JSON-RPC con NUESTRO id. Un servidor que deja el stream abierto
+      // después de responder retendría el socket todo el timeout.
+      const hit = takeSseObject(buffer, expectedId);
+      return hit.found
+        ? {
+            done: true,
+            value: { json: hit.json, httpStatus: ctx.status, bytes: ctx.bytes, headers: ctx.headers },
+          }
+        : { done: false, rest: hit.rest };
+    },
+    onEnd: (buffer, ctx) => {
+      if (ctx.contentType === "text/event-stream") {
+        const hit = takeSseObject(buffer, expectedId, true);
+        if (hit.found) {
+          return { json: hit.json, httpStatus: ctx.status, bytes: ctx.bytes, headers: ctx.headers };
+        }
+        throw new McpError("bad_payload", { httpStatus: ctx.status });
+      }
+      try {
+        return {
+          json: JSON.parse(buffer) as unknown,
+          httpStatus: ctx.status,
+          bytes: ctx.bytes,
+          headers: ctx.headers,
+        };
+      } catch {
+        // Nunca el cuerpo en el error: son bytes de un tercero.
+        throw new McpError("bad_payload", { httpStatus: ctx.status });
+      }
+    },
+  };
+}
+
+const TEXT_READER: ResponseReader<GuardedTextResult> = {
+  onEnd: (buffer, ctx) => ({
+    text: buffer,
+    httpStatus: ctx.status,
+    bytes: ctx.bytes,
+    headers: ctx.headers,
+  }),
+};
+
+function send<T>(
   url: URL,
   payload: Buffer,
-  expectedId: string | number | null,
-  o: McpTransportOptions
-): Promise<McpTransportResult> {
+  spec: SendSpec,
+  reader: ResponseReader<T>
+): Promise<T> {
   const insecure = url.protocol === "http:";
   const requestFn: McpRequestFn =
-    o.request ?? (insecure ? (http.request as McpRequestFn) : (https.request as McpRequestFn));
+    spec.request ?? (insecure ? (http.request as McpRequestFn) : (https.request as McpRequestFn));
 
   const options: RequestOptions = {
     protocol: url.protocol,
@@ -142,10 +306,10 @@ function send(
     path: `${url.pathname}${url.search}`,
     method: "POST",
     headers: {
-      ...o.headers,
+      ...spec.headers,
       // Nuestros headers van DESPUÉS: el caller no puede pisarlos.
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
+      "content-type": spec.contentType,
+      accept: spec.accept,
       // #12: sin compresión. Con `content-encoding` el tope de bytes deja de
       // significar algo (512 KB de gzip son ~500 MB en memoria).
       "accept-encoding": "identity",
@@ -162,15 +326,15 @@ function send(
     // bajo el gate de mocks, que es la única puerta.
   } as RequestOptions;
 
-  return new Promise<McpTransportResult>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     let settled = false;
     let req: ClientRequest | null = null;
 
     const timer = setTimeout(() => {
       finish(new McpError("timeout"));
-    }, Math.max(1, o.timeoutMs));
+    }, Math.max(1, spec.timeoutMs));
 
-    function finish(err: McpError | null, value?: McpTransportResult): void {
+    function finish(err: McpError | null, value?: T): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -180,7 +344,7 @@ function send(
         // el socket ya estaba cerrado
       }
       if (err) reject(err);
-      else resolve(value as McpTransportResult);
+      else resolve(value as T);
     }
 
     try {
@@ -188,8 +352,8 @@ function send(
         const status = res.statusCode ?? 0;
         const headers = flattenHeaders(res.headers);
 
-        // 3xx sin seguirlo: un endpoint JSON-RPC no redirige, y seguirlo
-        // arrastraría el bearer a otro host.
+        // 3xx sin seguirlo: un endpoint de API no redirige, y seguirlo
+        // arrastraría la credencial a otro host.
         if (status >= 300 && status < 400) {
           finish(new McpError("unexpected_redirect", { httpStatus: status }));
           return;
@@ -208,61 +372,48 @@ function send(
           return;
         }
         const contentType = (headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
-        if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
+        if (!spec.allowedContentTypes.includes(contentType)) {
           finish(new McpError("bad_content_type", { httpStatus: status }));
           return;
         }
         // `content-length` solo como atajo: nunca como garantía.
         const declared = Number(headers["content-length"] ?? "");
-        if (Number.isFinite(declared) && declared > o.maxResponseBytes) {
+        if (Number.isFinite(declared) && declared > spec.maxResponseBytes) {
           finish(new McpError("too_large", { httpStatus: status }));
           return;
         }
 
-        const sse = contentType === "text/event-stream";
-        let bytes = 0;
+        const ctx: ReadContext = { status, bytes: 0, headers, contentType };
+        // 028: decodificación INCREMENTAL. `buf.toString()` por pedazo parte
+        // en dos un carácter multibyte que cae en el borde ("Habitación").
+        const decoder = new StringDecoder("utf8");
         let buffer = "";
 
         res.on("data", (chunk: Buffer | string) => {
+          if (settled) return;
           const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
-          bytes += buf.byteLength;
-          if (bytes > o.maxResponseBytes) {
+          ctx.bytes += buf.byteLength;
+          if (ctx.bytes > spec.maxResponseBytes) {
             finish(new McpError("too_large", { httpStatus: status }));
             return;
           }
-          buffer += buf.toString("utf8");
-          if (!sse) return;
-          // #12: cortar con `destroy()` en cuanto llega el primer objeto
-          // JSON-RPC con NUESTRO id. Un servidor que deja el stream abierto
-          // después de responder retendría el socket todo el timeout.
-          const hit = takeSseObject(buffer, expectedId);
-          if (hit.found) {
-            finish(null, { json: hit.json, httpStatus: status, bytes, headers });
+          buffer += decoder.write(buf);
+          if (!reader.onChunk) return;
+          const step = reader.onChunk(buffer, ctx);
+          if (step.done) {
+            finish(null, step.value);
+            return;
           }
-          buffer = hit.rest;
+          buffer = step.rest;
         });
 
         res.on("end", () => {
           if (settled) return;
-          if (sse) {
-            const hit = takeSseObject(buffer, expectedId, true);
-            if (hit.found) {
-              finish(null, { json: hit.json, httpStatus: status, bytes, headers });
-              return;
-            }
-            finish(new McpError("bad_payload", { httpStatus: status }));
-            return;
-          }
+          buffer += decoder.end();
           try {
-            finish(null, {
-              json: JSON.parse(buffer) as unknown,
-              httpStatus: status,
-              bytes,
-              headers,
-            });
-          } catch {
-            // Nunca el cuerpo en el error: son bytes de un tercero.
-            finish(new McpError("bad_payload", { httpStatus: status }));
+            finish(null, reader.onEnd(buffer, ctx));
+          } catch (err) {
+            finish(toMcpError(err, "bad_payload"));
           }
         });
 
@@ -275,7 +426,7 @@ function send(
 
     req.on("error", (err) => finish(toMcpError(err)));
     if (typeof req.setTimeout === "function") {
-      req.setTimeout(Math.max(1, o.timeoutMs), () => finish(new McpError("timeout")));
+      req.setTimeout(Math.max(1, spec.timeoutMs), () => finish(new McpError("timeout")));
     }
     req.end(payload);
   });

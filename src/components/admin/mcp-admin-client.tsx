@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
  * solo devuelve `hasCredential` y los últimos 4.
  */
 
-export type McpProfileKey = "generic" | "altos_de_calamuchita";
+export type McpProfileKey = "generic" | "altos_de_calamuchita" | "minihotel";
 export type McpAuthScheme = "bearer" | "api_key_header";
 export type McpAdminStatus =
   | "enabled"
@@ -57,6 +57,8 @@ type McpAdminView = {
   serverVersion: string | null;
   lastErrorCode: string | null;
   sharedWith: { organizationId: string; name: string }[];
+  /** 028: config no secreta de MiniHotel (hotel, tarifa, motor de reservas). */
+  providerConfig: Record<string, unknown> | null;
 };
 
 type ApiErrorBody = {
@@ -67,6 +69,7 @@ type ApiErrorBody = {
 
 const PROFILE_LABEL: Record<McpProfileKey, string> = {
   altos_de_calamuchita: "Altos de Calamuchita (alojamientos)",
+  minihotel: "MiniHotel (hotel)",
   generic: "Servidor MCP genérico (el agente no recibe herramientas)",
 };
 
@@ -95,6 +98,14 @@ const REASON_TEXT: Record<string, string> = {
   too_long: "La dirección es demasiado larga.",
   blocked_host: "Esa dirección apunta a una red interna y no se permite.",
   unresolvable: "El dominio no resuelve. Revisá que esté bien escrito.",
+  not_ari:
+    "Para MiniHotel la dirección es la de su API de disponibilidad (termina en /gds).",
+};
+
+/** 028: direcciones de MiniHotel (la de contenido se deriva de estas). */
+const MINIHOTEL_ENDPOINTS = {
+  sandbox: "https://sandbox.minihotel.cloud/gds",
+  production: "https://api.minihotel.cloud/gds",
 };
 
 const DEFAULTS = {
@@ -114,7 +125,18 @@ type FormState = {
   timeoutMs: number;
   maxResponseBytes: number;
   catalogTtlMinutes: number;
+  /** 028: MiniHotel. */
+  hotelId: string;
+  rateCode: string;
+  bookingEngineUrl: string;
+  mhUsername: string;
+  mhPassword: string;
 };
+
+function configString(config: Record<string, unknown> | null | undefined, key: string): string {
+  const value = config?.[key];
+  return typeof value === "string" ? value : "";
+}
 
 function emptyForm(organizationName: string): FormState {
   return {
@@ -127,6 +149,11 @@ function emptyForm(organizationName: string): FormState {
     timeoutMs: DEFAULTS.timeoutMs,
     maxResponseBytes: DEFAULTS.maxResponseBytes,
     catalogTtlMinutes: DEFAULTS.catalogTtlMinutes,
+    hotelId: "",
+    rateCode: "",
+    bookingEngineUrl: "",
+    mhUsername: "",
+    mhPassword: "",
   };
 }
 
@@ -193,6 +220,11 @@ export function McpAdminCard({
       timeoutMs: view?.timeoutMs ?? DEFAULTS.timeoutMs,
       maxResponseBytes: view?.maxResponseBytes ?? DEFAULTS.maxResponseBytes,
       catalogTtlMinutes: view?.catalogTtlMinutes ?? DEFAULTS.catalogTtlMinutes,
+      hotelId: configString(view?.providerConfig, "hotelId"),
+      rateCode: configString(view?.providerConfig, "rateCode"),
+      bookingEngineUrl: configString(view?.providerConfig, "bookingEngineUrl"),
+      mhUsername: "",
+      mhPassword: "",
     });
     setOpen(true);
   }
@@ -210,7 +242,19 @@ export function McpAdminCard({
       maxResponseBytes: form.maxResponseBytes,
       catalogTtlMinutes: form.catalogTtlMinutes,
     };
-    if (form.credential.trim().length >= 8) {
+    if (form.profile === "minihotel") {
+      payload.minihotel = {
+        hotelId: form.hotelId.trim(),
+        rateCode: form.rateCode.trim(),
+        bookingEngineUrl: form.bookingEngineUrl.trim() || null,
+      };
+      if (form.mhUsername.trim() && form.mhPassword.trim()) {
+        payload.minihotelCredential = {
+          username: form.mhUsername.trim(),
+          password: form.mhPassword.trim(),
+        };
+      }
+    } else if (form.credential.trim().length >= 8) {
       payload.credential = form.credential.trim();
     }
     const res = await fetch(`/api/admin/organizations/${organizationId}/mcp`, {
@@ -235,7 +279,7 @@ export function McpAdminCard({
     } | null;
     setDetail(body?.integration ?? null);
     setOpen(false);
-    setForm((prev) => ({ ...prev, credential: "" }));
+    setForm((prev) => ({ ...prev, credential: "", mhPassword: "" }));
     await onChanged();
   }
 
@@ -320,13 +364,24 @@ export function McpAdminCard({
                 id={`admin-mcp-profile-${organizationId}`}
                 className="flex h-11 w-full min-w-0 rounded-md border border-input bg-card px-3 text-sm md:h-9"
                 value={form.profile}
-                onChange={(e) =>
-                  patch({ profile: e.target.value as McpProfileKey })
-                }
+                onChange={(e) => {
+                  const profile = e.target.value as McpProfileKey;
+                  patch({
+                    profile,
+                    // Alta nueva de un hotel: rótulo y dirección de pruebas.
+                    ...(profile === "minihotel" && !enabled
+                      ? {
+                          label: `${organizationName} (hotel)`.slice(0, 80),
+                          endpointUrl: form.endpointUrl || MINIHOTEL_ENDPOINTS.sandbox,
+                        }
+                      : {}),
+                  });
+                }}
               >
                 <option value="altos_de_calamuchita">
                   {PROFILE_LABEL.altos_de_calamuchita}
                 </option>
+                <option value="minihotel">{PROFILE_LABEL.minihotel}</option>
                 <option value="generic">{PROFILE_LABEL.generic}</option>
               </select>
             </div>
@@ -346,20 +401,47 @@ export function McpAdminCard({
 
           <div className="space-y-1.5">
             <Label htmlFor={`admin-mcp-url-${organizationId}`}>
-              Dirección del servidor MCP
+              {form.profile === "minihotel"
+                ? "Dirección de la API de MiniHotel"
+                : "Dirección del servidor MCP"}
             </Label>
+            {form.profile === "minihotel" && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid={`admin-mh-sandbox-${organizationId}`}
+                  onClick={() => patch({ endpointUrl: MINIHOTEL_ENDPOINTS.sandbox })}
+                >
+                  Sandbox (pruebas)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => patch({ endpointUrl: MINIHOTEL_ENDPOINTS.production })}
+                >
+                  Producción
+                </Button>
+              </div>
+            )}
             <Input
               id={`admin-mcp-url-${organizationId}`}
               data-testid={`admin-mcp-url-${organizationId}`}
               value={form.endpointUrl}
               onChange={(e) => patch({ endpointUrl: e.target.value })}
-              placeholder="https://proveedor.example.com/mcp/assistant"
+              placeholder={
+                form.profile === "minihotel"
+                  ? MINIHOTEL_ENDPOINTS.sandbox
+                  : "https://proveedor.example.com/mcp/assistant"
+              }
               autoComplete="off"
               spellCheck={false}
             />
             <p className="text-xs text-[#a2504c]">
-              Cambiar la dirección borra la credencial cargada: hay que volver a
-              pegarla.
+              Cambiar la dirección o el perfil borra la credencial cargada: hay
+              que volver a cargarla.
             </p>
             {mcp && detail === null && (
               <p className="text-xs text-muted-foreground">
@@ -369,7 +451,96 @@ export function McpAdminCard({
             )}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          {form.profile === "minihotel" && (
+            <div className="space-y-3 rounded-md border p-3" data-testid={`admin-mh-config-${organizationId}`}>
+              <p className="text-sm font-medium">Hotel en MiniHotel</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`admin-mh-hotel-${organizationId}`}>Código de hotel</Label>
+                  <Input
+                    id={`admin-mh-hotel-${organizationId}`}
+                    data-testid={`admin-mh-hotel-${organizationId}`}
+                    value={form.hotelId}
+                    maxLength={64}
+                    onChange={(e) => patch({ hotelId: e.target.value })}
+                    placeholder="sandbox"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    El Hotel ID que da MiniHotel (en el sandbox: «sandbox»).
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`admin-mh-rate-${organizationId}`}>Código de tarifa</Label>
+                  <Input
+                    id={`admin-mh-rate-${organizationId}`}
+                    data-testid={`admin-mh-rate-${organizationId}`}
+                    value={form.rateCode}
+                    maxLength={64}
+                    onChange={(e) => patch({ rateCode: e.target.value })}
+                    placeholder="USD"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    La tarifa con la que cotiza el asistente (define la moneda).
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`admin-mh-booking-${organizationId}`}>
+                  Enlace del motor de reservas
+                </Label>
+                <Input
+                  id={`admin-mh-booking-${organizationId}`}
+                  data-testid={`admin-mh-booking-${organizationId}`}
+                  value={form.bookingEngineUrl}
+                  maxLength={512}
+                  onChange={(e) => patch({ bookingEngineUrl: e.target.value })}
+                  placeholder="https://frame2.hotelpms.io/BookingFrameClient/hotel/…/book/rooms"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="text-xs text-muted-foreground">
+                  El asistente lo manda con las fechas y las personas cargadas. Solo se aceptan
+                  enlaces de MiniHotel.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`admin-mh-user-${organizationId}`}>Usuario de la API (opcional)</Label>
+                  <Input
+                    id={`admin-mh-user-${organizationId}`}
+                    value={form.mhUsername}
+                    onChange={(e) => patch({ mhUsername: e.target.value })}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`admin-mh-pass-${organizationId}`}>Contraseña de la API (opcional)</Label>
+                  <Input
+                    id={`admin-mh-pass-${organizationId}`}
+                    type="password"
+                    autoComplete="off"
+                    value={form.mhPassword}
+                    onChange={(e) => patch({ mhPassword: e.target.value })}
+                    placeholder={
+                      detail?.hasCredential && detail.profile === "minihotel"
+                        ? `Cargada (••••${detail.credentialLast4 ?? ""}) — dejar vacío para no tocarla`
+                        : "La puede cargar después el propietario"
+                    }
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se guardan cifradas y no se vuelven a mostrar.
+              </p>
+            </div>
+          )}
+
+          <div className={form.profile === "minihotel" ? "hidden" : "grid gap-3 md:grid-cols-2"}>
             <div className="space-y-1.5">
               <Label htmlFor={`admin-mcp-auth-${organizationId}`}>
                 Forma de autenticación
@@ -485,7 +656,9 @@ export function McpAdminCard({
               disabled={
                 saving ||
                 form.label.trim().length < 2 ||
-                form.endpointUrl.trim().length < 8
+                form.endpointUrl.trim().length < 8 ||
+                (form.profile === "minihotel" &&
+                  (form.hotelId.trim() === "" || form.rateCode.trim() === ""))
               }
               onClick={() => void save()}
               data-testid={`admin-mcp-save-${organizationId}`}

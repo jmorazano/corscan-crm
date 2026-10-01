@@ -106,6 +106,12 @@ export type McpContext = {
    * precios— pero el pipeline no debe despachar acciones.
    */
   toolsUsable: boolean;
+  /**
+   * 021/028: ¿se sacan los importes del texto saliente? Lo decide el perfil
+   * (`hidePricesInReply`, regla del proveedor) o la EMPRESA (`hidePrices`
+   * sobre su `providerConfig`: un hotel informa precios y otro no).
+   */
+  hidePrices: boolean;
 };
 
 /**
@@ -158,6 +164,9 @@ export async function loadMcpContext(
     actions: profile.agentActions,
     lastSearch,
     toolsUsable: integration.status === "connected" && integration.agentToolsEnabled,
+    hidePrices:
+      profile.hidePricesInReply === true ||
+      (profile.hidePrices?.(integration.providerConfig ?? null) ?? false),
   };
 }
 
@@ -232,6 +241,7 @@ export function renderMcpSection(
     useServerInstructions: ctx.integration.useServerInstructions,
     fence,
     lastSearch: ctx.lastSearch,
+    providerConfig: ctx.integration.providerConfig ?? null,
   });
 
   if (!section) return null;
@@ -294,10 +304,12 @@ export async function executeMcpAction(
     // del mismo dueño con dominios distintos; sin esto, el segundo pierde
     // todos sus enlaces contra la allowlist del perfil.
     const linkHosts = ctx.integration.endpointHost ? [ctx.integration.endpointHost] : [];
+    const providerConfig = ctx.integration.providerConfig ?? null;
     const validated = profile.validate(action, catalog, ctx.now, {
       conversationId: options.conversationId,
       timezone: ctx.timezone,
       linkHosts,
+      providerConfig,
     });
     if (!validated.ok) {
       return { toolText: validated.toolText, clientSummary: null };
@@ -317,7 +329,7 @@ export async function executeMcpAction(
     });
 
     if (outcome.ok) {
-      const rendered = profile.render(action, outcome.data, catalog, { linkHosts });
+      const rendered = profile.render(action, outcome.data, catalog, { linkHosts, providerConfig });
       return appendNotes(rendered, validated.notes);
     }
 
@@ -329,6 +341,7 @@ export async function executeMcpAction(
       if (outcome.providerCode) error.code = outcome.providerCode;
       const rendered = profile.render(action, { success: false, error }, catalog, {
         linkHosts,
+        providerConfig,
       });
       return { toolText: rendered.toolText, clientSummary: null };
     }

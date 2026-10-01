@@ -1067,7 +1067,7 @@ export const mcpIntegration = pgTable(
      * servidor sin perfil conocido se conecta y se diagnostica, pero NO se
      * le ofrece al modelo (FR-007).
      */
-    profile: text("profile", { enum: ["generic", "altos_de_calamuchita"] })
+    profile: text("profile", { enum: ["generic", "altos_de_calamuchita", "minihotel"] })
       .notNull()
       .default("generic"),
     /** Nombre visible en la tarjeta y en el prompt del agente. */
@@ -1133,6 +1133,13 @@ export const mcpIntegration = pgTable(
     lastErrorCode: text("last_error_code"),
     lastErrorAt: timestamp("last_error_at"),
     /** Prefetch del catálogo (list-search-options) que va al system prompt. */
+    /**
+     * 028: configuración NO secreta del proveedor cuando no es un servidor MCP
+     * (MiniHotel: código de hotel, tarifa, enlace del motor de reservas,
+     * mostrar precios). La valida y la interpreta el perfil; `null` para los
+     * perfiles MCP. La credencial NUNCA va acá: sigue en `credential`.
+     */
+    providerConfig: jsonb("provider_config").$type<Record<string, unknown> | null>(),
     catalog: jsonb("catalog").$type<Record<string, unknown> | null>(),
     catalogFetchedAt: timestamp("catalog_fetched_at"),
     catalogTtlMinutes: integer("catalog_ttl_minutes").notNull().default(60),

@@ -7,10 +7,11 @@
  */
 
 import { altos } from "@/server/mcp/profiles/altos";
+import { minihotel } from "@/server/mcp/profiles/minihotel";
 import type { McpProfile, McpProfileKey } from "@/server/mcp/profiles/types";
 
 export * from "@/server/mcp/profiles/types";
-export { altos };
+export { altos, minihotel };
 
 /**
  * Degradación honesta para un servidor MCP SIN perfil conocido (§C.4): se
@@ -49,6 +50,7 @@ export const generic: McpProfile = {
 export const PROFILES: Record<McpProfileKey, McpProfile> = {
   generic,
   altos_de_calamuchita: altos,
+  minihotel,
 };
 
 export const PROFILE_KEYS = Object.keys(PROFILES) as McpProfileKey[];

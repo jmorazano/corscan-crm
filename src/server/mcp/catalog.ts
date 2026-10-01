@@ -125,6 +125,7 @@ async function fetchCatalog(
   const parsed = integration.profile.parseCatalog(outcome.data, {
     // 022: el `search_link.base` del catálogo es del sitio de esta empresa.
     linkHosts: integration.endpointHost ? [integration.endpointHost] : [],
+    providerConfig: integration.providerConfig ?? null,
   });
   if (!parsed) return integration.catalog;
 

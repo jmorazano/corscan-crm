@@ -48,6 +48,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Integraciones (sección del sidenav) | `src/app/(app)/integrations/` + `src/components/integrations/` + `/api/integrations` (índice de tarjetas; agregar una integración = tarjeta + módulo en `src/server/<integración>/`) |
 | Google Calendar: OAuth, tokens cifrados, reglas de turnos, huecos, reservas | `src/lib/google/` (adaptador OAuth + cliente REST de Calendar, única frontera con Google) · `src/server/calendar/` (`integration.ts` tokens/estado, `rules.ts` Zod, `slots.ts` cálculo puro, `availability.ts` reglas+freeBusy, `booking.ts` reserva idempotente, `agent-tools.ts` puente con el agente) · `/api/integrations/google-calendar/*` · env de instancia `GOOGLE_CLIENT_ID/SECRET` (guía: `docs/integraciones/google-calendar-gcp.md`) |
 | Conector MCP por empresa (PMS del cliente) (016) | `src/lib/mcp/` (transporte JSON-RPC + guard anti-SSRF + `MCP_ERROR_TEXT`; único adaptador del protocolo) · `src/server/mcp/` (`integration.ts` fila cifrada/handshake, `catalog.ts` prefetch con TTL, `calls.ts` **único** punto que llama al MCP y donde viven los 5 guardrails en orden, `agent-tools.ts` puente con el agente, `sanitize.ts`+`markers.ts` texto ajeno como DATO) · `src/server/mcp/profiles/` (allowlist, condensado y enlaces por proveedor; `generic` = sin herramientas) · `/api/integrations/mcp/*` (empresa) + `/api/admin/organizations/[id]/mcp` (el super admin habilita y es el ÚNICO que fija la URL) · `src/lib/promise-guard.ts` (el agente jamás promete una reserva) · mcp-mock en `src/app/api/dev/mcp-mock/` · **varios negocios sobre el mismo PMS**: los dominios enlazables son los del perfil MÁS el host del `endpoint_url` de la integración (`linkHostsFor` en el perfil; lo pasan `agent-tools`, `catalog` y la vista previa). Sin eso, el segundo negocio del mismo dueño pierde TODOS sus enlaces contra la allowlist y el agente no puede decir dónde se reserva |
+| Conector MiniHotel, PMS hotelero (028) | adaptador ÚNICO `src/lib/minihotel/` (puros: `xml.ts` parser acotado sin DTD, `dates.ts`, `requests.ts` Immediate/Bulk ARI + `getRoomTypes`/`getRooms` con la credencial DENTRO del XML —jamás se loguea—, `endpoints.ts` la URL de contenido se DERIVA de la ARI `…/gds` (`api`→`api2` en producción), `booking-link.ts` enlace al motor (`frame*.hotelpms.io`/`minihotel.cloud`) con la búsqueda cargada, `responses.ts` errores de ARI en TEXTO PLANO `ERR nnn` con `text/html` y de contenido en `<Errors>` → códigos propios (`auth`/`hotel`/`ip_not_authorized` = config → «Requiere reconexión» con motivo; el resto = de la consulta), `alternatives.ts` ventanas ±7 días misma cantidad de noches; con I/O: `client.ts` herramientas VIRTUALES `availability` (1–3 rangos; sin lugar → Bulk → hasta 3 → Immediate para confirmar; Bulk fallido ≠ «no hay») y `room_catalog`, un deadline único) · `postGuardedText` en `src/lib/mcp/transport.ts` (mismo socket protegido que JSON-RPC, UTF-8 incremental) · `src/server/mcp/providers.ts` (despacho por `profile.transport`) · `profiles/minihotel.ts` (capacidad = mínimo del tipo, atributos comunes, filtro por grupo, sección «sistema de reservas del hotel», `actionMenu` con adultos/niños/bebés/`ranges`, `hidePrices` POR EMPRESA) + `minihotel-config.ts` (`mcp_integration.provider_config`, migración 0023: hotel/tarifa/motor del super admin, `showPrices`/`showNonRefundable` de la empresa) · verificar = `room_catalog` por `callGuarded` SIN caché · `/api/integrations/mcp/preview` con rama MiniHotel (`buildMiniHotelPreview`) · mock `src/app/api/dev/minihotel-mock/` (`[...path]` ARI + contenido, perillas en `/state`: `soldOut`, `ipNotAuthorized`, `nextUnauthorized`, `failNext`, `garbageNext`, `delayMs`) · rama hotel del ai-mock · guía `docs/integraciones/minihotel.md` |
 | Etiquetas (contactos y conversaciones), filtros en la URL, bulk y paginación | `src/lib/tags.ts` (saneo + `applyTagOps`) · `src/lib/pagination.ts` (page/limit + cursor keyset) · `src/server/tags.ts` (`tagsWhere`, catálogo, bulk scoped) · `/api/tags` · `/api/contacts` (`tags`,`mode`,`page`) + `/api/contacts/bulk-tags` · `/api/conversations` (`tags`,`mode`,`q`,`filter`,`cursor`) + `/api/conversations/bulk-tags` + `GET /api/conversations/[id]` · hook `src/components/use-query-filters.ts` (estado en query params vía `history.replaceState`) · `src/components/tags/*` (chip, filtro, picker, barra bulk, editor) · evento SSE `conversations.updated` |
 | Acciones-herramienta del agente (agenda) | `check_availability` / `book_appointment` en `src/server/ai/actions.ts`; loop acotado (2 vueltas) en `pipeline.ts`; sección "AGENDA DE TURNOS" en `prompts.ts` (solo con calendario conectado); sandbox `is_test` jamás toca Google |
 | Notificaciones push (013) | Web Push estándar (constitución II, cat. 4): claves VAPID POR EMPRESA generadas al primer uso (`src/server/push/keys.ts`, privada cifrada) · suscripciones por dispositivo (`subscriptions.ts`, `organization_id`+`user_id`, `endpoint` único, modo `all`/`handoff`) · envío con `web-push` para firmar/cifrar y `fetch` propio (`notify.ts`, transporte inyectable, poda 404/410) · eventos de dominio en `events.ts` (`notifyInboundMessage` desde `ingest.ts`, `notifyHandoff` desde `pipeline.ts`, siempre en segundo plano; `is_test` nunca) · `/api/push/{vapid,subscriptions,test}` · SW mínimo `public/sw.js` (sin caché) + `src/lib/push-client.ts` + `usePush` + Ajustes → Notificaciones · `AppShell` registra el SW, re-sincroniza y pone el badge · push-mock `/api/dev/push-mock` (`?status=410`) |
@@ -73,15 +74,16 @@ incondicional en producción.
 
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
-- **Soberanía (II, endurecida, v1.8.1)**: dependencias de runtime SOLO (1)
+- **Soberanía (II, endurecida, v1.9.0)**: dependencias de runtime SOLO (1)
   las APIs de mensajería de Meta — WhatsApp Cloud API y, opcional por
   empresa, Instagram Messaging API (Instagram Login, 023) —, (2) proveedor LLM OpenRouter-compatible opcional, (3)
   **integraciones opcionales POR EMPRESA vía OAuth** (hoy: Google Calendar y,
   desde 1.8.1, Mercado Libre solo lectura;
   las habilita el operador por env, las conecta cada empresa, tokens
   cifrados, adaptador dedicado, el instalador no las necesita), (4) **Web
-  Push estándar** (VAPID propias, sin cuenta con terceros) y (5) **servidores
-  MCP de terceros POR EMPRESA** (016; SOLO LECTURA con allowlist propia, los
+  Push estándar** (VAPID propias, sin cuenta con terceros) y (5) **sistemas
+  de terceros POR EMPRESA vía MCP o vía la API del proveedor** (016 MCP; 028
+  MiniHotel por su API XML; SOLO LECTURA con allowlist propia, los
   habilita el SUPER ADMIN empresa por empresa y es el único que fija la URL,
   credencial cifrada, validación anti-SSRF sobre la IP resuelta, el sandbox
   jamás los toca, y lo que devuelven es DATO y nunca instrucción). PROHIBIDO
@@ -166,9 +168,9 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **027-voice-notes-pdf** (notas de voz grabadas para
-clientes —OGG/Opus con `voice: true` en WhatsApp, WAV en Instagram—, el
-agente lee los PDF del cliente, e Instagram deja de ofrecer responder
-después de 24 h mientras Meta no apruebe «Human Agent») — spec y tasks en
-[specs/027-voice-notes-pdf/](specs/027-voice-notes-pdf/spec.md).
-Anterior: 026-outbound-media (en producción, 30-sep-2026).
+Feature en curso: **028-minihotel-pms** (conector MiniHotel para el hotel
+Bosque Douglas: disponibilidad y tarifas reales, fechas alternativas,
+comparación de rangos y enlace al motor de reservas, por la API XML del
+proveedor; constitución 1.9.0) — spec, plan y tasks en
+[specs/028-minihotel-pms/](specs/028-minihotel-pms/spec.md).
+Anterior: 027-voice-notes-pdf (en producción, 30-sep-2026).

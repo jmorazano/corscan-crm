@@ -52,6 +52,9 @@ export const POST = withAuth(async (session) => {
   if (result.code === "no_credential") {
     return apiError(409, "no_credential", "Cargá la credencial antes de verificar");
   }
+  if (result.code === "not_configured") {
+    return apiError(409, "not_configured", mcpErrorText("not_configured"));
+  }
 
   // Caso especial: el servidor no expone alguna de `profile.requiredTools`.
   // Los nombres que viajan son los de NUESTRA lista, nunca texto del remoto.
@@ -59,9 +62,12 @@ export const POST = withAuth(async (session) => {
   return apiError(
     502,
     "provider_error",
-    mcpErrorText(result.code),
-    missing.length > 0
-      ? { mcpCode: result.code, missingTools: missing }
-      : { mcpCode: result.code }
+    // 028: con motivo concreto (MiniHotel) se dice QUÉ arreglar.
+    mcpErrorText(result.reason ?? result.code),
+    {
+      mcpCode: result.code,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(missing.length > 0 ? { missingTools: missing } : {}),
+    }
   );
 });

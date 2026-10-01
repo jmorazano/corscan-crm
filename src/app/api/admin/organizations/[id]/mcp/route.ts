@@ -6,11 +6,22 @@ import { getDb, schema } from "@/lib/db";
 import { isValidTimeZone } from "@/lib/time";
 import { assertResolvable, checkEndpointSyntax, McpError } from "@/lib/mcp";
 import {
+  contentUrlFor,
+  isAriEndpoint,
+  miniHotelCredentialLast4,
+  normalizeMiniHotelCredential,
+  serializeMiniHotelCredential,
+} from "@/lib/minihotel";
+import {
   disableMcpIntegration,
   enableMcpIntegration,
   getMcpAdminView,
   removeMcpIntegration,
 } from "@/server/mcp/integration";
+import {
+  buildMiniHotelAdminConfig,
+  miniHotelAdminConfigSchema,
+} from "@/server/mcp/profiles/minihotel-config";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +80,9 @@ type EndpointRejection =
   | "bad_host"
   | "too_long"
   | "blocked_host"
-  | "unresolvable";
+  | "unresolvable"
+  /** 028: con MiniHotel la dirección es la de su API ARI (`…/gds`). */
+  | "not_ari";
 
 /** Textos FIJOS nuestros. Ni uno solo viene del servidor remoto (#13). */
 const ENDPOINT_REASON_TEXT: Record<EndpointRejection, string> = {
@@ -82,6 +95,8 @@ const ENDPOINT_REASON_TEXT: Record<EndpointRejection, string> = {
   too_long: "La dirección es demasiado larga.",
   blocked_host: "Esa dirección no es válida como servidor externo.",
   unresolvable: "El dominio de la dirección no resuelve.",
+  not_ari:
+    "Para MiniHotel la dirección es la de su API de disponibilidad (termina en /gds): https://sandbox.minihotel.cloud/gds para pruebas o https://api.minihotel.cloud/gds en producción.",
 };
 
 function looksLikeIpLiteral(raw: string): boolean {
@@ -145,7 +160,7 @@ export const GET = withSuperAdmin(async (_ctx, _req: Request, routeCtx: Params) 
  * ============================================================ */
 
 const enableSchema = z.object({
-  profile: z.enum(["generic", "altos_de_calamuchita"]),
+  profile: z.enum(["generic", "altos_de_calamuchita", "minihotel"]),
   label: z.string().trim().min(2).max(80),
   endpointUrl: z.string().trim().url().max(2048),
   // Corrección #15: `meta` NO existe en v1 (metía el secreto en el cuerpo
@@ -163,6 +178,15 @@ const enableSchema = z.object({
   timeoutMs: z.coerce.number().int().min(2000).max(30000).default(10000),
   maxResponseBytes: z.coerce.number().int().min(16384).max(4194304).default(524288),
   catalogTtlMinutes: z.coerce.number().int().min(5).max(1440).default(60),
+  /**
+   * 028: configuración de MiniHotel que fija SOLO el super admin (código de
+   * hotel, tarifa y enlace del motor de reservas). Obligatoria con ese perfil.
+   */
+  minihotel: miniHotelAdminConfigSchema.optional(),
+  /** 028: el super admin puede dejar cargadas las credenciales de MiniHotel. */
+  minihotelCredential: z
+    .object({ username: z.string().max(128), password: z.string().max(256) })
+    .optional(),
 });
 
 export const PUT = withSuperAdmin(async (ctx, req: Request, routeCtx: Params) => {
@@ -181,6 +205,47 @@ export const PUT = withSuperAdmin(async (ctx, req: Request, routeCtx: Params) =>
     });
   }
 
+  // 028: MiniHotel. La dirección de contenido se DERIVA de la ARI con una
+  // regla de código; se valida igual al guardar para dar un error útil.
+  let providerConfig: Record<string, unknown> | null = null;
+  let credential: { value: string; last4: string } | null = null;
+  if (body.data.profile === "minihotel") {
+    if (!isAriEndpoint(body.data.endpointUrl)) {
+      return apiError(422, "invalid_endpoint", ENDPOINT_REASON_TEXT.not_ari, { reason: "not_ari" });
+    }
+    const contentUrl = contentUrlFor(body.data.endpointUrl, "getRooms");
+    const contentRejection = contentUrl ? await rejectEndpoint(contentUrl) : "invalid_url";
+    if (contentRejection) {
+      return apiError(422, "invalid_endpoint", ENDPOINT_REASON_TEXT[contentRejection], {
+        reason: contentRejection,
+      });
+    }
+    if (!body.data.minihotel) {
+      return apiError(
+        422,
+        "invalid_body",
+        "Para MiniHotel completá el código de hotel y el código de tarifa."
+      );
+    }
+    const previous = await getMcpAdminView(id);
+    const built = buildMiniHotelAdminConfig(body.data.minihotel, previous?.providerConfig ?? null);
+    if (!built.ok) {
+      return apiError(
+        422,
+        "invalid_booking_url",
+        "El enlace del motor de reservas tiene que ser el de MiniHotel (https://frame2.hotelpms.io/BookingFrameClient/hotel/…/book/rooms)."
+      );
+    }
+    providerConfig = built.config;
+    if (body.data.minihotelCredential) {
+      const c = normalizeMiniHotelCredential(body.data.minihotelCredential);
+      if (!c) {
+        return apiError(422, "invalid_body", "Completá el usuario y la contraseña de la API de MiniHotel.");
+      }
+      credential = { value: serializeMiniHotelCredential(c), last4: miniHotelCredentialLast4(c) };
+    }
+  }
+
   // Efecto FR-005 (dentro de `enableMcpIntegration`): si cambian
   // `endpointUrl` o `authScheme`, se borran credencial, `last4`, catálogo y
   // `tools`, y la fila vuelve a `enabled`. Un super admin comprometido que
@@ -192,11 +257,18 @@ export const PUT = withSuperAdmin(async (ctx, req: Request, routeCtx: Params) =>
     label: body.data.label,
     endpointUrl: body.data.endpointUrl,
     authScheme: body.data.authScheme,
-    ...(body.data.credential !== undefined ? { credential: body.data.credential } : {}),
+    ...(credential
+      ? { credential: credential.value, credentialLast4: credential.last4 }
+      : body.data.profile !== "minihotel" && body.data.credential !== undefined
+        ? { credential: body.data.credential }
+        : {}),
     timezone: body.data.timezone,
     timeoutMs: body.data.timeoutMs,
     maxResponseBytes: body.data.maxResponseBytes,
     catalogTtlMinutes: body.data.catalogTtlMinutes,
+    // 028: los perfiles MCP no tienen config de proveedor; pasar a uno de
+    // ellos la borra (no queda un hotel colgado de un conector de alquileres).
+    providerConfig,
   });
   if (!integration) {
     return apiError(404, "organization_not_found", ORG_NOT_FOUND);

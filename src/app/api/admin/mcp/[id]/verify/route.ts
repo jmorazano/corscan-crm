@@ -68,13 +68,17 @@ export const POST = withSuperAdmin(async (_ctx, _req: Request, routeCtx: Params)
       "La empresa todavía no cargó la credencial del proveedor"
     );
   }
+  if (result.code === "not_configured") {
+    return apiError(409, "not_configured", mcpErrorText("not_configured"));
+  }
 
   // El fallo también es información: la fila ya quedó con `lastErrorCode` y
   // `lastErrorAt`, así que se devuelve el conector actualizado junto al error.
   const missing = result.missingTools ?? [];
   const organization = (await getMcpConnectorDetail(id)) ?? before;
-  return apiError(502, "provider_error", mcpErrorText(result.code), {
+  return apiError(502, "provider_error", mcpErrorText(result.reason ?? result.code), {
     mcpCode: result.code,
+    ...(result.reason ? { reason: result.reason } : {}),
     ...(missing.length > 0 ? { missingTools: missing } : {}),
     organization,
   });

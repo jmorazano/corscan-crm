@@ -22,8 +22,19 @@
  */
 export type LinkHostOptions = { linkHosts?: readonly string[] };
 
+/**
+ * 028: configuración NO secreta del proveedor (`mcp_integration.provider_config`),
+ * tal como está en la fila. Cada perfil la valida e interpreta a su manera
+ * (MiniHotel: código de hotel, tarifa, enlace del motor, mostrar precios);
+ * los perfiles MCP la ignoran.
+ */
+export type ProviderConfig = Record<string, unknown> | null;
+
+/** Opciones que el runtime le pasa a TODAS las funciones del perfil. */
+export type ProfileOptions = LinkHostOptions & { providerConfig?: ProviderConfig };
+
 /** Claves del enum `mcp_integration.profile`: son las de `PROFILES`. */
-export type McpProfileKey = "generic" | "altos_de_calamuchita";
+export type McpProfileKey = "generic" | "altos_de_calamuchita" | "minihotel";
 
 /** Acciones-herramienta que un perfil puede habilitar (FR-008). */
 export type McpAgentActionKind = "search_stays" | "show_stay";
@@ -49,6 +60,14 @@ export type SearchStaysAction = {
   facilities?: string[];
   /** Al menos una (OR). */
   facilities_any?: string[];
+  /** 028 (hoteles): el precio depende de la ocupación, no solo del total. */
+  adults?: number;
+  children?: number;
+  babies?: number;
+  /** 028: código de un tipo de habitación puntual. */
+  room_type?: string;
+  /** 028: comparar hasta 3 rangos en una sola consulta. */
+  ranges?: Array<{ check_in?: string; check_out?: string }>;
 };
 
 /** Detalle de UNA propiedad por código, slug o enlace. */
@@ -80,6 +99,24 @@ export type StayCatalog = {
   maxGuests: number | null;
   /** Base del buscador del sitio, ya validada contra `linkHosts`. */
   searchBase: string | null;
+  /**
+   * 028 (hoteles): tipos de habitación con su capacidad y los atributos que
+   * tienen TODAS sus habitaciones (el huésped reserva un tipo, no una
+   * habitación puntual). Ausente en los perfiles de alquiler temporario.
+   */
+  roomTypes?: StayRoomType[];
+};
+
+export type StayRoomType = {
+  code: string;
+  /** Ya saneado. */
+  name: string;
+  /** El MÍNIMO entre las habitaciones del tipo: lo que se puede garantizar. */
+  maxAdults: number | null;
+  maxChildren: number | null;
+  maxBabies: number | null;
+  /** Comunes a todas las habitaciones del tipo, saneados. */
+  attributes: string[];
 };
 
 /** Estado de la integración, tal como lo lee el prompt. */
@@ -111,6 +148,8 @@ export type SectionInput = {
    * ya dio.
    */
   lastSearch?: Record<string, unknown> | null;
+  /** 028: configuración no secreta del proveedor (ver `ProviderConfig`). */
+  providerConfig?: ProviderConfig;
 };
 
 /** `validate` OK: herramienta y argumentos listos para el transporte. */
@@ -157,6 +196,12 @@ export type McpTransportErrorCode =
 
 export type McpProfile = {
   key: McpProfileKey;
+  /**
+   * 028: cómo se habla con el proveedor. `mcp` (default) = JSON-RPC de 016;
+   * `minihotel` = API XML propia, por `src/lib/minihotel/`. Lo despacha
+   * `src/server/mcp/providers.ts`; ningún otro archivo mira este campo.
+   */
+  transport?: "mcp" | "minihotel";
   /** Nombre visible en la tarjeta de Integraciones. */
   name: string;
   description: string;
@@ -181,6 +226,17 @@ export type McpProfile = {
    * pipeline pasa el texto saliente por `stripPrices`.
    */
   hidePricesInReply?: boolean;
+  /**
+   * 028: la misma decisión, pero POR EMPRESA (un hotel informa precios por
+   * WhatsApp y otro no). Si existe, el pipeline oculta importes cuando
+   * `hidePricesInReply` o esto dan `true`.
+   */
+  hidePrices?(providerConfig: ProviderConfig): boolean;
+  /**
+   * 028: las líneas del menú de acciones del prompt para este perfil. Sin
+   * esto, el prompt usa las de 016 (`search_stays` con `guests` y `show_stay`).
+   */
+  actionMenu?: readonly string[];
 
   /**
    * 022: dominios a los que se puede enlazar, ADEMÁS de `linkHosts`.
@@ -191,7 +247,7 @@ export type McpProfile = {
    * perfil, porque según 016 lo fija ÚNICAMENTE el super admin — así que se
    * suma a ella. Sigue siendo una allowlist cerrada.
    */
-  parseCatalog(raw: unknown, opts?: LinkHostOptions): StayCatalog | null;
+  parseCatalog(raw: unknown, opts?: ProfileOptions): StayCatalog | null;
   renderSection(input: SectionInput): string | null;
   /**
    * `opts.conversationId` viaja como `cid=` en `search_url` y en cada
@@ -202,13 +258,13 @@ export type McpProfile = {
     action: McpAgentAction,
     catalog: StayCatalog | null,
     now: Date,
-    opts?: { conversationId?: string | null; timezone?: string | null } & LinkHostOptions
+    opts?: { conversationId?: string | null; timezone?: string | null } & ProfileOptions
   ): ValidateResult;
   render(
     action: McpAgentAction,
     payload: unknown,
     catalog: StayCatalog | null,
-    opts?: LinkHostOptions
+    opts?: ProfileOptions
   ): RenderResult;
   /** Texto para un fallo del transporte o de los guardrails (§F.6). */
   renderTransportError?(code: McpTransportErrorCode): string;

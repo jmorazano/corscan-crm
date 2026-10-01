@@ -1,0 +1,1 @@
+ALTER TABLE "mcp_integration" ADD COLUMN "provider_config" jsonb;

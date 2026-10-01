@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { mcpErrorText } from "@/lib/mcp";
 import { callGuarded } from "@/server/mcp/calls";
 import { getCatalogStaleWhileRevalidate } from "@/server/mcp/catalog";
 import { getMcpIntegration } from "@/server/mcp/integration";
 import { condenseProperty } from "@/server/mcp/profiles/altos";
+import { buildMiniHotelPreview } from "@/server/mcp/profiles/minihotel";
 import { safeLink } from "@/server/mcp/sanitize";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,15 @@ const previewSchema = z.object({
   check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Usá el formato AAAA-MM-DD"),
   check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Usá el formato AAAA-MM-DD"),
   guests: z.coerce.number().int().min(1).max(50),
+});
+
+/** 028: un hotel cotiza por ocupación (adultos, niños, bebés). */
+const miniHotelPreviewSchema = z.object({
+  check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Usá el formato AAAA-MM-DD"),
+  check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Usá el formato AAAA-MM-DD"),
+  adults: z.coerce.number().int().min(1).max(50),
+  children: z.coerce.number().int().min(0).max(50).default(0),
+  babies: z.coerce.number().int().min(0).max(20).default(0),
 });
 
 /** Tope de propiedades de la vista previa: es del dueño, no del modelo. */
@@ -67,6 +78,12 @@ export const POST = withAuth(async (session, req: Request) => {
       "not_connected",
       "Cargá la credencial y verificá la conexión antes de probar una búsqueda"
     );
+  }
+
+  // 028: MiniHotel tiene su propia vista previa (habitaciones por régimen,
+  // alternativas y el enlace que recibiría el huésped).
+  if (integration.profile.key === "minihotel") {
+    return miniHotelPreview(integration, req);
   }
 
   const body = await parseBody(req, previewSchema);
@@ -173,3 +190,75 @@ export const POST = withAuth(async (session, req: Request) => {
     properties,
   });
 });
+
+/**
+ * 028: vista previa de MiniHotel. MISMA puerta (`callGuarded`, con cupo,
+ * caché y bitácora — cada prueba del dueño queda registrada, que es justo la
+ * evidencia que pide MiniHotel para validar el sandbox).
+ */
+async function miniHotelPreview(
+  integration: NonNullable<Awaited<ReturnType<typeof getMcpIntegration>>>,
+  req: Request
+): Promise<Response> {
+  const body = await parseBody(req, miniHotelPreviewSchema);
+  if (!body.ok) return body.response;
+
+  const catalog = getCatalogStaleWhileRevalidate(integration, { sandbox: false });
+  const opts = {
+    linkHosts: integration.endpointHost ? [integration.endpointHost] : [],
+    providerConfig: integration.providerConfig ?? null,
+  };
+  const validated = integration.profile.validate(
+    {
+      action: "search_stays",
+      check_in: body.data.check_in,
+      check_out: body.data.check_out,
+      adults: body.data.adults,
+      children: body.data.children,
+      babies: body.data.babies,
+    },
+    catalog,
+    new Date(),
+    { conversationId: null, timezone: integration.timezone, ...opts }
+  );
+  if (!validated.ok) {
+    return apiError(
+      422,
+      "invalid_body",
+      "Revisá las fechas y las personas: la salida tiene que ser posterior a la entrada, sin fechas pasadas, hasta 30 noches y al menos un adulto"
+    );
+  }
+
+  const outcome = await callGuarded({
+    integration,
+    tool: validated.tool,
+    args: validated.args,
+    conversationId: null,
+    sandbox: false,
+    source: "owner",
+  });
+  if (!outcome.ok) {
+    if (outcome.code === "rate_limited") {
+      return apiError(429, "rate_limited", outcome.message, { retryInSeconds: 60 });
+    }
+    const reasonText = outcome.providerCode ? mcpErrorText(outcome.providerCode) : outcome.message;
+    return apiError(502, "provider_error", reasonText, {
+      mcpCode: outcome.code,
+      ...(outcome.providerCode ? { providerCode: outcome.providerCode } : {}),
+    });
+  }
+
+  const preview = buildMiniHotelPreview(outcome.data, catalog, opts);
+  if (!preview) {
+    return apiError(502, "provider_error", mcpErrorText("bad_payload"), { mcpCode: "bad_payload" });
+  }
+  const anyAvailable =
+    preview.ranges.some((r) => r.link !== null) ||
+    (preview.alternatives?.windows.some((w) => w.link !== null) ?? false);
+  const message = preview.ranges.some((r) => r.link !== null)
+    ? "Hay lugar para las fechas y las personas consultadas."
+    : anyAvailable
+      ? "No hay lugar en esas fechas, pero sí en fechas cercanas."
+      : "No hay lugar para las fechas y las personas consultadas.";
+  return Response.json({ provider: "minihotel", message, preview });
+}

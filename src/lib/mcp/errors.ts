@@ -72,9 +72,36 @@ export const MCP_ERROR_TEXT: Record<McpErrorCode, string> = {
 
 const FALLBACK_TEXT = "No se pudo conectar con el servidor.";
 
+/**
+ * 028: motivos concretos de un proveedor que no es MCP (MiniHotel), que se
+ * guardan en `last_error_code` cuando rechaza la configuración. Texto de
+ * PRIMERA parte, igual que `MCP_ERROR_TEXT`: dice qué arreglar sin repetir
+ * una sola palabra del proveedor.
+ */
+export const PROVIDER_REASON_TEXT: Record<string, string> = {
+  auth: "El sistema del hotel rechazó el usuario o la contraseña. Revisalos y volvé a cargarlos.",
+  hotel:
+    "El sistema del hotel no reconoce el código de hotel. Avisale al administrador de la instancia.",
+  ip_not_authorized:
+    "El sistema del hotel todavía no autorizó la IP de este servidor. Hay que pedirle al proveedor que la agregue.",
+  not_configured:
+    "Falta completar la configuración del hotel (código de hotel y tarifa). Avisale al administrador de la instancia.",
+  // Rechazos de una CONSULTA puntual (vista previa del dueño).
+  rate_code:
+    "El sistema del hotel no reconoce el código de tarifa. Avisale al administrador de la instancia.",
+  hotel_settings:
+    "El sistema del hotel tiene la configuración de precios u ocupación incompleta. Hay que revisarla en MiniHotel.",
+  invalid_dates: "El sistema del hotel no aceptó esas fechas.",
+  past_date: "La fecha de entrada ya pasó.",
+  too_many_nights: "La estadía supera el máximo de noches que acepta el hotel.",
+  invalid_request: "El sistema del hotel no aceptó la consulta.",
+  provider_error: "El sistema del hotel respondió con un error.",
+};
+
 /** Texto de primera parte para un código, tolerando códigos desconocidos. */
 export function mcpErrorText(code: string): string {
-  return isMcpErrorCode(code) ? MCP_ERROR_TEXT[code] : FALLBACK_TEXT;
+  if (isMcpErrorCode(code)) return MCP_ERROR_TEXT[code];
+  return PROVIDER_REASON_TEXT[code] ?? FALLBACK_TEXT;
 }
 
 export function isMcpErrorCode(code: string): code is McpErrorCode {

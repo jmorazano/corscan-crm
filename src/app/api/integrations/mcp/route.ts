@@ -2,11 +2,18 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { isValidTimeZone } from "@/lib/time";
 import {
+  miniHotelCredentialLast4,
+  normalizeMiniHotelCredential,
+  serializeMiniHotelCredential,
+} from "@/lib/minihotel";
+import {
   clearMcpCredential,
+  getMcpIntegration,
   getMcpIntegrationView,
   setMcpCredential,
   updateMcpSettings,
 } from "@/server/mcp/integration";
+import { withMiniHotelOwnerSettings } from "@/server/mcp/profiles/minihotel-config";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +71,17 @@ const putSchema = z
       .max(64)
       .refine(isValidTimeZone, "La zona horaria no es válida")
       .optional(),
+    /**
+     * 028: credenciales de la API de MiniHotel (usuario + contraseña). Se
+     * guardan como UN secreto cifrado; la interfaz solo ve los últimos 4 de
+     * la contraseña. Solo vale con el perfil `minihotel`.
+     */
+    minihotel: z
+      .object({ username: z.string().max(128), password: z.string().max(256) })
+      .optional(),
+    /** 028: regla comercial del hotel. Solo con el perfil `minihotel`. */
+    showPrices: z.boolean().optional(),
+    showNonRefundable: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "Nada que actualizar");
 
@@ -79,7 +97,49 @@ export const PUT = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 
-  const { credential, ...settings } = body.data;
+  const { credential, minihotel, showPrices, showNonRefundable, ...settings } = body.data;
+
+  // 028: lo propio de MiniHotel exige que el conector SEA de MiniHotel. Un
+  // token plano en un hotel (o usuario/contraseña en un MCP) no se guarda.
+  const wantsMiniHotel =
+    minihotel !== undefined || showPrices !== undefined || showNonRefundable !== undefined;
+  const current =
+    wantsMiniHotel || credential !== undefined
+      ? await getMcpIntegration(session.organizationId)
+      : null;
+  if ((wantsMiniHotel || credential !== undefined) && !current) {
+    return apiError(404, "not_enabled", NOT_ENABLED);
+  }
+  const isMiniHotel = current?.profileKey === "minihotel";
+  if (wantsMiniHotel && !isMiniHotel) {
+    return apiError(422, "invalid_body", "Estos ajustes son solo para un conector de MiniHotel.");
+  }
+  if (credential !== undefined && isMiniHotel) {
+    return apiError(422, "invalid_body", "Para MiniHotel cargá el usuario y la contraseña de la API.");
+  }
+
+  if (minihotel !== undefined) {
+    const c = normalizeMiniHotelCredential(minihotel);
+    if (!c) {
+      return apiError(422, "invalid_body", "Completá el usuario y la contraseña de la API de MiniHotel.");
+    }
+    const result = await setMcpCredential({
+      organizationId: session.organizationId,
+      userId: session.userId,
+      credential: serializeMiniHotelCredential(c),
+      last4: miniHotelCredentialLast4(c),
+    });
+    if (!result.ok) return apiError(404, "not_enabled", NOT_ENABLED);
+  }
+
+  if (showPrices !== undefined || showNonRefundable !== undefined) {
+    const providerConfig = withMiniHotelOwnerSettings(current?.providerConfig ?? null, {
+      ...(showPrices !== undefined ? { showPrices } : {}),
+      ...(showNonRefundable !== undefined ? { showNonRefundable } : {}),
+    });
+    const ok = await updateMcpSettings(session.organizationId, { providerConfig });
+    if (!ok) return apiError(404, "not_enabled", NOT_ENABLED);
+  }
 
   if (credential !== undefined) {
     const result = await setMcpCredential({
@@ -93,7 +153,7 @@ export const PUT = withAuth(async (session, req: Request) => {
   if (Object.keys(settings).length > 0) {
     const ok = await updateMcpSettings(session.organizationId, settings);
     if (!ok) return apiError(404, "not_enabled", NOT_ENABLED);
-  } else if (credential === undefined) {
+  } else if (credential === undefined && !wantsMiniHotel) {
     // Inalcanzable por el `.refine`, pero deja el 404 sin fila también acá.
     const view = await getMcpIntegrationView(session.organizationId);
     if (!view) return apiError(404, "not_enabled", NOT_ENABLED);
