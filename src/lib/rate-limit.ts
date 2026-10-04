@@ -84,3 +84,10 @@ export function rateLimitKeyCount(): number {
 
 /** 10 intentos / 10 minutos por IP en login y registro (FR-062). */
 export const AUTH_RATE_LIMIT = { windowMs: 10 * 60 * 1000, max: 10 };
+
+/**
+ * 029: 5 pedidos de enlace por hora por CORREO (además del límite por IP):
+ * nadie llena de mails la casilla de otro. Cuenta el correo tal como se
+ * pidió, exista o no la cuenta: el 429 no revela nada.
+ */
+export const PASSWORD_RESET_EMAIL_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 5 };
