@@ -5,6 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { CLIENT_IP_HEADER, clientIp } from "@/lib/client-ip";
 import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
   onUserCreated,
@@ -68,14 +69,17 @@ function createAuth() {
       minPasswordLength: 8,
     },
     plugins: [organization({ creatorRole: "owner" })],
+    // El limitador interno de Better Auth (y `session.ip_address`) lee la IP
+    // que fija `withClientIp` en la ruta: el `X-Forwarded-For` de Railway
+    // trae dos entradas y por sí solo caía en UN balde para todos.
+    advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         // Rate limit por IP en login/registro (FR-062): 10 / 10 min → 429.
+        // La IP sale de `clientIp` (ver src/lib/client-ip.ts): NO leer
+        // headers a mano. Sin IP (llamadas internas) → balde "local".
         if (RATE_LIMITED_PATHS.has(ctx.path)) {
-          const ip =
-            ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-            ctx.headers?.get("x-real-ip") ||
-            "local";
+          const ip = clientIp(ctx.headers) ?? "local";
           const result = checkRateLimit(`${ctx.path}:${ip}`, AUTH_RATE_LIMIT);
           if (!result.allowed) {
             throw new APIError("TOO_MANY_REQUESTS", {
