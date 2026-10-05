@@ -81,5 +81,6 @@ Como operador que no configuró SMTP, la instancia sigue funcionando completa.
 - Remitente e identidad: `SMTP_FROM` del operador; el nombre visible del mail
   es el de la marca de la instancia (`getBranding()` sin empresa), igual que
   el login.
-- Producción en Railway: el plan Pro permite SMTP saliente (los planes
-  Hobby/Free lo bloquean). La instancia ya usa IPs estáticas (Pro).
+- Producción en Railway: el supuesto «Pro permite SMTP» NO se cumplió — 465
+  y 587 dan timeout desde el contenedor (5-oct-2026); 2465/2587 de Resend
+  conectan. Se usa 2465 + `SMTP_SECURE=true`.
