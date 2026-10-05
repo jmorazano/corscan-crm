@@ -15,7 +15,7 @@ feature completa («arrancá con la feature y agregá el permiso») y que se
 actualice el guion del video del App Review.
 
 Extiende 023 (Instagram Direct), 020/026 (adjuntos), 011 (agente paciente) y
-021 (nombre del huésped). Enmienda la constitución a **1.10.0** (Principio
+021 (nombre del huésped). Enmienda la constitución a **1.11.0** (Principio
 VIII y condición II.1(i): comentarios de las publicaciones propias). Sin
 dependencias nuevas: el QR se dibuja con un codificador propio.
 

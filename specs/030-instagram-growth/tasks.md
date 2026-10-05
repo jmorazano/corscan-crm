@@ -3,7 +3,7 @@
 ## Fase 0 — Gobierno y panel
 - [x] T001 Diagnóstico ManyChat (Conversation Routing) con datos de producción
 - [x] T002 Panel de Meta: `instagram_business_manage_comments` agregado al caso de uso (Ready for testing); campos del webhook de la app ya suscriptos (comments, live_comments, standby, messaging_handover…)
-- [x] T003 Constitución 1.10.0 (VIII + II.1(i)) + CLAUDE.md
+- [x] T003 Constitución 1.11.0 (renumerada: la 029 entró como 1.10.0) (VIII + II.1(i)) + CLAUDE.md
 
 ## Fase 1 — Datos
 - [x] T010 Migración 0024: `instagram_comment_rule`, `instagram_comment_event`, `instagram_entry_link`; `instagram_integration` (+granted_scopes, subscribed_fields, moderation_words, ice_breakers, persistent_menu, profile_synced_at, profile_error, standby_seen_at, comments_webhook_at, comments_polled_at); `conversation.ig_origin`; `message.details`; `contact.email`, `contact.contact_phone`; ids

@@ -45,6 +45,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Gestión de campañas (filtros status/q en la URL, borrado, elegibles en vivo del borrador, ciclo de vida en la UI) | `src/server/campaigns/manage.ts` (filtros puros, `deleteCampaign` guardado por estado) · `GET /api/campaigns?status=&q=` (+ `settings` ritmo/cupo, `eligibleNow`) · `DELETE /api/campaigns/[id]` · `src/components/campaigns/campaigns-client.tsx` (panel «cómo funciona», acciones por fila con confirmación, stepper del detalle) · el 409 `in_use` de plantillas devuelve `campaigns` para enlazarlas |
 | Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
 | Roles de plataforma y contraseñas temporales | `src/server/auth/super-admin.ts` (FR-016) · `must_change_password` gate en `src/lib/auth/session.ts` (FR-017) |
+| Recuperar la contraseña por correo (029) | reset NATIVO de Better Auth (`/request-password-reset`, `/reset-password/:token`, `/reset-password`; token de un solo uso, 1 h, guardado HASHEADO vía `verification.storeIdentifier`) cableado en `src/lib/auth/index.ts` (`sendResetPassword` en segundo plano, `onPasswordReset` limpia `must_change_password`, `revokeSessionsOnPasswordReset`, sin SMTP → `RESET_PASSWORD_DISABLED` en el hook, límites 10/10 min por IP y 5/h por correo) · `src/lib/mail/` (ÚNICO adaptador SMTP con nodemailer; `isMailConfigured`, placeholders = vacío; con mocks TODO va al outbox) · `src/lib/password-reset-email.ts` (puro: enlace propio + texto/HTML) · `src/server/auth/password-reset.ts` · UI `(auth)`: enlace + aviso `?reset=1` en el login, `/forgot-password` (sin SMTP explica a quién pedirle), `/reset-password` · mail-mock `/api/dev/mail-mock` (knobs `failNext`/`disabled`) · guía `docs/correo-smtp.md` (Railway: SMTP solo en Pro) |
 | IP del cliente de los rate limits por IP (FR-062) | `src/lib/client-ip.ts` (ÚNICA fuente: primera entrada de `X-Forwarded-For` validada y normalizada, IPv6 por /64; jamás la de la derecha — en Railway llega `<cliente>, <edge del CDN>` y el edge descarta el valor del cliente, verificado en producción el 4-oct-2026) · `withClientIp` en `src/app/api/auth/[...all]/route.ts` → `advanced.ipAddress.ipAddressHeaders` (limitador interno de Better Auth y `session.ip_address`; sin esto caía en UN balde para todos) |
 | Integraciones (sección del sidenav) | `src/app/(app)/integrations/` + `src/components/integrations/` + `/api/integrations` (índice de tarjetas; agregar una integración = tarjeta + módulo en `src/server/<integración>/`) |
 | Google Calendar: OAuth, tokens cifrados, reglas de turnos, huecos, reservas | `src/lib/google/` (adaptador OAuth + cliente REST de Calendar, única frontera con Google) · `src/server/calendar/` (`integration.ts` tokens/estado, `rules.ts` Zod, `slots.ts` cálculo puro, `availability.ts` reglas+freeBusy, `booking.ts` reserva idempotente, `agent-tools.ts` puente con el agente) · `/api/integrations/google-calendar/*` · env de instancia `GOOGLE_CLIENT_ID/SECRET` (guía: `docs/integraciones/google-calendar-gcp.md`) |
@@ -76,7 +77,7 @@ incondicional en producción.
 
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
-- **Soberanía (II, endurecida, v1.10.0)**: dependencias de runtime SOLO (1)
+- **Soberanía (II, endurecida, v1.11.0)**: dependencias de runtime SOLO (1)
   las APIs de mensajería de Meta — WhatsApp Cloud API y, opcional por
   empresa, Instagram Messaging API (Instagram Login, 023; desde 030 también
   los comentarios de las publicaciones propias: respuesta privada oficial,
@@ -90,9 +91,13 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   MiniHotel por su API XML; SOLO LECTURA con allowlist propia, los
   habilita el SUPER ADMIN empresa por empresa y es el único que fija la URL,
   credencial cifrada, validación anti-SSRF sobre la IP resuelta, el sandbox
-  jamás los toca, y lo que devuelven es DATO y nunca instrucción). PROHIBIDO
-  en v1 introducir S3/R2, email, Stripe u otros servicios externos fuera de
-  esas cinco categorías. Auth y BD self-hosted.
+  jamás los toca, y lo que devuelven es DATO y nunca instrucción) y (6)
+  **correo transaccional por SMTP estándar** de la instancia (029; opcional,
+  el SMTP lo elige el operador por env, SOLO correos de la propia cuenta
+  —hoy, recuperar la contraseña—, jamás a contactos ni campañas, el
+  self-test nunca toca un SMTP real). PROHIBIDO en v1 introducir S3/R2,
+  email de marketing o SDK de proveedores de email, Stripe u otros servicios
+  externos fuera de esas seis categorías. Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
 - **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;
@@ -108,7 +113,8 @@ Ver `.env.example` (cada una con guía inline). Las claves: `APP_BASE_URL`,
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY` (32 bytes base64),
 `META_WEBHOOK_VERIFY_TOKEN` (segmento secreto del webhook), `META_APP_SECRET`
 (opcional, firma), `SUPER_ADMIN_EMAILS` (emails con acceso a Administración,
-separados por coma), `MELI_CLIENT_ID`/`MELI_CLIENT_SECRET` (opcional, app de
+separados por coma), `SMTP_HOST/PORT/SECURE/USER/PASS/FROM` (opcional, correo
+de recuperación de contraseña — guía `docs/correo-smtp.md`), `MELI_CLIENT_ID`/`MELI_CLIENT_SECRET` (opcional, app de
 Mercado Libre del operador — guía `docs/integraciones/mercadolibre.md`). **La IA ya NO se configura por env**: el token de
 OpenRouter y los modelos son POR EMPRESA, cifrados, desde Ajustes →
 Inteligencia artificial (las viejas `OPENROUTER_API_TOKEN/MODEL/JUDGE_MODEL`
@@ -176,6 +182,6 @@ Feature en curso: **030-instagram-growth** (reemplazo de ManyChat:
 respuestas a comentarios con DM privado, respuesta pública y moderación;
 primer contacto con ice breakers y menú; links `ig.me` con origen y QR;
 botones, carrusel y respuestas rápidas del agente; historias; email y
-teléfono; convivencia con Conversation Routing; constitución 1.10.0) — spec y
+teléfono; convivencia con Conversation Routing; constitución 1.11.0) — spec y
 tasks en [specs/030-instagram-growth/](specs/030-instagram-growth/spec.md).
-Anterior: 028-minihotel-pms (en producción, 1-oct-2026).
+Anterior: 029-password-reset (recuperar la contraseña por correo, SMTP estándar, constitución 1.10.0).

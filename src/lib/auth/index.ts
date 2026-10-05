@@ -6,11 +6,21 @@ import { organization } from "better-auth/plugins";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { CLIENT_IP_HEADER, clientIp } from "@/lib/client-ip";
-import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
+import { isMailConfigured } from "@/lib/mail";
+import { RESET_TOKEN_TTL_SECONDS } from "@/lib/password-reset-email";
+import {
+  AUTH_RATE_LIMIT,
+  checkRateLimit,
+  PASSWORD_RESET_EMAIL_RATE_LIMIT,
+} from "@/lib/rate-limit";
 import {
   onUserCreated,
   resolveLoginOrganizationId,
 } from "@/server/auth/on-signup";
+import {
+  clearMustChangePassword,
+  queuePasswordResetEmail,
+} from "@/server/auth/password-reset";
 import {
   hasAnyOrganization,
   isPublicSignupAllowed,
@@ -44,7 +54,18 @@ function isInternalSignup(): boolean {
   return internalSignupContext().getStore() === true;
 }
 
-const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
+/** Por IP (FR-062); 029 suma pedir el enlace y elegir la contraseña nueva. */
+const RATE_LIMITED_PATHS = new Set([
+  "/sign-in/email",
+  "/sign-up/email",
+  "/request-password-reset",
+  "/reset-password",
+]);
+
+function bodyEmail(body: unknown): string {
+  const email = (body as { email?: unknown } | undefined)?.email;
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
 
 function createAuth() {
   const env = getEnv();
@@ -67,6 +88,27 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: false,
       minPasswordLength: 8,
+      // 029: recuperar la contraseña por correo. Better Auth genera y
+      // consume el token (un solo uso) y responde igual exista o no la
+      // cuenta; el correo sale en segundo plano (sin oráculo de timing).
+      resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
+      sendResetPassword: async ({ user, token }) => {
+        queuePasswordResetEmail({ email: user.email, name: user.name, token });
+      },
+      // Quien tenía la sesión abierta (o la contraseña vieja) queda afuera.
+      revokeSessionsOnPasswordReset: true,
+      onPasswordReset: async ({ user }) => {
+        await clearMustChangePassword(user.id);
+      },
+    },
+    // 029: el token de recuperación se guarda HASHEADO: una copia de la base
+    // no sirve para usar un enlace vigente. El resto de `verification` sigue
+    // como estaba.
+    verification: {
+      storeIdentifier: {
+        default: "plain",
+        overrides: { "reset-password:": "hashed" },
+      },
     },
     plugins: [organization({ creatorRole: "owner" })],
     // El limitador interno de Better Auth (y `session.ip_address`) lee la IP
@@ -87,6 +129,26 @@ function createAuth() {
             });
           }
         }
+        if (ctx.path === "/request-password-reset") {
+          // Sin SMTP no hay recuperación por correo (AC3.2). Se corta ACÁ,
+          // antes de buscar la cuenta: la respuesta es la misma para todos.
+          if (!isMailConfigured()) {
+            throw new APIError("BAD_REQUEST", {
+              message: "La recuperación por correo no está habilitada",
+              code: "RESET_PASSWORD_DISABLED",
+            });
+          }
+          const email = bodyEmail(ctx.body);
+          if (
+            email &&
+            !checkRateLimit(`reset-email:${email}`, PASSWORD_RESET_EMAIL_RATE_LIMIT)
+              .allowed
+          ) {
+            throw new APIError("TOO_MANY_REQUESTS", {
+              message: "Demasiados intentos; espera unos minutos",
+            });
+          }
+        }
         // Registro público cerrado tras la primera organización (FR-060).
         if (ctx.path === "/sign-up/email" && !isInternalSignup()) {
           if (!(await isPublicSignupAllowed())) {
@@ -99,11 +161,7 @@ function createAuth() {
           // auto-registrarse en el bootstrap (instancia sin organizaciones).
           // Después — p. ej. con ALLOW_SIGNUP=true — registrarlo sería tomar
           // la plataforma: el rol deriva del email y no hay verificación.
-          const email =
-            typeof (ctx.body as { email?: unknown } | undefined)?.email ===
-            "string"
-              ? (ctx.body as { email: string }).email
-              : "";
+          const email = bodyEmail(ctx.body);
           if (isSuperAdminEmail(email) && (await hasAnyOrganization())) {
             throw new APIError("FORBIDDEN", {
               message:

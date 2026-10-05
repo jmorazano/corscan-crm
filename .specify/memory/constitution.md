@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.9.0 → 1.10.0
+Versión: 1.10.0 → 1.11.0
 
 Cambios (feature 030-instagram-growth, 5-oct-2026) — MINOR:
   - Principio VIII: Instagram suma los COMENTARIOS de las publicaciones
@@ -24,8 +24,25 @@ Cambios (feature 030-instagram-growth, 5-oct-2026) — MINOR:
     agregá el permiso» (5-oct-2026).
   - Plantillas: sin cambios. CLAUDE.md: ⚠ actualizar soberanía, mapa del
     código y feature activa.
-  - Nota: la rama 029-password-reset (sin mergear) también numeró su
-    enmienda como 1.10.0; la que entre segunda a `main` renumera.
+  - Renumerada a 1.11.0 al mergear `main`: la 029 (correo transaccional
+    por SMTP, categoría 6 de II) entró antes como 1.10.0.
+
+Versión anterior: 1.9.0 → 1.10.0
+
+Cambios (feature 029-password-reset, 4-oct-2026) — MINOR:
+  - Principio II: se agrega una SEXTA categoría de dependencia externa en
+    runtime: **correo transaccional por SMTP estándar**, de la instancia.
+    Motivo: un usuario olvidó su contraseña y no tenía cómo recuperarla sin
+    que el super admin la restableciera a mano; el dueño eligió el
+    autoservicio por correo (4-oct-2026) sabiendo que exigía esta enmienda.
+  - La prohibición de v1 «servicios de email» se acota: siguen prohibidos el
+    email de marketing/masivo y los SDK o cuentas de un proveedor puntual; el
+    correo transaccional de la propia cuenta por SMTP estándar entra por la
+    categoría 6 con sus condiciones (a)–(h).
+  - Listas de adaptadores dedicados (Principio II y Restricciones): se agrega
+    el adaptador de correo (`src/lib/mail/`).
+  - Plantillas: sin cambios (el Constitution Check sigue siendo genérico).
+  - CLAUDE.md: ⚠ actualizar la línea de soberanía y el mapa del código.
 
 Versión anterior: 1.8.1 → 1.9.0
 
@@ -274,7 +291,7 @@ dependencias externas en runtime es CERRADA:
      firma y la ingesta es idempotente por `mid` POR TENANT; (i) se respetan
      las reglas del canal: ventana de 24 h, etiqueta HUMAN_AGENT solo para
      personas del equipo y hasta 7 días, ningún envío iniciado por el negocio
-     ni por el agente fuera de la ventana —con UNA excepción desde 1.10.0: la
+     ni por el agente fuera de la ventana —con UNA excepción desde 1.11.0: la
      respuesta privada oficial a un comentario que la persona dejó en una
      publicación del negocio, una por comentario y dentro de los 7 días, solo
      si una regla del negocio lo pide—, y los borrados que ordena Meta
@@ -338,19 +355,36 @@ dependencias externas en runtime es CERRADA:
      validan contra los dominios del proveedor antes de enviarse a un
      contacto; (j) un fallo o una caída del servidor degrada la respuesta —el
      agente lo dice y sigue—, y jamás tumba el turno, la ingesta ni el envío.
-- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
-  email, Stripe u otro billing. Cualquier feature que los requiera queda fuera
-  del alcance de v1. Cualquier servicio externo que no encaje en las cinco
-  categorías anteriores también queda fuera.
+  6. **Correo transaccional por SMTP estándar** (desde 1.10.0): el servidor
+     SMTP que elija el operador de la instancia (RFC 5321, STARTTLS o TLS),
+     para los correos que la PROPIA cuenta necesita —hoy, solo el enlace de
+     recuperación de contraseña—. Condiciones NO negociables: (a) sin correo
+     configurado el producto funciona completo y el login explica a quién
+     pedirle la contraseña; (b) lo configura el operador por entorno con
+     cualquier servidor SMTP (propio o de un proveedor): protocolo estándar,
+     sin SDK, API ni cuenta atada a un proveedor puntual; (c) SOLO correo
+     transaccional al titular de la cuenta: jamás a contactos o leads del CRM,
+     ni campañas, boletines o marketing; (d) la credencial del SMTP vive en el
+     entorno y jamás sale al cliente, a un log ni a un mensaje de error; (e)
+     se aísla tras un adaptador dedicado; (f) el instalador NO lo necesita;
+     (g) el self-test y los mocks JAMÁS alcanzan un SMTP real; (h) un fallo
+     del correo no revela si una cuenta existe ni tumba el login ni ningún
+     otro flujo.
+- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), email de
+  marketing o masivo y SDK/API de proveedores de email (el correo
+  transaccional por SMTP estándar entra SOLO por la categoría 6), Stripe u
+  otro billing. Cualquier feature que los requiera queda fuera del alcance de
+  v1. Cualquier servicio externo que no encaje en las seis categorías
+  anteriores también queda fuera.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
-  de Meta y (opcional) un token de OpenRouter. Nada más.
+  de Meta y (opcional) un token de OpenRouter y un servidor SMTP. Nada más.
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
   (cliente Graph API propio; adaptador LLM; adaptador OAuth/REST de Google;
   adaptador OAuth/REST de Mercado Libre; transporte MCP genérico + perfil por
-  proveedor; adaptador XML de MiniHotel sobre el mismo transporte) para no
-  acoplar el dominio a ellas.
+  proveedor; adaptador XML de MiniHotel sobre el mismo transporte; adaptador
+  SMTP de correo) para no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -437,7 +471,7 @@ operador* se rechaza.
 
 - Instagram entra SOLO como segundo canal de conversación: mensajes directos que
   el cliente inicia, atendidos en la misma Bandeja, con el mismo agente, pipeline
-  y etiquetas. Desde 1.10.0 los COMENTARIOS de las publicaciones propias entran
+  y etiquetas. Desde 1.11.0 los COMENTARIOS de las publicaciones propias entran
   como puerta de la conversación: respuesta privada oficial (una por comentario,
   7 días, por regla del negocio), respuesta pública breve y ocultar comentarios
   por palabras del negocio. Quedan FUERA publicar contenido, métricas de la
@@ -512,7 +546,8 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   través de adaptadores dedicados (cliente Graph API propio, cliente de
   Instagram propio, adaptador LLM OpenRouter-compatible, adaptadores OAuth/REST
   de Google y de Mercado Libre, transporte MCP genérico + perfil por
-  proveedor, adaptador XML de MiniHotel), no dispersas por el dominio.
+  proveedor, adaptador XML de MiniHotel, adaptador SMTP de correo), no
+  dispersas por el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
@@ -553,4 +588,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.10.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-05
+**Version**: 1.11.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-05

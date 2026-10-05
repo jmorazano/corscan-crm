@@ -100,3 +100,6 @@ inferior.
 
 Gate técnico: typecheck ✅ · lint ✅ · build ✅ · unit 1.450 ✅ (31 nuevos en
 `instagram-growth.test.ts` + 4 ajustados en `instagram-webhook`/`instagram-client`).
+
+Tras mergear `main` (029, recuperar contraseña; constitución renumerada a
+1.11.0): gate ✅ (unit 1.476) y E2E 64/64 ✅ de nuevo.

@@ -94,6 +94,18 @@ const envSchema = z.object({
   SUPER_ADMIN_EMAILS: z.string().optional(),
   /** 013: "subject" VAPID (mailto: o https:); default derivado de APP_BASE_URL. */
   VAPID_SUBJECT: z.string().optional(),
+  // Correo transaccional (029, constitución II cat. 6): el servidor SMTP que
+  // elija el operador. Sin host + remitente no hay recuperación por correo y
+  // el login explica a quién pedirle la contraseña. Un `REEMPLAZA_…` cuenta
+  // como vacío (ver `src/lib/mail/config.ts`).
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  /** "true" = TLS directo (465); sin definir se deduce del puerto. */
+  SMTP_SECURE: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  /** Remitente: `correo@dominio` o `Nombre <correo@dominio>`. */
+  SMTP_FROM: z.string().optional(),
   /** 011: espera desde el ÚLTIMO mensaje entrante antes de que el agente
    * responda (absorbe ráfagas de mensajes en una sola respuesta). */
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(20000),
