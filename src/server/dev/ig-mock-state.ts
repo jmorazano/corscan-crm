@@ -13,6 +13,10 @@ export type IgMockSend = {
   /** "" en un adjunto (Instagram no admite texto junto al adjunto). */
   text: string;
   humanAgent: boolean;
+  /** 030: respuesta privada a un comentario (en vez de `recipientId`). */
+  commentId?: string;
+  /** 030: el objeto `message` crudo (plantillas, respuestas rápidas). */
+  raw?: unknown;
   /** 026: adjunto por URL, con lo que obtuvo el mock al BAJARLO. */
   attachment?: {
     type: string;
@@ -43,6 +47,43 @@ export type IgMockState = {
   /** 023: conversaciones que devuelve la Conversations API simulada. */
   history: IgMockConversation[];
   historyFails: boolean;
+  /** 030: lo que pidió el último Business Login y lo que «concede». */
+  lastScope: string;
+  denyComments: boolean;
+  /** 030: publicaciones y comentarios de la cuenta simulada. */
+  media: IgMockMedia[];
+  comments: IgMockComment[];
+  publicReplies: { commentId: string; text: string; id: string; at: string }[];
+  hiddenComments: string[];
+  messengerProfile: Record<string, unknown>;
+  /** Perillas one-shot de 030. */
+  failNextPrivateReply: "error" | "routing" | "down" | "invalid" | null;
+  rejectQuickRepliesInPrivateReply: boolean;
+  rejectTemplates: boolean;
+  profileSaveFails: boolean;
+  commentsReadFails: boolean;
+};
+
+export type IgMockMedia = {
+  id: string;
+  caption: string;
+  media_type: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+  media_product_type: "FEED" | "REELS";
+  permalink: string;
+  timestamp: string;
+};
+
+export type IgMockComment = {
+  id: string;
+  mediaId: string;
+  fromId: string;
+  username: string;
+  text: string;
+  timestamp: string;
+  parentId: string | null;
+  /** IGSID de mensajería que devolverá la respuesta privada. */
+  igsid: string;
+  privateReplied: boolean;
 };
 
 export type IgMockConversation = {
@@ -108,7 +149,29 @@ function fresh(): IgMockState {
     echoSends: true,
     history: sampleHistory(),
     historyFails: false,
+    lastScope: "",
+    denyComments: false,
+    media: sampleMedia(),
+    comments: [],
+    publicReplies: [],
+    hiddenComments: [],
+    messengerProfile: {},
+    failNextPrivateReply: null,
+    rejectQuickRepliesInPrivateReply: false,
+    rejectTemplates: false,
+    profileSaveFails: false,
+    commentsReadFails: false,
   };
+}
+
+/** 030: tres publicaciones de ejemplo (la más nueva primero). */
+function sampleMedia(now = Date.now()): IgMockMedia[] {
+  const at = (h: number) => new Date(now - h * 60 * MIN).toISOString().replace(/\.\d{3}Z$/, "+0000");
+  return [
+    { id: "17900000000000101", caption: "Cabaña Alba 🌲 Comentá INFO y te paso el link", media_type: "IMAGE", media_product_type: "FEED", permalink: "https://www.instagram.com/p/mockAlba/", timestamp: at(2) },
+    { id: "17900000000000102", caption: "Reel de la pileta climatizada", media_type: "VIDEO", media_product_type: "REELS", permalink: "https://www.instagram.com/reel/mockPileta/", timestamp: at(30) },
+    { id: "17900000000000103", caption: "Promo de primavera", media_type: "IMAGE", media_product_type: "FEED", permalink: "https://www.instagram.com/p/mockPromo/", timestamp: at(80) },
+  ];
 }
 
 export function getIgMockState(): IgMockState {

@@ -1,6 +1,26 @@
 import { z } from "zod";
 
 /**
+ * 030: el email y el teléfono que la persona dio en el chat. Como el nombre
+ * (021), viajan con la respuesta y el servidor los valida antes de guardar.
+ */
+const CONTACT_DATA_FIELDS = {
+  contact_email: z.string().trim().max(254).optional(),
+  contact_phone: z.string().trim().max(40).optional(),
+};
+
+/**
+ * 030 (US3): extras de Instagram. Laxos A PROPÓSITO: un modelo que manda una
+ * forma rara no tumba el turno — `sanitizeInteractive` decide qué sale (y
+ * descarta enlaces que no estén en el contexto del turno).
+ */
+const INTERACTIVE_FIELDS = {
+  quick_replies: z.array(z.unknown()).max(20).optional(),
+  buttons: z.array(z.unknown()).max(10).optional(),
+  cards: z.array(z.unknown()).max(20).optional(),
+};
+
+/**
  * Acción tipada del agente: exactamente UNA por turno (FR-021).
  * El servidor valida cada acción contra sus allowlists (etapas de la org);
  * lo que no valida se degrada, nunca se ejecuta a ciegas.
@@ -19,12 +39,16 @@ export const AgentAction = z.discriminatedUnion("action", [
     action: z.literal("reply"),
     text: z.string().min(1),
     contact_name: z.string().trim().optional(),
+    ...CONTACT_DATA_FIELDS,
+    ...INTERACTIVE_FIELDS,
   }),
   z.object({
     action: z.literal("update_lead"),
     note: z.string().min(1),
     reply: z.string().optional(),
     contact_name: z.string().trim().optional(),
+    ...CONTACT_DATA_FIELDS,
+    ...INTERACTIVE_FIELDS,
   }),
   z.object({
     action: z.literal("move_stage"),

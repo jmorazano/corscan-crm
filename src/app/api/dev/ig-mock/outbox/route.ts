@@ -8,7 +8,17 @@ export async function GET() {
   const guard = mockGuard();
   if (guard) return guard;
   const s = getIgMockState();
-  return Response.json({ outbox: s.outbox, subscriptions: s.subscriptions, account: s.account });
+  return Response.json({
+    outbox: s.outbox,
+    subscriptions: s.subscriptions,
+    account: s.account,
+    // 030
+    comments: s.comments,
+    publicReplies: s.publicReplies,
+    hiddenComments: s.hiddenComments,
+    messengerProfile: s.messengerProfile,
+    lastScope: s.lastScope,
+  });
 }
 
 export async function DELETE() {

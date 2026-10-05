@@ -54,6 +54,8 @@ export async function processInboundMedia(input: {
   /** 026: nombre original del documento (WhatsApp lo manda en el webhook). */
   fileName?: string | null;
   plan: Extract<MediaPlan, { kind: "process" | "store" }>;
+  /** 030: resolver el adjunto sin despertar al agente (standby de Instagram). */
+  skipAgent?: boolean;
 }): Promise<void> {
   // D4/FR-010: el sandbox del Laboratorio JAMÁS toca la API real.
   if (input.isTest) {
@@ -140,6 +142,14 @@ async function download(input: {
     return null;
   }
   if (input.plan.type === "image" && !mimeType.startsWith("image/")) {
+    // 030: una historia de Instagram puede ser un video: se guarda para que
+    // el equipo la vea, sin descripción (el agente sabe igual que respondió
+    // a una historia).
+    if (input.plan.story && (mimeType.startsWith("video/") || declared.startsWith("video/"))) {
+      await saveMedia(input, downloaded.bytes, mimeType.startsWith("video/") ? mimeType : declared);
+      await finish(input, { state: "ready" });
+      return null;
+    }
     await saveMedia(input, downloaded.bytes, mimeType || "application/octet-stream");
     await finish(input, { state: "failed", errorCode: "unsupported" });
     return null;
@@ -387,6 +397,7 @@ async function finish(
     conversationId: string;
     messageId: string;
     plan?: MediaPlan;
+    skipAgent?: boolean;
   },
   outcome:
     | { state: "ready"; text?: string; summary?: string }
@@ -444,6 +455,8 @@ async function finish(
   // 026: el turno de un video o documento ya salió en la ingesta (no
   // espera al binario); soltarlo otra vez podría duplicar la respuesta.
   if (input.plan?.kind === "store") return;
+  // 030: otra app maneja el hilo (standby): el agente no responde.
+  if (input.skipAgent) return;
 
   // D9: la BAJA por audio no se puede detectar en la ingesta (ahí todavía no
   // había texto). Se re-evalúa acá con la transcripción, ANTES de soltar el

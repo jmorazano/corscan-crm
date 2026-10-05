@@ -3,7 +3,10 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import type { IgMenuItem } from "@/lib/instagram/types";
 import {
+  COMMENTS_SCOPE,
+  INSTAGRAM_SCOPES,
   InstagramApiError,
   exchangeInstagramCode,
   exchangeLongLivedToken,
@@ -39,6 +42,19 @@ export type InstagramIntegrationView = {
     messages: number;
     error: string | null;
   };
+  /** 030: ¿la conexión tiene el permiso de comentarios? (si no: reconectar) */
+  commentsEnabled: boolean;
+  /** 030: los comentarios llegan por webhook (acceso avanzado) o por consulta. */
+  commentsDelivery: "webhook" | "poll";
+  commentsPolledAt: string | null;
+  commentsError: string | null;
+  moderationWords: string[];
+  iceBreakers: string[];
+  persistentMenu: IgMenuItem[];
+  profileSyncedAt: string | null;
+  profileError: string | null;
+  /** 030: otra app (p. ej. ManyChat) maneja hilos de esta cuenta. */
+  standbySeenAt: string | null;
 };
 
 /** Forma de runtime (servidor): incluye el token descifrado. */
@@ -50,7 +66,25 @@ export type InstagramIntegration = {
   token: string;
   tokenExpiresAt: Date;
   tokenRefreshedAt: Date;
+  /** 030 */
+  commentsEnabled: boolean;
+  moderationWords: string[];
+  iceBreakers: string[];
+  persistentMenu: IgMenuItem[];
+  commentsWebhookAt: Date | null;
+  commentsPolledAt: Date | null;
 };
+
+/**
+ * 030: ¿la conexión puede leer/responder comentarios? Una fila de antes de
+ * 030 (`granted_scopes` NULL) se conectó sin el permiso: hay que reconectar.
+ */
+export function hasCommentsScope(grantedScopes: readonly string[] | null | undefined): boolean {
+  return !!grantedScopes?.includes(COMMENTS_SCOPE);
+}
+
+/** Un webhook de comentarios en las últimas 24 h = acceso avanzado activo. */
+export const COMMENTS_WEBHOOK_FRESH_MS = 24 * 60 * 60 * 1000;
 
 export class InstagramConnectError extends Error {
   constructor(
@@ -80,6 +114,12 @@ function toRuntime(row: Row): InstagramIntegration {
     }),
     tokenExpiresAt: row.tokenExpiresAt,
     tokenRefreshedAt: row.tokenRefreshedAt,
+    commentsEnabled: hasCommentsScope(row.grantedScopes),
+    moderationWords: row.moderationWords ?? [],
+    iceBreakers: row.iceBreakers ?? [],
+    persistentMenu: row.persistentMenu ?? [],
+    commentsWebhookAt: row.commentsWebhookAt ?? null,
+    commentsPolledAt: row.commentsPolledAt ?? null,
   };
 }
 
@@ -100,6 +140,19 @@ export function toInstagramView(row: Row): InstagramIntegrationView {
       messages: row.historyMessages,
       error: row.historyError,
     },
+    commentsEnabled: hasCommentsScope(row.grantedScopes),
+    commentsDelivery:
+      row.commentsWebhookAt && Date.now() - row.commentsWebhookAt.getTime() < COMMENTS_WEBHOOK_FRESH_MS
+        ? "webhook"
+        : "poll",
+    commentsPolledAt: row.commentsPolledAt?.toISOString() ?? null,
+    commentsError: row.commentsError ?? null,
+    moderationWords: row.moderationWords ?? [],
+    iceBreakers: row.iceBreakers ?? [],
+    persistentMenu: row.persistentMenu ?? [],
+    profileSyncedAt: row.profileSyncedAt?.toISOString() ?? null,
+    profileError: row.profileError ?? null,
+    standbySeenAt: row.standbySeenAt?.toISOString() ?? null,
   };
 }
 
@@ -157,11 +210,15 @@ export async function connectInstagram(input: {
   const now = input.now ?? new Date();
   let token: string;
   let expiresAt: Date;
+  let grantedScopes: string[];
   try {
     const short = await exchangeInstagramCode(input.code);
     const long = await exchangeLongLivedToken(short.accessToken, now);
     token = long.accessToken;
     expiresAt = long.expiresAt;
+    // 030: si Meta no manda `permissions`, se asume lo pedido; si el permiso
+    // de comentarios no estaba, la primera llamada lo dice y se avisa.
+    grantedScopes = short.permissions ?? [...INSTAGRAM_SCOPES];
   } catch (err) {
     throw new InstagramConnectError(
       "exchange",
@@ -189,8 +246,16 @@ export async function connectInstagram(input: {
     );
   }
 
+  let subscribedFields: string[];
   try {
-    await subscribeInstagramWebhooks(token);
+    subscribedFields = await subscribeInstagramWebhooks(
+      token,
+      hasCommentsScope(grantedScopes) ? undefined : [
+        // Sin el permiso de comentarios, pedirlos haría fallar la lista.
+        ["messages", "messaging_seen", "messaging_postbacks", "message_reactions", "messaging_referral", "standby", "messaging_handover"],
+        ["messages", "messaging_seen", "messaging_postbacks", "message_reactions", "messaging_referral"],
+      ]
+    );
   } catch (err) {
     throw new InstagramConnectError(
       "subscribe",
@@ -211,6 +276,8 @@ export async function connectInstagram(input: {
     tokenRefreshedAt: now,
     status: "connected" as const,
     connectedBy: input.userId,
+    grantedScopes,
+    subscribedFields,
     updatedAt: now,
   };
   const saved = await getDb()
@@ -366,4 +433,18 @@ export function startInstagramTokenTicker(): void {
   globalThis.__voceroInstagramTicker = setInterval(run, TICKER_MS);
   globalThis.__voceroInstagramTicker.unref?.();
   run();
+  // 030: consulta de comentarios (respaldo del webhook con acceso estándar).
+  void import("@/server/instagram/comments")
+    .then(({ startInstagramCommentsTicker }) => startInstagramCommentsTicker())
+    .catch((err) =>
+      console.warn("[instagram] no arrancó la consulta de comentarios:", err instanceof Error ? err.message : err)
+    );
+}
+
+/** 030: marca que llegó un `standby` (otra app maneja hilos de la cuenta). */
+export async function markInstagramStandbySeen(organizationId: string, now: Date = new Date()): Promise<void> {
+  await getDb()
+    .update(schema.instagramIntegration)
+    .set({ standbySeenAt: now })
+    .where(scoped(schema.instagramIntegration.organizationId, organizationId));
 }

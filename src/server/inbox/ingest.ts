@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import type { MessageDto, MessageMediaDto, MessageVia } from "@/lib/types";
+import type { MessageDetails } from "@/lib/instagram/types";
 import { publish } from "@/server/events/bus";
 import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -215,6 +216,14 @@ export async function ingestInboundCore(input: {
   text: string | null;
   media: { source: InboundMediaSource; mime: string | null; fileName?: string | null } | null;
   at: Date;
+  /** 030: lo estructurado de Instagram (historia, standby…). */
+  details?: MessageDetails | null;
+  /**
+   * 030: no despertar al agente con este mensaje. Lo usa Instagram cuando
+   * otra app maneja el hilo (`standby`) o cuando sale el seguimiento
+   * determinístico de una regla de comentarios.
+   */
+  skipAgent?: boolean;
 }): Promise<typeof schema.message.$inferSelect | null> {
   const db = getDb();
   const { organizationId, contact, conversation } = input;
@@ -250,6 +259,7 @@ export async function ingestInboundCore(input: {
       text: input.text,
       status: "delivered",
       mediaState: plan.kind === "process" || plan.kind === "store" ? "pending" : null,
+      details: input.details ?? null,
       waTimestamp,
     })
     .onConflictDoNothing({
@@ -323,6 +333,7 @@ export async function ingestInboundCore(input: {
       declaredMime: input.media.mime,
       fileName: input.media.fileName ?? null,
       plan,
+      skipAgent: input.skipAgent,
     });
     return message;
   }
@@ -342,6 +353,7 @@ export async function ingestInboundCore(input: {
     });
   }
 
+  if (input.skipAgent) return message;
   await maybeRunAgentTurn(organizationId, conversation.id);
   return message;
 }
@@ -373,6 +385,7 @@ export function serializeMessage(
     mediaState: m.mediaState ?? null,
     mediaSummary: m.mediaSummary ?? null,
     source: m.source ?? "cloud",
+    details: m.details ?? null,
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };
 }

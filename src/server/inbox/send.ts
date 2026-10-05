@@ -17,6 +17,7 @@ import { serializeMessage } from "@/server/inbox/ingest";
 export { SendError } from "@/server/inbox/send-error";
 import { SendError } from "@/server/inbox/send-error";
 import { sendInstagramConversationText } from "@/server/instagram/send";
+import { fallbackText, hasInteractive, type Interactive } from "@/lib/instagram/interactive";
 
 type SendResult = { messageId: string };
 
@@ -31,6 +32,11 @@ export async function sendText(input: {
   organizationId: string;
   text: string;
   aiGenerated?: boolean;
+  /**
+   * 030: botones, tarjetas y respuestas rápidas (solo Instagram los muestra;
+   * en WhatsApp los enlaces van escritos en el texto).
+   */
+  interactive?: Interactive | null;
 }): Promise<SendResult> {
   const db = getDb();
 
@@ -71,7 +77,12 @@ export async function sendText(input: {
       contact: row.contact,
       text: input.text,
       aiGenerated: input.aiGenerated ?? false,
+      interactive: input.interactive ?? null,
     });
+  }
+  // 030: WhatsApp no muestra estos formatos acá: los enlaces van en el texto.
+  if (hasInteractive(input.interactive)) {
+    input = { ...input, text: fallbackText(input.text, input.interactive), interactive: null };
   }
   // 015: segundo guardrail — la conversación del entrenador es interna.
   if (row.conversation.kind !== "whatsapp") {

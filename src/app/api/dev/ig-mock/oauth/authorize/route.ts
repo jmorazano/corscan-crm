@@ -21,6 +21,8 @@ export async function GET(req: Request) {
   }
   const back = new URL(redirectUri);
   const s = getIgMockState();
+  // 030: lo que se pidió decide lo que «concede» el canje de código.
+  s.lastScope = scope;
   if (s.nextAuthError) {
     back.searchParams.set("error", s.nextAuthError);
     back.searchParams.set("error_reason", "user_denied");

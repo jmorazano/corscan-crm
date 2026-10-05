@@ -226,6 +226,40 @@ export function ContactPanel({
             </div>
           </div>
 
+          {/* 030: datos que dio en el chat y de dónde llegó. */}
+          {(conversation.contact.email ||
+            conversation.contact.contactPhone ||
+            conversation.igOrigin) && (
+            <dl className="mt-3 space-y-1 text-xs" data-testid="contact-extra">
+              {conversation.igOrigin && (
+                <div className="flex gap-1.5">
+                  <dt className="shrink-0 text-text-3">Origen:</dt>
+                  <dd className="min-w-0 break-words text-text-2" data-testid="contact-origin">
+                    {conversation.igOrigin.label}
+                  </dd>
+                </div>
+              )}
+              {conversation.contact.email && (
+                <div className="flex gap-1.5">
+                  <dt className="shrink-0 text-text-3">Email:</dt>
+                  <dd className="min-w-0 break-all">
+                    <a href={`mailto:${conversation.contact.email}`} className="text-brand-text underline-offset-2 hover:underline" data-testid="contact-email">
+                      {conversation.contact.email}
+                    </a>
+                  </dd>
+                </div>
+              )}
+              {conversation.contact.contactPhone && (
+                <div className="flex gap-1.5">
+                  <dt className="shrink-0 text-text-3">Teléfono:</dt>
+                  <dd className="min-w-0" data-testid="contact-phone">
+                    {formatPhone(conversation.contact.contactPhone)}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
+
           {conversation.handoffAt && (
             <div className="mt-3 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
               <p className="flex items-center gap-1.5 text-[13px] font-medium text-[#8a6d3b]">

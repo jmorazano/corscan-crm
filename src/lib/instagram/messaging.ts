@@ -63,9 +63,19 @@ export function instagramDisplayName(input: {
   return `Instagram · …${input.igsid.slice(-4)}`;
 }
 
-/** true si el nombre guardado es el provisorio (sin perfil leído todavía). */
-export function isProvisionalInstagramName(name: string, igsid: string): boolean {
-  return name === `Instagram · …${igsid.slice(-4)}`;
+/**
+ * true si el nombre guardado es el provisorio (sin perfil leído todavía).
+ * 030: «@usuario» también lo es — es lo único que se sabe de quien solo
+ * comentó, y se reemplaza por su nombre cuando escriba.
+ */
+export function isProvisionalInstagramName(
+  name: string,
+  igsid: string,
+  username?: string | null
+): boolean {
+  if (name === `Instagram · …${igsid.slice(-4)}`) return true;
+  const handle = username?.replace(/^@/, "").trim();
+  return !!handle && name === `@${handle}`;
 }
 
 export type InstagramSendMode =

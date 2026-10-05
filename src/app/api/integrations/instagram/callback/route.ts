@@ -59,6 +59,11 @@ export async function GET(req: Request): Promise<Response> {
     if (view.history.status === "idle") {
       await startInstagramHistoryImport(session.organizationId).catch(() => {});
     }
+    // 030: al reconectar, el primer contacto guardado vuelve a Instagram.
+    if (view.iceBreakers.length > 0 || view.persistentMenu.length > 0) {
+      const { applyMessagingProfile } = await import("@/server/instagram/profile");
+      await applyMessagingProfile(session.organizationId).catch(() => {});
+    }
   } catch (err) {
     const code = err instanceof InstagramConnectError ? err.code : "exchange";
     console.error(

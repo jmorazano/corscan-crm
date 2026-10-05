@@ -1,7 +1,33 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.8.1 → 1.9.0
+Versión: 1.9.0 → 1.10.0
+
+Cambios (feature 030-instagram-growth, 5-oct-2026) — MINOR:
+  - Principio VIII: Instagram suma los COMENTARIOS de las publicaciones
+    propias del negocio, solo como puerta de entrada a la conversación:
+    (1) la respuesta privada oficial de Instagram a quien comentó (UNA por
+    comentario, dentro de los 7 días, solo si la regla del negocio lo pide);
+    (2) una respuesta pública breve a ese comentario; (3) ocultar comentarios
+    por palabras que define el negocio. Siguen FUERA: publicar contenido,
+    métricas de la cuenta, difusiones y cualquier otro envío iniciado por el
+    negocio, «seguime y te mando el link», y el constructor visual de flujos.
+  - Principio II, categoría 1, condición (i): la única excepción a «ningún
+    envío iniciado por el negocio» es esa respuesta privada a un comentario
+    que la persona dejó (Meta la diseñó para eso: un mensaje, 7 días, el
+    seguimiento solo si la persona responde).
+  - Motivación escrita: pedido del dueño (5-oct-2026). Un cliente usaba
+    ManyChat para «comentá ALGO y te mando el link»; por el Conversation
+    Routing de Meta dos contestadores automáticos no conviven en la misma
+    cuenta, así que el CRM tiene que hacerlo para que el cliente pueda usar
+    el agente en Instagram. Aprobación explícita: «arrancá con la feature y
+    agregá el permiso» (5-oct-2026).
+  - Plantillas: sin cambios. CLAUDE.md: ⚠ actualizar soberanía, mapa del
+    código y feature activa.
+  - Nota: la rama 029-password-reset (sin mergear) también numeró su
+    enmienda como 1.10.0; la que entre segunda a `main` renumera.
+
+Versión anterior: 1.8.1 → 1.9.0
 
 Cambios (feature 028-minihotel-pms, 1-oct-2026) — MINOR:
   - Principio II, categoría 5: pasa de «servidores MCP de terceros POR
@@ -248,7 +274,10 @@ dependencias externas en runtime es CERRADA:
      firma y la ingesta es idempotente por `mid` POR TENANT; (i) se respetan
      las reglas del canal: ventana de 24 h, etiqueta HUMAN_AGENT solo para
      personas del equipo y hasta 7 días, ningún envío iniciado por el negocio
-     ni por el agente fuera de la ventana, y los borrados que ordena Meta
+     ni por el agente fuera de la ventana —con UNA excepción desde 1.10.0: la
+     respuesta privada oficial a un comentario que la persona dejó en una
+     publicación del negocio, una por comentario y dentro de los 7 días, solo
+     si una regla del negocio lo pide—, y los borrados que ordena Meta
      (mensaje borrado por el cliente, pedido de eliminación de datos) se
      cumplen.
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
@@ -408,8 +437,12 @@ operador* se rechaza.
 
 - Instagram entra SOLO como segundo canal de conversación: mensajes directos que
   el cliente inicia, atendidos en la misma Bandeja, con el mismo agente, pipeline
-  y etiquetas. Quedan FUERA publicar contenido, moderar comentarios, métricas de
-  la cuenta y cualquier envío masivo o iniciado por el negocio por Instagram.
+  y etiquetas. Desde 1.10.0 los COMENTARIOS de las publicaciones propias entran
+  como puerta de la conversación: respuesta privada oficial (una por comentario,
+  7 días, por regla del negocio), respuesta pública breve y ocultar comentarios
+  por palabras del negocio. Quedan FUERA publicar contenido, métricas de la
+  cuenta, difusiones y cualquier otro envío iniciado por el negocio por
+  Instagram, condicionar contenido a que te sigan, y los flujos visuales.
 
 - El modelo de datos y los flujos MUST reflejar ese dominio: contactos que escriben
   por WhatsApp, conversaciones con ventana de 24h, leads en un pipeline, un agente
@@ -520,4 +553,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.9.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-01
+**Version**: 1.10.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-05

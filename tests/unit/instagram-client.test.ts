@@ -31,13 +31,13 @@ function stubFetch(status: number, body: unknown) {
 }
 
 describe("buildInstagramAuthUrl", () => {
-  it("pide SOLO los dos permisos del App Review y usa el redirect fijo", async () => {
+  it("pide los permisos del App Review (030: + comentarios) y usa el redirect fijo", async () => {
     const { buildInstagramAuthUrl } = await import("@/lib/instagram/client");
     const url = new URL(buildInstagramAuthUrl("st"));
     expect(url.origin + url.pathname).toBe("https://www.instagram.com/oauth/authorize");
     expect(url.searchParams.get("client_id")).toBe("2135730170674257");
     expect(url.searchParams.get("scope")).toBe(
-      "instagram_business_basic,instagram_business_manage_messages"
+      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments"
     );
     expect(url.searchParams.get("redirect_uri")).toBe(
       "https://crm.test/api/integrations/instagram/callback"
@@ -50,13 +50,17 @@ describe("intercambio de tokens", () => {
   it("acepta la respuesta con `data:[…]` y la plana", async () => {
     const { exchangeInstagramCode } = await import("@/lib/instagram/client");
     // Cuerpo crudo: un number de 17 dígitos en JS ya estaría redondeado.
-    stubFetch(200, '{"data":[{"access_token":"short-1","user_id":17841400000000001}]}');
+    stubFetch(
+      200,
+      '{"data":[{"access_token":"short-1","user_id":17841400000000001,"permissions":"instagram_business_basic,instagram_business_manage_messages"}]}'
+    );
     expect(await exchangeInstagramCode("c")).toEqual({
       accessToken: "short-1",
       userId: "17841400000000001",
+      permissions: ["instagram_business_basic", "instagram_business_manage_messages"],
     });
     stubFetch(200, { access_token: "short-2", user_id: "42" });
-    expect(await exchangeInstagramCode("c")).toEqual({ accessToken: "short-2", userId: "42" });
+    expect(await exchangeInstagramCode("c")).toEqual({ accessToken: "short-2", userId: "42", permissions: null });
   });
 
   it("un error de Meta NO arrastra el secreto ni el code al mensaje", async () => {

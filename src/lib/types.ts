@@ -1,4 +1,5 @@
 /** DTOs que viajan por la API interna (lado cliente). */
+import type { IgOrigin, MessageDetails } from "@/lib/instagram/types";
 
 export type ConversationDto = {
   id: string;
@@ -14,6 +15,9 @@ export type ConversationDto = {
     igUsername: string | null;
     /** 011: BAJA/STOP registrado — la bandeja lo señaliza. */
     optedOut: boolean;
+    /** 030: datos que dio en el chat (o que cargó el equipo). */
+    email: string | null;
+    contactPhone: string | null;
   };
   stageName: string | null;
   aiEnabled: boolean;
@@ -26,6 +30,8 @@ export type ConversationDto = {
   windowRemainingMs: number;
   preview: string | null;
   tags: string[];
+  /** 030: de dónde llegó la conversación de Instagram. */
+  igOrigin: IgOrigin | null;
 };
 
 /** 014: origen externo de un saliente («Enviado por API · <clave>»). */
@@ -63,6 +69,8 @@ export type MessageDto = {
   mediaSummary: string | null;
   /** 017: `history` = importado del celular; `phone` = eco de la app del celular. */
   source: "cloud" | "history" | "phone";
+  /** 030: botones/tarjetas/respuestas rápidas, comentario, historia, standby. */
+  details: MessageDetails | null;
   createdAt: string;
 };
 
@@ -94,6 +102,9 @@ export type ContactDto = {
   /** 023: `instagram` = sin teléfono real; se muestra el @usuario. */
   channel: "whatsapp" | "instagram";
   igUsername: string | null;
+  /** 030 */
+  email: string | null;
+  contactPhone: string | null;
   notes: string | null;
   tags: string[];
   consentSource: "import" | "inbound" | "manual" | null;

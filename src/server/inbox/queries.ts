@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import { sanitizeTags, type TagMode } from "@/lib/tags";
 import { tagsWhere } from "@/server/tags";
+import type { IgOrigin } from "@/lib/instagram/types";
 import {
   DEFAULT_PAGE_SIZE,
   encodeCursor,
@@ -24,6 +25,9 @@ export type ConversationDto = {
     igUsername: string | null;
     /** 011: BAJA/STOP registrado — la bandeja lo señaliza. */
     optedOut: boolean;
+    /** 030: datos que dio en el chat (o que cargó el equipo). */
+    email: string | null;
+    contactPhone: string | null;
   };
   stageName: string | null;
   aiEnabled: boolean;
@@ -37,6 +41,8 @@ export type ConversationDto = {
   preview: string | null;
   /** Etiquetas de triage de la conversación (006). */
   tags: string[];
+  /** 030: de dónde llegó la conversación de Instagram. */
+  igOrigin: IgOrigin | null;
 };
 
 export type ListConversationsOptions = {
@@ -299,6 +305,8 @@ export function serializeConversation(
       channel: contact.channel ?? "whatsapp",
       igUsername: contact.igUsername ?? null,
       optedOut: contact.optedOutAt !== null,
+      email: contact.email ?? null,
+      contactPhone: contact.contactPhone ?? null,
     },
     stageName,
     aiEnabled: c.aiEnabled,
@@ -311,6 +319,7 @@ export function serializeConversation(
     windowRemainingMs: windowRemainingMs(c.lastInboundAt),
     preview,
     tags: c.tags ?? [],
+    igOrigin: c.igOrigin ?? null,
   };
 }
 

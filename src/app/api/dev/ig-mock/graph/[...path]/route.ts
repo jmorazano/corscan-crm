@@ -87,6 +87,42 @@ export async function GET(req: Request, ctx: Params) {
 
   if (!authorized(req)) return err(401, 190, "Invalid OAuth access token");
 
+  // 030: publicaciones, comentarios y perfil de mensajería.
+  if (path[0] === "me" && path[1] === "media") {
+    const limit = Number(url.searchParams.get("limit") ?? 25);
+    return Response.json({
+      data: s.media.slice(0, limit).map((m) => ({
+        ...m,
+        media_url: `${getEnv().APP_BASE_URL.replace(/\/$/, "")}/api/dev/ig-mock/media/mediamock_image_${m.id}`,
+        ...(m.media_type === "VIDEO" ? { thumbnail_url: `${getEnv().APP_BASE_URL.replace(/\/$/, "")}/api/dev/ig-mock/media/mediamock_image_thumb_${m.id}` } : {}),
+      })),
+    });
+  }
+  if ((path[0] === "me" || path[0] === s.account.igUserId) && path[1] === "messenger_profile") {
+    return Response.json({ data: [s.messengerProfile] });
+  }
+  const mediaHit = s.media.find((m) => m.id === path[0]);
+  if (mediaHit && path[1] === "comments") {
+    if (s.commentsReadFails) {
+      s.commentsReadFails = false;
+      return err(500, 2, "An unexpected error has occurred. Please retry your request later.");
+    }
+    return Response.json({
+      data: s.comments
+        .filter((c) => c.mediaId === mediaHit.id && !c.parentId)
+        .map((c) => ({
+          id: c.id,
+          text: c.text,
+          timestamp: c.timestamp,
+          username: c.username,
+          from: { id: c.fromId, username: c.username },
+        })),
+    });
+  }
+  if (mediaHit && path.length === 1) {
+    return Response.json(mediaHit);
+  }
+
   if (path[0] === "me" && path.length === 1) {
     return Response.json({
       id: `app-scoped-${s.account.igUserId}`,
@@ -186,15 +222,83 @@ export async function POST(req: Request, ctx: Params) {
     return Response.json({ success: true });
   }
 
+  // 030: perfil de mensajería (ice breakers y menú fijo).
+  if (path[1] === "messenger_profile") {
+    const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+    if (s.profileSaveFails) {
+      s.profileSaveFails = false;
+      return err(400, 100, "(#100) Invalid parameter");
+    }
+    if (body?.platform !== "instagram") return err(400, 100, "platform=instagram requerido");
+    if (Array.isArray(body.ice_breakers)) s.messengerProfile.ice_breakers = body.ice_breakers;
+    if (Array.isArray(body.persistent_menu)) s.messengerProfile.persistent_menu = body.persistent_menu;
+    return Response.json({ result: "success" });
+  }
+
+  // 030: respuesta pública a un comentario.
+  const replyTarget = s.comments.find((c) => c.id === path[0]);
+  if (replyTarget && path[1] === "replies") {
+    const body = (await req.json().catch(() => null)) as { message?: string } | null;
+    if (!body?.message) return err(400, 100, "Falta message");
+    const id = `mock.reply.${nextIgN()}`;
+    s.publicReplies.push({ commentId: replyTarget.id, text: body.message, id, at: new Date().toISOString() });
+    return Response.json({ id });
+  }
+  // 030: ocultar / mostrar un comentario.
+  if (replyTarget && path.length === 1 && url.searchParams.has("hide")) {
+    const hide = url.searchParams.get("hide") === "true";
+    s.hiddenComments = s.hiddenComments.filter((id) => id !== replyTarget.id);
+    if (hide) s.hiddenComments.push(replyTarget.id);
+    return Response.json({ success: true });
+  }
+
   if (path.length === 2 && path[1] === "messages") {
     const body = (await req.json().catch(() => null)) as {
-      recipient?: { id?: string };
+      recipient?: { id?: string; comment_id?: string };
       message?: {
         text?: string;
-        attachment?: { type?: string; payload?: { url?: string } };
+        quick_replies?: unknown[];
+        attachment?: { type?: string; payload?: Record<string, unknown> & { url?: string } };
       };
       tag?: string;
     } | null;
+    // 030: respuesta privada a un comentario.
+    if (body?.recipient?.comment_id) {
+      return mockPrivateReply(path[0]!, body.recipient.comment_id, body.message ?? {});
+    }
+    // 030: plantillas (botones / carrusel).
+    if (body?.recipient?.id && body.message?.attachment?.type === "template") {
+      if (s.rejectTemplates) {
+        s.rejectTemplates = false;
+        return err(400, 100, "(#100) Template is not supported");
+      }
+      const mid = `mock.ig.out.${nextIgN()}`;
+      s.outbox.push({
+        mid,
+        igUserId: path[0]!,
+        recipientId: body.recipient.id,
+        text: String(body.message.attachment.payload?.text ?? ""),
+        humanAgent: body.tag === "HUMAN_AGENT",
+        raw: body.message,
+        at: new Date().toISOString(),
+      });
+      if (s.echoSends) {
+        const igUserId = path[0]!;
+        const recipient = body.recipient.id;
+        const attachment = body.message.attachment;
+        setTimeout(() => {
+          void deliverToInstagramWebhook(
+            instagramPayload(igUserId, {
+              sender: { id: igUserId },
+              recipient: { id: recipient },
+              timestamp: Date.now(),
+              message: { mid, is_echo: true, attachments: [attachment] },
+            })
+          ).catch(() => {});
+        }, 50);
+      }
+      return Response.json({ recipient_id: body.recipient.id, message_id: mid });
+    }
     const recipientId = body?.recipient?.id;
     const text = body?.message?.text ?? "";
     // 026: adjunto por URL — Instagram BAJA el archivo antes de responder.
@@ -221,6 +325,7 @@ export async function POST(req: Request, ctx: Params) {
       recipientId,
       text,
       humanAgent: body?.tag === "HUMAN_AGENT",
+      ...(body?.message?.quick_replies ? { raw: body.message } : {}),
       at: new Date().toISOString(),
     });
     // Como Instagram real: el eco de lo que mandó la cuenta llega al webhook.
@@ -248,6 +353,12 @@ export async function DELETE(req: Request, ctx: Params) {
   if (!authorized(req)) return err(401, 190, "Invalid OAuth access token");
   if (path[0] === "me" && path[1] === "subscribed_apps") {
     return Response.json({ success: true });
+  }
+  if (path[1] === "messenger_profile") {
+    const body = (await req.json().catch(() => null)) as { fields?: string[] } | null;
+    const s = getIgMockState();
+    for (const f of body?.fields ?? []) delete s.messengerProfile[f];
+    return Response.json({ result: "success" });
   }
   return err(404, 100, `ruta no simulada: ${path.join("/")}`);
 }
@@ -326,3 +437,56 @@ async function mockAttachmentSend(
   return Response.json({ recipient_id: recipientId, message_id: mid });
 }
 
+
+/**
+ * 030: respuesta privada como Instagram: una sola por comentario, el
+ * comentario tiene que existir, devuelve el IGSID de mensajería y manda el
+ * eco al webhook.
+ */
+function mockPrivateReply(
+  igUserId: string,
+  commentId: string,
+  message: { text?: string; quick_replies?: unknown[] }
+): Response {
+  const s = getIgMockState();
+  if (s.failNextPrivateReply) {
+    const kind = s.failNextPrivateReply;
+    s.failNextPrivateReply = null;
+    if (kind === "down") return err(503, 2, "Service temporarily unavailable");
+    if (kind === "routing") return err(400, 10, "Message failed to send because another app is controlling this thread now.", 2018300);
+    if (kind === "invalid") return err(400, 100, "The comment is invalid for a private reply", 2534025);
+    return err(400, 100, "(#100) Invalid parameter");
+  }
+  const comment = s.comments.find((c) => c.id === commentId);
+  if (!comment) return err(400, 100, "The comment is invalid for a private reply", 2534025);
+  if (comment.privateReplied) return err(400, 100, "The comment is invalid for a private reply", 2534025);
+  if (message.quick_replies && s.rejectQuickRepliesInPrivateReply) {
+    return err(400, 100, "(#100) quick_replies is not supported for private replies");
+  }
+  if (!message.text) return err(400, 100, "Falta message.text");
+  comment.privateReplied = true;
+  const mid = `mock.ig.out.${nextIgN()}`;
+  s.outbox.push({
+    mid,
+    igUserId,
+    recipientId: comment.igsid,
+    commentId,
+    text: message.text,
+    humanAgent: false,
+    ...(message.quick_replies ? { raw: message } : {}),
+    at: new Date().toISOString(),
+  });
+  if (s.echoSends) {
+    setTimeout(() => {
+      void deliverToInstagramWebhook(
+        instagramPayload(igUserId, {
+          sender: { id: igUserId },
+          recipient: { id: comment.igsid },
+          timestamp: Date.now(),
+          message: { mid, text: message.text, is_echo: true },
+        })
+      ).catch(() => {});
+    }, 50);
+  }
+  return Response.json({ recipient_id: comment.igsid, message_id: mid });
+}

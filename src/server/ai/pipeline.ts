@@ -21,6 +21,12 @@ import {
 import { stripBookingPromise } from "@/lib/promise-guard";
 import { safePriceReply, stripPrices } from "@/lib/price-guard";
 import { stripUnknownContactData } from "@/lib/privacy-guard";
+import {
+  interactiveAgentNote,
+  sanitizeInteractive,
+  type Interactive,
+} from "@/lib/instagram/interactive";
+import { canFillContactField, normalizeContactPhone, normalizeEmail } from "@/lib/contact-data";
 import { visitNote } from "@/lib/meli/render";
 import { normalizeContactName } from "@/lib/contact-name";
 import { canOverwriteContactName } from "@/lib/history-import";
@@ -28,7 +34,7 @@ import { agentTextFor } from "@/lib/inbound-media";
 import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
-import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import { buildAgentSystemPrompt, renderOriginSection } from "@/server/ai/prompts";
 import {
   executeBookAppointment,
   executeCheckAvailability,
@@ -220,6 +226,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // agente no habla encima.
   const lastMessage = history[history.length - 1];
   if (lastMessage && lastMessage.direction === "out") return;
+  // 030: otra app (p. ej. ManyChat) maneja este hilo de Instagram: el
+  // agente no puede responder (Instagram rechazaría el envío).
+  if (lastInbound.details?.standby) return;
 
   // 014 (FR-011): si lo último que mandó la empresa fue una NOTIFICACIÓN
   // enviada por API (plantilla con api_key_id), un simple acuse de recibo
@@ -337,10 +346,29 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return guarded.text;
   };
 
-  const say = async (raw: string): Promise<void> => {
+  /**
+   * 030: extras de Instagram (botones, tarjetas, respuestas rápidas). Solo en
+   * Instagram y solo con enlaces que estén en el contexto del turno.
+   */
+  const extrasFor = (raw: { quick_replies?: unknown; buttons?: unknown; cards?: unknown } | null | undefined): Interactive | null => {
+    if (conversation.kind !== "instagram" || !raw) return null;
+    const { interactive, dropped } = sanitizeInteractive(raw, {
+      corpus: messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n"),
+    });
+    if (dropped > 0) {
+      console.warn(`[agente] ${dropped} extra(s) de Instagram descartado(s) en ${conversation.id}`);
+    }
+    return interactive;
+  };
+
+  const say = async (
+    raw: string,
+    extrasRaw?: { quick_replies?: unknown; buttons?: unknown; cards?: unknown } | null
+  ): Promise<void> => {
     const text = guardPrivacy(raw);
+    const interactive = extrasFor(extrasRaw);
     if (!mcp) {
-      await deliverConversationalReply(conversation, text, lastInbound.id);
+      await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive);
       return;
     }
     const guarded = stripBookingPromise(text, { link: lastStayLink });
@@ -373,7 +401,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       }
       finalText = priced.text;
     }
-    await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback);
+    await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback, interactive);
   };
 
   const messages: ChatMessage[] = [
@@ -392,6 +420,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
         listingsSection,
         sharedPersonalNumber: profile.sharedPersonalNumber,
+        originSection:
+          conversation.kind === "instagram" ? renderOriginSection(conversation.igOrigin ?? null) : null,
       }),
     },
     // 020: un entrante sin texto (una foto, un audio que no se pudo
@@ -411,7 +441,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
               })
             : // 026: un adjunto que mandó el equipo (o el celular) no
               // desaparece del contexto aunque no tenga epígrafe.
-              outboundAgentText({ type: m.type, text: m.text, status: m.status }),
+              // 030: y lo que se mostró con botones o tarjetas tampoco.
+              [outboundAgentText({ type: m.type, text: m.text, status: m.status }), interactiveAgentNote(m.details)]
+                .filter(Boolean)
+                .join(" ") || null,
       }))
       .filter((m): m is { role: "user" | "assistant"; content: string } => !!m.content),
   ];
@@ -684,18 +717,23 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // («¡Gracias, Santiago!»), la bandeja no queda contando otra historia.
   if (action.action === "reply" || action.action === "update_lead") {
     await learnContactName(organizationId, conversation.contactId, action.contact_name);
+    // 030: el email y el teléfono que dio en el chat.
+    await learnContactData(organizationId, conversation.contactId, {
+      email: action.contact_email,
+      phone: conversation.kind === "instagram" ? action.contact_phone : undefined,
+    });
   }
 
   switch (action.action) {
     case "none":
       return;
     case "reply":
-      await say(action.text);
+      await say(action.text, action);
       return;
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
       if (action.reply) {
-        await say(action.reply);
+        await say(action.reply, action);
       }
       return;
     }
@@ -842,6 +880,40 @@ async function learnContactName(
   });
 }
 
+/**
+ * 030 (US7): email y teléfono que la persona dio en el chat. Validados y
+ * SOLO si el campo está vacío: lo que cargó una persona del equipo manda.
+ */
+async function learnContactData(
+  organizationId: string,
+  contactId: string,
+  proposed: { email?: string; phone?: string }
+): Promise<void> {
+  const email = normalizeEmail(proposed.email);
+  const phone = normalizeContactPhone(proposed.phone);
+  if (!email && !phone) return;
+  const rows = await getDb()
+    .select({
+      email: schema.contact.email,
+      contactPhone: schema.contact.contactPhone,
+      isTest: schema.contact.isTest,
+    })
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
+    .limit(1);
+  const current = rows[0];
+  if (!current || current.isTest) return;
+  const patch: Partial<typeof schema.contact.$inferInsert> = {};
+  if (email && canFillContactField(current.email)) patch.email = email;
+  if (phone && canFillContactField(current.contactPhone)) patch.contactPhone = phone;
+  if (Object.keys(patch).length === 0) return;
+  await getDb()
+    .update(schema.contact)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)));
+  publish(organizationId, { type: "conversations.updated", data: { conversationIds: [] } });
+}
+
 export type ReplyDecision = "send" | "stale" | "duplicate";
 
 /**
@@ -883,7 +955,9 @@ async function deliverConversationalReply(
    * precios, que puede dejar una respuesta idéntica a la anterior después de
    * quitarle los importes.
    */
-  fallbackOnDuplicate: string | null = null
+  fallbackOnDuplicate: string | null = null,
+  /** 030: extras de Instagram (botones, tarjetas, respuestas rápidas). */
+  interactive: Interactive | null = null
 ): Promise<void> {
   if (!conversation.isTest) {
     const db = getDb();
@@ -923,13 +997,14 @@ async function deliverConversationalReply(
       return;
     }
   }
-  await deliverReply(conversation, text);
+  await deliverReply(conversation, text, interactive);
 }
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(
   conversation: Conversation,
-  text: string
+  text: string,
+  interactive: Interactive | null = null
 ): Promise<void> {
   if (conversation.isTest) {
     await persistTestOutbound(conversation, text);
@@ -941,6 +1016,7 @@ async function deliverReply(
       organizationId: conversation.organizationId,
       text,
       aiGenerated: true,
+      interactive,
     });
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {

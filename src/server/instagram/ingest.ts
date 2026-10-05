@@ -11,8 +11,11 @@ import {
 import {
   messageTypeFor,
   parseInstagramWebhook,
+  storyUrlFor,
   type InstagramEvent,
 } from "@/lib/instagram/webhook";
+import { isHumanPayload } from "@/lib/instagram/profile";
+import type { MessageDetails } from "@/lib/instagram/types";
 import { publish } from "@/server/events/bus";
 import {
   getOrCreateConversation,
@@ -21,8 +24,10 @@ import {
 } from "@/server/inbox/ingest";
 import {
   getInstagramIntegrationByAccount,
+  markInstagramStandbySeen,
   type InstagramIntegration,
 } from "@/server/instagram/integration";
+import { applyInstagramReferral, applyStoryOrigin } from "@/server/instagram/origin";
 
 /**
  * Ingesta de Instagram Direct (023). Traduce los eventos del webhook al
@@ -37,7 +42,13 @@ export async function processInstagramWebhook(body: unknown): Promise<void> {
   if (!events) return;
   // Traza mínima (sin contenido ni IDs): permite saber si Meta entrega algo.
   if (events.length > 0) {
-    const kinds = events.map((e) => (e.kind === "message" && e.isEcho ? "eco" : e.kind));
+    const kinds = events.map((e) =>
+      e.kind === "message" && e.isEcho
+        ? "eco"
+        : (e.kind === "message" || e.kind === "postback") && e.standby
+          ? `${e.kind}(standby)`
+          : e.kind
+    );
     console.log(`[instagram] webhook: ${events.length} evento(s): ${kinds.join(", ")}`);
   }
 
@@ -65,18 +76,57 @@ export async function processInstagramWebhook(body: unknown): Promise<void> {
 }
 
 async function handleEvent(integration: InstagramIntegration, ev: InstagramEvent) {
+  // 030: otra app maneja el hilo (Conversation Routing). Se guarda igual,
+  // pero el agente no responde y Ajustes avisa.
+  if ((ev.kind === "message" || ev.kind === "postback") && ev.standby) {
+    await markInstagramStandbySeen(integration.organizationId).catch(() => {});
+  }
   switch (ev.kind) {
     case "message":
       if (ev.isEcho) return handleEcho(integration, ev);
       return handleInbound(integration, ev);
     case "postback":
-      return handleInbound(integration, {
-        ...ev,
-        kind: "message",
-        attachments: [],
-        isEcho: false,
-        isUnsupported: false,
-      });
+      return handleInbound(
+        integration,
+        {
+          kind: "message",
+          accountId: ev.accountId,
+          customerId: ev.customerId,
+          mid: ev.mid,
+          text: ev.text,
+          attachments: [],
+          isEcho: false,
+          isUnsupported: false,
+          at: ev.at,
+          referral: ev.referral,
+          storyReply: null,
+          quickReplyPayload: ev.payload,
+          template: null,
+          standby: ev.standby,
+        },
+        // 030: «Hablar con una persona» del menú escala sin pasar por el modelo.
+        { human: isHumanPayload(ev.payload) }
+      );
+    case "referral":
+      return handleReferral(integration, ev);
+    case "comment": {
+      const { handleInstagramComment } = await import("@/server/instagram/comments");
+      await handleInstagramComment(
+        integration,
+        {
+          commentId: ev.commentId,
+          mediaId: ev.mediaId,
+          fromId: ev.fromId,
+          username: ev.username,
+          text: ev.text,
+          parentId: ev.parentId,
+          live: ev.live,
+          at: ev.at,
+        },
+        "webhook"
+      );
+      return;
+    }
     case "deleted":
       return handleDeleted(integration.organizationId, ev.mid);
     case "read":
@@ -100,7 +150,12 @@ export async function getOrCreateInstagramContact(
   integration: InstagramIntegration,
   igsid: string,
   /** Lo que ya se sabe del cliente (p. ej. el @usuario del historial). */
-  hint: { username?: string | null } = {}
+  hint: { username?: string | null } = {},
+  /**
+   * 030: no leer el perfil (quien solo comentó no dio consentimiento: Meta
+   * respondería «User consent is required»).
+   */
+  opts: { skipProfile?: boolean } = {}
 ) {
   const db = getDb();
   const { organizationId } = integration;
@@ -113,7 +168,7 @@ export async function getOrCreateInstagramContact(
       organizationId,
       phone,
       channel: "instagram",
-      name: instagramDisplayName({ igsid }),
+      name: instagramDisplayName({ igsid, username: hint.username }),
       igUsername: hint.username?.replace(/^@/, "") || null,
     })
     .onConflictDoNothing({ target: [schema.contact.organizationId, schema.contact.phone] })
@@ -141,8 +196,8 @@ export async function getOrCreateInstagramContact(
 
   const needsProfile =
     !contact.igUsername ||
-    (isProvisionalInstagramName(contact.name, igsid) && !contact.nameEditedAt);
-  if (needsProfile && integration.status === "connected") {
+    (isProvisionalInstagramName(contact.name, igsid, contact.igUsername) && !contact.nameEditedAt);
+  if (needsProfile && !opts.skipProfile && integration.status === "connected") {
     const profile = await getInstagramUserProfile(igsid, integration.token).catch(
       (err) => {
         console.warn(
@@ -158,7 +213,7 @@ export async function getOrCreateInstagramContact(
         updatedAt: new Date(),
       };
       // Lo que cargó o editó una persona del equipo NUNCA se pisa (021).
-      if (!contact.nameEditedAt && isProvisionalInstagramName(contact.name, igsid)) {
+      if (!contact.nameEditedAt && isProvisionalInstagramName(contact.name, igsid, contact.igUsername)) {
         patch.name = instagramDisplayName({ ...profile, igsid });
       }
       const updated = await db
@@ -178,13 +233,48 @@ export async function getOrCreateInstagramContact(
 
 type MessageEvent = Extract<InstagramEvent, { kind: "message" }>;
 
-async function handleInbound(integration: InstagramIntegration, ev: MessageEvent) {
+async function handleInbound(
+  integration: InstagramIntegration,
+  ev: MessageEvent,
+  opts: { human?: boolean } = {}
+) {
   const { organizationId } = integration;
   const contact = await getOrCreateInstagramContact(integration, ev.customerId);
   const conversation = await getOrCreateConversation(organizationId, contact.id, "instagram");
   const type = messageTypeFor(ev);
   const first = ev.attachments[0];
-  await ingestInboundCore({
+
+  // 030: de dónde llegó (link con ref, anuncio, historia).
+  if (ev.referral) {
+    await applyInstagramReferral({
+      organizationId,
+      conversationId: conversation.id,
+      currentOrigin: conversation.igOrigin ?? null,
+      referral: ev.referral,
+      at: ev.at,
+    }).catch((err) => console.warn("[instagram] no se pudo registrar el origen:", err instanceof Error ? err.message : err));
+  }
+  const storyUrl = type === "story" ? storyUrlFor(ev) : null;
+  if (type === "story") {
+    await applyStoryOrigin({
+      organizationId,
+      conversationId: conversation.id,
+      currentOrigin: conversation.igOrigin ?? null,
+      kind: ev.storyReply ? "story_reply" : "story_mention",
+      at: ev.at,
+    }).catch(() => {});
+  }
+
+  // 030: si la persona responde el DM de una regla de comentarios con
+  // seguimiento, sale ESE mensaje y el agente no habla encima.
+  const { pendingCommentFollowUp, sendCommentFollowUp } = await import("@/server/instagram/comments");
+  const followUp = ev.standby || opts.human ? null : await pendingCommentFollowUp(organizationId, conversation.id);
+
+  const details: MessageDetails = {
+    ...(type === "story" ? { story: { kind: ev.storyReply ? ("reply" as const) : ("mention" as const) } } : {}),
+    ...(ev.standby ? { standby: true } : {}),
+  };
+  const inserted = await ingestInboundCore({
     organizationId,
     contact,
     conversation,
@@ -192,9 +282,47 @@ async function handleInbound(integration: InstagramIntegration, ev: MessageEvent
     type,
     text: ev.text,
     media:
-      first?.url && (type === "image" || type === "audio" || type === "video" || type === "document")
-        ? { source: { kind: "url", url: first.url }, mime: null }
-        : null,
+      type === "story"
+        ? storyUrl
+          ? { source: { kind: "url", url: storyUrl }, mime: null }
+          : null
+        : first?.url && (type === "image" || type === "audio" || type === "video" || type === "document")
+          ? { source: { kind: "url", url: first.url }, mime: null }
+          : null,
+    at: ev.at,
+    details: Object.keys(details).length > 0 ? details : null,
+    skipAgent: ev.standby || !!followUp || !!opts.human,
+  });
+  if (!inserted) return;
+
+  if (followUp) await sendCommentFollowUp(organizationId, conversation.id, followUp);
+  if (opts.human) {
+    const { applyHandoff } = await import("@/server/ai/pipeline");
+    await applyHandoff(conversation.id, organizationId, "cliente");
+  }
+}
+
+/**
+ * 030: la persona volvió a abrir el chat desde un link o un anuncio, sin
+ * escribir. Solo se registra en una conversación que ya existe: en una nueva
+ * la referencia llega con el primer mensaje.
+ */
+async function handleReferral(
+  integration: InstagramIntegration,
+  ev: Extract<InstagramEvent, { kind: "referral" }>
+) {
+  const conversation = await findConversation(integration.organizationId, ev.customerId);
+  if (!conversation) return;
+  const rows = await getDb()
+    .select({ igOrigin: schema.conversation.igOrigin })
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversation.id))
+    .limit(1);
+  await applyInstagramReferral({
+    organizationId: integration.organizationId,
+    conversationId: conversation.id,
+    currentOrigin: rows[0]?.igOrigin ?? null,
+    referral: ev.referral,
     at: ev.at,
   });
 }
@@ -241,8 +369,11 @@ async function handleEcho(
       conversationId: conversation.id,
       waMessageId: ev.mid,
       direction: "out",
-      type: messageTypeFor(ev),
+      // 030: una plantilla (tarjeta/botones) de otra app entra como texto
+      // legible con sus botones, no como una burbuja vacía.
+      type: ev.template ? "text" : messageTypeFor(ev),
       text: ev.text,
+      details: ev.template ? { template: ev.template } : null,
       status: "sent",
       source: "phone",
       waTimestamp: ev.at,

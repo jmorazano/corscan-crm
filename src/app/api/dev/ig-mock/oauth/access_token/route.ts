@@ -24,12 +24,19 @@ export async function POST(req: Request) {
     );
   }
   const s = getIgMockState();
+  // 030: concede lo pedido (salvo que la perilla niegue los comentarios,
+  // como quien destilda el permiso en la ventana de Instagram).
+  const requested = (s.lastScope || "instagram_business_basic,instagram_business_manage_messages")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const granted = requested.filter((p) => !(s.denyComments && p === "instagram_business_manage_comments"));
   return Response.json({
     data: [
       {
         access_token: `mock-ig-short-${nextIgN()}`,
         user_id: s.account.igUserId,
-        permissions: "instagram_business_basic,instagram_business_manage_messages",
+        permissions: granted.join(","),
       },
     ],
   });

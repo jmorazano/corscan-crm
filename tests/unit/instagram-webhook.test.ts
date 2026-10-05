@@ -43,6 +43,11 @@ describe("parseInstagramWebhook", () => {
         isEcho: false,
         isUnsupported: false,
         at: new Date(1790000000000),
+        referral: null,
+        storyReply: null,
+        quickReplyPayload: null,
+        template: null,
+        standby: false,
       },
     ]);
   });
@@ -212,6 +217,11 @@ describe("formato `changes` (botón Test del panel de Meta)", () => {
         isEcho: false,
         isUnsupported: false,
         at: new Date(1527459824000),
+        referral: null,
+        storyReply: null,
+        quickReplyPayload: null,
+        template: null,
+        standby: false,
       },
     ]);
   });

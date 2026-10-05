@@ -11,6 +11,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type {
+  IgMediaPreview,
+  IgMenuItem,
+  IgOrigin,
+  MessageDetails,
+} from "../instagram/types";
 
 /** bytea de Postgres (drizzle no lo trae de fábrica). Driver postgres.js:
  * escribe/lee Buffer directamente. */
@@ -148,6 +154,16 @@ export const contact = pgTable(
     /** 023: @usuario de Instagram (sin la arroba), leído del perfil. */
     igUsername: text("ig_username"),
     /**
+     * 030: email que la persona dio en el chat (lo guarda el agente con la
+     * regla del nombre de 021) o que cargó el equipo.
+     */
+    email: text("email"),
+    /**
+     * 030: teléfono REAL de un contacto de Instagram (su `phone` es el
+     * sintético `ig:<IGSID>`). Normalizado como wa_id cuando se puede.
+     */
+    contactPhone: text("contact_phone"),
+    /**
      * 021: cuándo una PERSONA del equipo editó el nombre a mano en el CRM.
      * NULL = nadie lo tocó, así que el nombre es el del perfil de WhatsApp
      * (lo eligió el cliente) y se puede reemplazar por uno mejor: el de la
@@ -271,6 +287,12 @@ export const conversation = pgTable(
      * contacto pero independientes de ellas (el contacto segmenta campañas;
      * la conversación organiza el trabajo del día). */
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * 030: de dónde llegó la conversación de Instagram (el último origen
+     * conocido): link con origen, anuncio, comentario o historia. El agente
+     * lo recibe como contexto. NULL = sin origen conocido (o WhatsApp).
+     */
+    igOrigin: jsonb("ig_origin").$type<IgOrigin>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -340,6 +362,12 @@ export const message = pgTable(
      * descripción no lo es. La transcripción de un audio SÍ va en `text`.
      */
     mediaSummary: text("media_summary"),
+    /**
+     * 030: lo estructurado de un mensaje de Instagram que no es texto: los
+     * botones, tarjetas y respuestas rápidas de un saliente, la publicación
+     * de un comentario, o de qué historia es una respuesta.
+     */
+    details: jsonb("details").$type<MessageDetails>(),
     aiGenerated: boolean("ai_generated").notNull().default(false),
     waTimestamp: timestamp("wa_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -886,6 +914,29 @@ export const instagramIntegration = pgTable(
     historyThreads: integer("history_threads").notNull().default(0),
     historyMessages: integer("history_messages").notNull().default(0),
     historyError: text("history_error"),
+    /**
+     * 030: permisos que Meta CONCEDIÓ en el Business Login. NULL = conexión
+     * anterior a 030 (solo perfil + mensajes): para comentarios hay que
+     * reconectar.
+     */
+    grantedScopes: text("granted_scopes").array(),
+    /** 030: campos del webhook que Instagram aceptó para la cuenta. */
+    subscribedFields: text("subscribed_fields").array(),
+    /** 030 (US2): palabras que ocultan un comentario. */
+    moderationWords: text("moderation_words").array().notNull().default(sql`'{}'::text[]`),
+    /** 030 (US4): preguntas frecuentes (ice breakers) y menú fijo. */
+    iceBreakers: text("ice_breakers").array().notNull().default(sql`'{}'::text[]`),
+    persistentMenu: jsonb("persistent_menu").$type<IgMenuItem[]>().notNull().default(sql`'[]'::jsonb`),
+    profileSyncedAt: timestamp("profile_synced_at"),
+    profileError: text("profile_error"),
+    /** 030 (US8): última vez que llegó un `standby` (otra app maneja los hilos). */
+    standbySeenAt: timestamp("standby_seen_at"),
+    /** 030: último comentario que llegó POR WEBHOOK (acceso avanzado). */
+    commentsWebhookAt: timestamp("comments_webhook_at"),
+    /** 030: última consulta de comentarios (respaldo del webhook). */
+    commentsPolledAt: timestamp("comments_polled_at"),
+    /** 030: último error de la consulta de comentarios (en castellano). */
+    commentsError: text("comments_error"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -893,6 +944,105 @@ export const instagramIntegration = pgTable(
     uniqueIndex("instagram_integration_org_uq").on(t.organizationId),
     uniqueIndex("instagram_integration_account_uq").on(t.igUserId),
   ]
+);
+
+/**
+ * 030 (US1): regla de respuesta a comentarios («comentá ALGO y te mando el
+ * link»). La define el dueño; el motor la aplica a cada comentario nuevo.
+ */
+export const instagramCommentRule = pgTable(
+  "instagram_comment_rule",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** media = las publicaciones elegidas · all = todas · live = los vivos. */
+    target: text("target", { enum: ["media", "all", "live"] }).notNull(),
+    mediaIds: text("media_ids").array().notNull().default(sql`'{}'::text[]`),
+    /** Copia de las publicaciones elegidas para mostrarlas sin pedirlas. */
+    mediaPreview: jsonb("media_preview").$type<IgMediaPreview[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Vacío = cualquier comentario. Se comparan sin mayúsculas ni tildes. */
+    keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
+    dmText: text("dm_text").notNull(),
+    /** Respuesta rápida del DM («Quiero el link»). */
+    buttonLabel: text("button_label"),
+    /** Sale cuando la persona responde el DM (el link). */
+    followUpText: text("follow_up_text"),
+    /** Respuestas públicas al comentario (se elige una al azar). */
+    publicReplies: text("public_replies").array().notNull().default(sql`'{}'::text[]`),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("instagram_comment_rule_org_idx").on(t.organizationId, t.createdAt)]
+);
+
+/**
+ * 030: cada comentario que vio el CRM, con lo que se hizo. UNIQUE por
+ * (org, comment_id) = idempotencia: el webhook y la consulta pueden traer el
+ * mismo comentario y el DM sale una sola vez (Constitución IV).
+ */
+export const instagramCommentEvent = pgTable(
+  "instagram_comment_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    commentId: text("comment_id").notNull(),
+    mediaId: text("media_id"),
+    /** ID de quien comentó (`from.id`). */
+    fromId: text("from_id").notNull(),
+    username: text("username"),
+    text: text("text"),
+    live: boolean("live").notNull().default(false),
+    source: text("source", { enum: ["webhook", "poll"] }).notNull(),
+    ruleId: text("rule_id"),
+    /**
+     * processing = reservado (el DM está saliendo) · replied = DM enviado ·
+     * hidden = ocultado por moderación · ignored = no aplica ninguna regla ·
+     * skipped = aplicaba pero no corresponde (repetido, tope) · failed.
+     */
+    status: text("status", {
+      enum: ["processing", "replied", "hidden", "ignored", "skipped", "failed"],
+    }).notNull(),
+    detail: text("detail"),
+    hidden: boolean("hidden").notNull().default(false),
+    publicReplyId: text("public_reply_id"),
+    /** IGSID que devolvió la respuesta privada (el de los DMs). */
+    recipientId: text("recipient_id"),
+    conversationId: text("conversation_id"),
+    /** El seguimiento ya salió (o no corresponde): no se vuelve a mandar. */
+    followUpDoneAt: timestamp("follow_up_done_at"),
+    commentedAt: timestamp("commented_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("instagram_comment_event_org_comment_uq").on(t.organizationId, t.commentId),
+    index("instagram_comment_event_org_created_idx").on(t.organizationId, t.createdAt),
+    index("instagram_comment_event_org_from_idx").on(t.organizationId, t.fromId),
+  ]
+);
+
+/** 030 (US5): link `ig.me/<cuenta>?ref=<slug>` con nombre e instrucción. */
+export const instagramEntryLink = pgTable(
+  "instagram_entry_link",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    label: text("label").notNull(),
+    instruction: text("instruction"),
+    /** Conversaciones que llegaron por este link. */
+    uses: integer("uses").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("instagram_entry_link_org_slug_uq").on(t.organizationId, t.slug)]
 );
 
 /**

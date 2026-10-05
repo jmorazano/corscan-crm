@@ -27,6 +27,8 @@ const base = {
   knownFromPhoneAt: null,
   notes: null,
   tags: ["vip"],
+  email: null,
+  contactPhone: null,
   consentSource: "import" as const,
   consentAt: new Date(),
   optedOutAt: null,

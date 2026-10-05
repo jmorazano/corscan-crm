@@ -169,6 +169,13 @@
       "when": 1790881589773,
       "tag": "0023_minihotel_provider_config",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791220097743,
+      "tag": "0024_instagram_growth",
+      "breakpoints": true
     }
   ]
 }

@@ -13,11 +13,17 @@ import { parseMetaJson } from "@/lib/instagram/json";
  * intercambio de código. Compartir la función mezclaría las dos fronteras.
  */
 
-/** Permisos que pide el Business Login: SOLO los dos del App Review (FR-002). */
+/**
+ * Permisos que pide el Business Login (FR-002). 030: suma los comentarios
+ * (respuestas a comentarios, moderación).
+ */
 export const INSTAGRAM_SCOPES = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
 ] as const;
+
+export const COMMENTS_SCOPE = "instagram_business_manage_comments";
 
 /** Campos del webhook a los que se suscribe cada cuenta (FR-004). */
 export const INSTAGRAM_WEBHOOK_FIELDS = [
@@ -27,6 +33,18 @@ export const INSTAGRAM_WEBHOOK_FIELDS = [
   "message_reactions",
   "messaging_referral",
 ] as const;
+
+/**
+ * 030: campos extra que se intentan sumar. Si Meta rechaza la lista completa
+ * (cuenta sin el permiso de comentarios, campo no habilitado para la app),
+ * se prueba la siguiente más corta: suscribirse nunca rompe la conexión.
+ */
+export const INSTAGRAM_WEBHOOK_FIELD_SETS: readonly (readonly string[])[] = [
+  [...INSTAGRAM_WEBHOOK_FIELDS, "comments", "live_comments", "standby", "messaging_handover"],
+  [...INSTAGRAM_WEBHOOK_FIELDS, "comments", "live_comments"],
+  [...INSTAGRAM_WEBHOOK_FIELDS, "standby"],
+  [...INSTAGRAM_WEBHOOK_FIELDS],
+];
 
 const TIMEOUT_MS = 15_000;
 
@@ -202,7 +220,24 @@ export async function igGraphRequest<T>(
   return json as T;
 }
 
-export type ShortLivedToken = { accessToken: string; userId: string | null };
+export type ShortLivedToken = {
+  accessToken: string;
+  userId: string | null;
+  /** 030: permisos concedidos (`permissions` del canje), si Meta los manda. */
+  permissions: string[] | null;
+};
+
+/** `permissions` llega como texto separado por comas o como lista. */
+export function parsePermissions(raw: unknown): string[] | null {
+  if (Array.isArray(raw)) {
+    const list = raw.filter((p): p is string => typeof p === "string").map((p) => p.trim()).filter(Boolean);
+    return list.length > 0 ? list : null;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.split(",").map((p) => p.trim()).filter(Boolean);
+  }
+  return null;
+}
 
 /** Paso 2 del Business Login: `code` → token corto (1 h). */
 export async function exchangeInstagramCode(code: string): Promise<ShortLivedToken> {
@@ -233,7 +268,11 @@ export async function exchangeInstagramCode(code: string): Promise<ShortLivedTok
     throw new InstagramApiError("Instagram no devolvió un token", { status: 502 });
   }
   const userId = (flat as { user_id?: string | number }).user_id;
-  return { accessToken, userId: userId != null ? String(userId) : null };
+  return {
+    accessToken,
+    userId: userId != null ? String(userId) : null,
+    permissions: parsePermissions((flat as { permissions?: unknown }).permissions),
+  };
 }
 
 export type LongLivedToken = { accessToken: string; expiresAt: Date };
@@ -324,18 +363,37 @@ export async function getInstagramAccount(token: string): Promise<InstagramAccou
   };
 }
 
-/** Suscribe la cuenta a los campos de mensajería (paso 3 de los webhooks). */
-export async function subscribeInstagramWebhooks(token: string): Promise<void> {
-  const res = await igGraphRequest<{ success?: boolean }>("me/subscribed_apps", {
-    method: "POST",
-    token,
-    query: { subscribed_fields: INSTAGRAM_WEBHOOK_FIELDS.join(",") },
-  });
-  if (res?.success === false) {
-    throw new InstagramApiError("Instagram rechazó la suscripción a mensajes", {
-      status: 502,
-    });
+/**
+ * Suscribe la cuenta a los campos del webhook (paso 3). 030: prueba de la
+ * lista más completa a la más corta y devuelve la que Instagram aceptó; solo
+ * lanza si rechaza hasta la de mensajes (que sí es indispensable).
+ */
+export async function subscribeInstagramWebhooks(
+  token: string,
+  sets: readonly (readonly string[])[] = INSTAGRAM_WEBHOOK_FIELD_SETS
+): Promise<string[]> {
+  let lastError: unknown = null;
+  for (const fields of sets) {
+    try {
+      const res = await igGraphRequest<{ success?: boolean }>("me/subscribed_apps", {
+        method: "POST",
+        token,
+        query: { subscribed_fields: fields.join(",") },
+      });
+      if (res?.success === false) {
+        lastError = new InstagramApiError("Instagram rechazó la suscripción a mensajes", { status: 502 });
+        continue;
+      }
+      return [...fields];
+    } catch (err) {
+      // Token inválido o Meta caído: probar otra lista no cambia nada.
+      if (err instanceof InstagramApiError && (err.isAuthError || err.isUnavailable)) throw err;
+      lastError = err;
+    }
   }
+  throw lastError instanceof Error
+    ? lastError
+    : new InstagramApiError("Instagram rechazó la suscripción a mensajes", { status: 502 });
 }
 
 /** Best effort: al desconectar se deja de recibir mensajes de esa cuenta. */
@@ -385,9 +443,24 @@ export async function sendInstagramText(input: {
   text: string;
   humanAgent?: boolean;
 }): Promise<{ messageId: string }> {
+  return sendInstagramMessage({ ...input, message: { text: input.text } });
+}
+
+/**
+ * 030: envía UN objeto `message` de la Send API tal cual (texto con
+ * respuestas rápidas, plantilla de botones o carrusel). Armarlo es
+ * responsabilidad de `src/lib/instagram/interactive.ts`.
+ */
+export async function sendInstagramMessage(input: {
+  igUserId: string;
+  token: string;
+  recipientId: string;
+  message: Record<string, unknown>;
+  humanAgent?: boolean;
+}): Promise<{ messageId: string }> {
   const body: Record<string, unknown> = {
     recipient: { id: input.recipientId },
-    message: { text: input.text },
+    message: input.message,
   };
   if (input.humanAgent) {
     body.messaging_type = "MESSAGE_TAG";
@@ -660,4 +733,191 @@ export async function getInstagramConversationMessages(
     }
   }
   return out;
+}
+
+/* ============================================================
+ * 030 — Publicaciones y comentarios
+ * ============================================================ */
+
+export type IgMedia = {
+  id: string;
+  caption: string | null;
+  mediaType: string | null;
+  mediaProductType: string | null;
+  /** Imagen para mostrar: la miniatura en videos/reels, la imagen si no. */
+  thumbnailUrl: string | null;
+  permalink: string | null;
+  timestamp: string | null;
+};
+
+type RawMedia = {
+  id?: string | number;
+  caption?: string;
+  media_type?: string;
+  media_product_type?: string;
+  media_url?: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  timestamp?: string;
+};
+
+const MEDIA_FIELDS = "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp";
+
+function toMedia(m: RawMedia): IgMedia | null {
+  if (m.id == null) return null;
+  return {
+    id: String(m.id),
+    caption: m.caption?.trim() || null,
+    mediaType: m.media_type ?? null,
+    mediaProductType: m.media_product_type ?? null,
+    thumbnailUrl: m.thumbnail_url ?? (m.media_type === "VIDEO" ? null : (m.media_url ?? null)),
+    permalink: m.permalink ?? null,
+    timestamp: m.timestamp ?? null,
+  };
+}
+
+/** Las últimas publicaciones de la cuenta (más nuevas primero). */
+export async function listInstagramMedia(token: string, limit = 24): Promise<IgMedia[]> {
+  const res = await igGraphRequest<{ data?: RawMedia[] }>("me/media", {
+    token,
+    query: { fields: MEDIA_FIELDS, limit: String(limit) },
+  });
+  return (res.data ?? []).map(toMedia).filter((m): m is IgMedia => m !== null);
+}
+
+/** Una publicación (para el epígrafe de un comentario que llegó por webhook). */
+export async function getInstagramMedia(token: string, mediaId: string): Promise<IgMedia | null> {
+  const res = await igGraphRequest<RawMedia>(encodeURIComponent(mediaId), {
+    token,
+    query: { fields: MEDIA_FIELDS },
+  });
+  return toMedia(res);
+}
+
+export type IgComment = {
+  id: string;
+  text: string | null;
+  timestamp: string | null;
+  fromId: string | null;
+  username: string | null;
+  parentId: string | null;
+};
+
+/**
+ * Comentarios de una publicación (respaldo del webhook, que con acceso
+ * estándar no llega). Solo los de primer nivel: las respuestas no disparan
+ * reglas.
+ */
+export async function listMediaComments(
+  token: string,
+  mediaId: string,
+  limit = 50
+): Promise<IgComment[]> {
+  const res = await igGraphRequest<{
+    data?: {
+      id?: string | number;
+      text?: string;
+      timestamp?: string;
+      username?: string;
+      from?: { id?: string | number; username?: string };
+      parent_id?: string | number;
+    }[];
+  }>(`${encodeURIComponent(mediaId)}/comments`, {
+    token,
+    query: { fields: "id,text,timestamp,username,from,parent_id", limit: String(limit) },
+  });
+  return (res.data ?? [])
+    .filter((c) => c.id != null)
+    .map((c) => ({
+      id: String(c.id),
+      text: c.text ?? null,
+      timestamp: c.timestamp ?? null,
+      fromId: c.from?.id != null ? String(c.from.id) : null,
+      username: c.from?.username ?? c.username ?? null,
+      parentId: c.parent_id != null ? String(c.parent_id) : null,
+    }));
+}
+
+/**
+ * Respuesta PRIVADA a un comentario (la única forma de escribirle a quien
+ * todavía no escribió): un mensaje por comentario, dentro de los 7 días.
+ * Devuelve el IGSID de la persona — el mismo de sus futuros DMs.
+ */
+export async function sendPrivateReply(input: {
+  igUserId: string;
+  token: string;
+  commentId: string;
+  message: Record<string, unknown>;
+}): Promise<{ messageId: string; recipientId: string | null }> {
+  const res = await igGraphRequest<{ message_id?: string; recipient_id?: string | number }>(
+    `${encodeURIComponent(input.igUserId)}/messages`,
+    {
+      method: "POST",
+      token: input.token,
+      body: { recipient: { comment_id: input.commentId }, message: input.message },
+    }
+  );
+  if (!res?.message_id) {
+    throw new InstagramApiError("Instagram no devolvió el ID del mensaje", { status: 502 });
+  }
+  return {
+    messageId: res.message_id,
+    recipientId: res.recipient_id != null ? String(res.recipient_id) : null,
+  };
+}
+
+/** Respuesta PÚBLICA a un comentario (queda en el hilo del comentario). */
+export async function replyToComment(
+  token: string,
+  commentId: string,
+  message: string
+): Promise<{ id: string | null }> {
+  const res = await igGraphRequest<{ id?: string | number }>(
+    `${encodeURIComponent(commentId)}/replies`,
+    { method: "POST", token, body: { message } }
+  );
+  return { id: res?.id != null ? String(res.id) : null };
+}
+
+/** Oculta (o vuelve a mostrar) un comentario. */
+export async function setCommentHidden(
+  token: string,
+  commentId: string,
+  hidden: boolean
+): Promise<void> {
+  await igGraphRequest(encodeURIComponent(commentId), {
+    method: "POST",
+    token,
+    query: { hide: hidden ? "true" : "false" },
+  });
+}
+
+/* ============================================================
+ * 030 — Perfil de mensajería (ice breakers y menú fijo)
+ * ============================================================ */
+
+export async function setMessengerProfile(
+  token: string,
+  igUserId: string,
+  body: Record<string, unknown>
+): Promise<void> {
+  const res = await igGraphRequest<{ result?: string; success?: boolean }>(
+    `${encodeURIComponent(igUserId)}/messenger_profile`,
+    { method: "POST", token, body }
+  );
+  if (res?.success === false) {
+    throw new InstagramApiError("Instagram no aceptó el perfil de mensajería", { status: 502 });
+  }
+}
+
+export async function deleteMessengerProfile(
+  token: string,
+  igUserId: string,
+  fields: readonly ("ice_breakers" | "persistent_menu")[]
+): Promise<void> {
+  await igGraphRequest(`${encodeURIComponent(igUserId)}/messenger_profile`, {
+    method: "DELETE",
+    token,
+    body: { platform: "instagram", fields },
+  });
 }

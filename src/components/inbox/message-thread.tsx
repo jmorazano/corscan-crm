@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Check,
+  CircleDashed,
   CheckCheck,
   Clock3,
   Copy,
@@ -12,6 +13,7 @@ import {
   FileText,
   Film,
   Loader2,
+  MessageCircle,
   Mic,
   Paperclip,
   RotateCw,
@@ -702,6 +704,132 @@ function RetryButton({
   );
 }
 
+/**
+ * 030: nota de un comentario de Instagram que disparó una regla: qué comentó
+ * y en qué publicación (el DM automático viene debajo).
+ */
+function CommentNote({ message: m }: { message: MessageDto }) {
+  const c = m.details?.comment;
+  return (
+    <div className="min-w-[200px]" data-testid="message-comment">
+      <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-[#d62976]">
+        <MessageCircle className="h-3.5 w-3.5" strokeWidth={1.8} />
+        {c?.live ? "Comentó en tu vivo" : "Comentó en tu publicación"}
+      </p>
+      {m.text && <p className="mt-1 whitespace-pre-wrap break-words">«{m.text}»</p>}
+      {(m.mediaSummary || c?.permalink) && (
+        <p className="mt-1 text-[11.5px] text-text-3">
+          {m.mediaSummary ? `«${m.mediaSummary}»` : null}
+          {c?.permalink && (
+            <a href={c.permalink} target="_blank" rel="noreferrer" className="ml-1 text-brand-text underline underline-offset-2">
+              Ver publicación
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** 030: respuesta o mención de una historia, con la historia bajada. */
+function StoryAttachment({ message: m, kind }: { message: MessageDto; kind: "whatsapp" | "trainer" | "instagram" }) {
+  const reply = m.details?.story?.kind === "reply" || (!m.details?.story && !!m.text);
+  const isVideo = m.media?.mimeType.startsWith("video/");
+  return (
+    <div className="min-w-[180px]" data-testid="message-story">
+      <p className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-[#d62976]">
+        <CircleDashed className="h-3.5 w-3.5" strokeWidth={1.8} />
+        {reply ? "Respondió a tu historia" : "Te mencionó en su historia"}
+      </p>
+      {m.media ? (
+        isVideo ? (
+          <VideoAttachment message={m} />
+        ) : (
+          <ImageAttachment message={m} kind={kind} />
+        )
+      ) : (
+        <>
+          <span className="text-[12px] text-text-3">
+            {m.mediaState === "pending" ? "Descargando la historia…" : "La historia ya no está disponible"}
+          </span>
+          {m.text && <p className="mt-1 whitespace-pre-wrap break-words">{m.text}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 030: lo que acompaña a un mensaje de Instagram: botones, tarjetas y
+ * respuestas rápidas (lo que vio la persona), el origen automático de un DM
+ * (regla de comentarios), los botones de una plantilla de otra app y el aviso
+ * de standby.
+ */
+function InstagramExtras({ message: m }: { message: MessageDto }) {
+  const d = m.details;
+  if (!d) return null;
+  const chips: { key: string; label: string; href?: string }[] = [
+    ...(d.buttons ?? []).map((b, i) => ({ key: `b${i}`, label: b.title, href: b.url })),
+    ...(d.quickReplies ?? []).map((q, i) => ({
+      key: `q${i}`,
+      label: q.kind === "text" ? q.title : q.kind === "email" ? "Mi email" : "Mi teléfono",
+    })),
+    ...(d.template?.buttons ?? []).map((t, i) => ({ key: `t${i}`, label: t })),
+  ];
+  const automatic = m.direction === "out" && m.type !== "comment" && d.comment;
+  if (chips.length === 0 && !d.cards?.length && !automatic && !d.standby) return null;
+  return (
+    <div className="clear-both" data-testid="message-ig-extras">
+      {d.cards && d.cards.length > 0 && (
+        <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">
+          {d.cards.map((c, i) => (
+            <a
+              key={i}
+              href={c.url}
+              target="_blank"
+              rel="noreferrer"
+              className="w-40 shrink-0 overflow-hidden rounded-md border border-brand-soft/60 bg-background text-left"
+            >
+              {c.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element -- imagen del negocio
+                <img src={c.imageUrl} alt="" className="h-20 w-full object-cover" loading="lazy" />
+              )}
+              <span className="block px-2 pt-1.5 text-[12px] font-medium leading-tight">{c.title}</span>
+              {c.subtitle && <span className="block px-2 text-[11px] leading-tight text-text-3">{c.subtitle}</span>}
+              <span className="block px-2 pb-1.5 pt-1 text-[11px] font-medium text-brand-text">{c.buttonTitle || "Ver"}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      {chips.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {chips.map((c) =>
+            c.href ? (
+              <a key={c.key} href={c.href} target="_blank" rel="noreferrer" className="rounded-full border border-brand-soft bg-background px-2.5 py-0.5 text-[11.5px] text-brand-text">
+                {c.label}
+              </a>
+            ) : (
+              <span key={c.key} className="rounded-full border border-brand-soft bg-background px-2.5 py-0.5 text-[11.5px] text-text-2">
+                {c.label}
+              </span>
+            )
+          )}
+        </div>
+      )}
+      {automatic && (
+        <span data-testid="message-comment-auto" className="mt-1.5 block border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3">
+          Respuesta automática a un comentario{d.comment?.ruleName ? ` · ${d.comment.ruleName}` : ""}
+        </span>
+      )}
+      {d.standby && (
+        <span data-testid="message-standby" className="mt-1.5 block border-t pt-1 text-[11px] leading-snug text-[#8a6d3b]">
+          Otra app maneja esta conversación en Instagram: el agente no responde
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Bubble({
   message: m,
   kind,
@@ -766,6 +894,10 @@ function Bubble({
           <VideoAttachment message={m} />
         ) : m.type === "document" ? (
           <DocumentAttachment message={m} />
+        ) : m.type === "comment" ? (
+          <CommentNote message={m} />
+        ) : m.type === "story" ? (
+          <StoryAttachment message={m} kind={kind} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />
@@ -786,6 +918,7 @@ function Bubble({
           <span className="text-[10.5px] text-text-4">{bubbleTime(m.createdAt)}</span>
           {out && wa && <StatusTicks status={m.status} error={m.error} />}
         </span>
+        <InstagramExtras message={m} />
         {out && wa && m.source === "phone" && (
           <span
             data-testid="message-from-phone"

@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { History, Instagram, Link2, Loader2, Unplug } from "lucide-react";
+import { History, Instagram, Link2, Loader2, MessageCircleReply, QrCode, Sparkles, Unplug } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useQueryFilters } from "@/components/use-query-filters";
+import {
+  CommentsSection,
+  FirstContactSection,
+  LinksSection,
+  StandbyWarning,
+  type GrowthData,
+  type GrowthIntegration,
+} from "@/components/settings/instagram-growth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +41,20 @@ type View = {
   };
 };
 
-type ApiResponse = { available: boolean; integration: View | null; canManage: boolean };
+type ApiResponse = {
+  available: boolean;
+  integration: (View & GrowthIntegration) | null;
+  canManage: boolean;
+};
+
+/** 030: pestañas de Ajustes → Instagram (la activa vive en `?tab=`). */
+const TABS = [
+  { id: "conexion", label: "Conexión", icon: Instagram },
+  { id: "comentarios", label: "Comentarios", icon: MessageCircleReply },
+  { id: "primer-contacto", label: "Primer contacto", icon: Sparkles },
+  { id: "links", label: "Links con origen", icon: QrCode },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
 const ERROR_TEXT: Record<string, string> = {
   cancelled: "Cancelaste la autorización en Instagram. No se conectó nada.",
@@ -54,7 +77,11 @@ function formatDate(iso: string): string {
 
 export function InstagramSettings() {
   const params = useSearchParams();
+  const { params: query, set: setQuery } = useQueryFilters();
+  const rawTab = query.get("tab");
+  const tab: TabId = TABS.some((t) => t.id === rawTab) ? (rawTab as TabId) : "conexion";
   const [data, setData] = useState<ApiResponse | null>(null);
+  const [growth, setGrowth] = useState<GrowthData | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,6 +92,23 @@ export function InstagramSettings() {
     if (!res?.ok) return;
     setData((await res.json()) as ApiResponse);
   }, []);
+
+  // 030: reglas, actividad y links (solo con la cuenta conectada).
+  const refetchGrowth = useCallback(async () => {
+    const res = await fetch("/api/integrations/instagram/growth").catch(() => null);
+    if (!res?.ok) return;
+    setGrowth((await res.json()) as GrowthData);
+  }, []);
+  const connected = !!data?.integration;
+  useEffect(() => {
+    if (connected && data?.canManage) void refetchGrowth();
+  }, [connected, data?.canManage, refetchGrowth]);
+  // La actividad de comentarios se refresca sola mientras se mira.
+  useEffect(() => {
+    if (tab !== "comentarios" || !connected) return;
+    const t = setInterval(() => void refetchGrowth(), 15_000);
+    return () => clearInterval(t);
+  }, [tab, connected, refetchGrowth]);
 
   useEffect(() => {
     void refetch();
@@ -116,6 +160,11 @@ export function InstagramSettings() {
   if (!data) return <p className="text-sm text-muted-foreground">Cargando…</p>;
   const { available, integration, canManage } = data;
   const handle = integration?.username ? `@${integration.username}` : "la cuenta";
+  const showTabs = !!integration && canManage;
+  const activeTab: TabId = showTabs ? tab : "conexion";
+  const refreshAll = async () => {
+    await Promise.all([refetch(), refetchGrowth()]);
+  };
 
   return (
     // Mismo marco que el resto de Ajustes (012: en móvil el padding lo pone el layout).
@@ -126,7 +175,32 @@ export function InstagramSettings() {
           Los mensajes directos de la cuenta de Instagram del negocio entran a la misma
           Bandeja que WhatsApp y el agente los atiende con el mismo conocimiento.
         </p>
+        {showTabs && (
+          <div role="tablist" aria-label="Secciones de Instagram" className="-mx-1 mt-3 flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {TABS.map((t) => {
+              const active = t.id === activeTab;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-testid={`ig-tab-${t.id}`}
+                  onClick={() => setQuery({ tab: t.id === "conexion" ? null : t.id })}
+                  className={cn(
+                    "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                    active ? "border-brand text-foreground" : "border-transparent text-text-2 hover:text-foreground"
+                  )}
+                >
+                  <t.icon className="h-4 w-4" strokeWidth={1.7} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+      {integration && <StandbyWarning seenAt={integration.standbySeenAt} />}
       {notice && (
         <p
           className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] px-3 py-2 text-sm text-[#3f6b52]"
@@ -144,6 +218,20 @@ export function InstagramSettings() {
         </p>
       )}
 
+      {activeTab === "comentarios" && growth && (
+        <CommentsSection data={growth} canManage={canManage} onChange={refreshAll} />
+      )}
+      {activeTab === "primer-contacto" && integration && (
+        <FirstContactSection integration={integration} canManage={canManage} onChange={refreshAll} />
+      )}
+      {activeTab === "links" && growth && (
+        <LinksSection data={growth} canManage={canManage} onChange={refreshAll} />
+      )}
+      {activeTab !== "conexion" && !growth && activeTab !== "primer-contacto" && (
+        <p className="text-sm text-muted-foreground">Cargando…</p>
+      )}
+
+      {activeTab === "conexion" && (<>
       <Card data-testid="ig-connection">
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
@@ -269,6 +357,7 @@ export function InstagramSettings() {
           </p>
         </CardContent>
       </Card>
+      </>)}
     </div>
   );
 }

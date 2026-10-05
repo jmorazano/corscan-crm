@@ -76,7 +76,13 @@ export const ATTACHMENT_MARKER = "[ADJUNTO]";
 
 export type MediaPlan =
   /** Se descarga y se manda a la IA. */
-  | { kind: "process"; type: ProcessedMediaType; maxBytes: number }
+  | {
+      kind: "process";
+      type: ProcessedMediaType;
+      maxBytes: number;
+      /** 030: es una historia de Instagram (si resulta video, se guarda sin IA). */
+      story?: boolean;
+    }
   /**
    * 026: se descarga y se guarda para verlo en el hilo; NO retiene el turno
    * del agente (su marcador no depende del binario).
@@ -102,6 +108,11 @@ export function planInboundMedia(
   const media = type as MediaType;
   if ((media === "audio" || media === "image") && mediaId) {
     return { kind: "process", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
+  }
+  // 030: la historia que respondió o en la que mencionó al negocio se baja y
+  // se describe como una imagen (si es un video, se guarda para el equipo).
+  if (media === "story" && mediaId) {
+    return { kind: "process", type: "image", maxBytes: MEDIA_MAX_BYTES.video, story: true };
   }
   // 027: el PDF se LEE (y retiene el turno, como una imagen); el resto de
   // los documentos solo se guarda para el equipo.
@@ -194,7 +205,35 @@ export function attachmentMarker(m: AttachmentView): string | null {
     }
   }
 
+  // 030: respuesta a una historia (trae texto) o mención (sin texto).
+  if (type === "story") {
+    const what = m.text?.trim()
+      ? "respondió a una de tus historias de Instagram"
+      : "te mencionó en una historia suya de Instagram";
+    if (m.mediaState === "ready" && m.mediaSummary?.trim()) {
+      return `${ATTACHMENT_MARKER} El cliente ${what}. En la historia se veía: ${m.mediaSummary.trim()}`;
+    }
+    if (m.mediaState === "pending") {
+      return `${ATTACHMENT_MARKER} El cliente ${what}; la historia todavía se está procesando.`;
+    }
+    return `${ATTACHMENT_MARKER} El cliente ${what}.${m.text?.trim() ? "" : " Agradecé la mención con naturalidad."}`;
+  }
+
   return `${ATTACHMENT_MARKER} El cliente mandó ${TYPE_LABEL[type]}. No lo podés abrir: preguntale de qué se trata o escalá si hace falta.`;
+}
+
+/** 030: marcador de la nota de un comentario de Instagram. */
+export const COMMENT_MARKER = "[COMENTARIO]";
+
+/**
+ * 030: cómo ve el agente la nota de un comentario (tipo `comment`): qué
+ * comentó y en qué publicación, y que ya se le respondió por privado. El
+ * texto es del tercero: es DATO.
+ */
+export function commentAgentText(m: { text: string | null; mediaSummary: string | null }): string {
+  const post = m.mediaSummary?.trim() ? ` en tu publicación «${m.mediaSummary.trim()}»` : " en una de tus publicaciones";
+  const said = m.text?.trim() ? `: «${m.text.trim()}»` : "";
+  return `${COMMENT_MARKER} La persona comentó${post}${said}. Por eso le escribimos por privado (el mensaje de abajo).`;
 }
 
 /**
@@ -203,6 +242,7 @@ export function attachmentMarker(m: AttachmentView): string | null {
  * transcripción), los dos. Devuelve `null` cuando no hay nada que decir.
  */
 export function agentTextFor(m: AttachmentView): string | null {
+  if (m.type === "comment") return commentAgentText(m);
   const marker = attachmentMarker(m);
   const text = m.text?.trim() || null;
   if (marker && text) return `${marker}\n${text}`;

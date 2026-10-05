@@ -2,7 +2,14 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { InstagramApiError, sendInstagramText } from "@/lib/instagram/client";
+import { InstagramApiError, sendInstagramMessage } from "@/lib/instagram/client";
+import {
+  EMPTY_INTERACTIVE,
+  fallbackText,
+  planIgMessages,
+  type Interactive,
+  type PlannedIgMessage,
+} from "@/lib/instagram/interactive";
 import {
   igsidFromPhone,
   instagramSendMode,
@@ -34,6 +41,8 @@ export async function sendInstagramConversationText(input: {
   contact: typeof schema.contact.$inferSelect;
   text: string;
   aiGenerated: boolean;
+  /** 030: botones, tarjetas y respuestas rápidas. */
+  interactive?: Interactive | null;
 }): Promise<{ messageId: string }> {
   const { organizationId, conversation, contact } = input;
 
@@ -65,21 +74,43 @@ export async function sendInstagramConversationText(input: {
     throw new SendError("meta_error", "El mensaje está vacío");
   }
 
+  const interactive = input.interactive ?? EMPTY_INTERACTIVE;
+  let plan: PlannedIgMessage[] = planIgMessages(chunks, interactive);
   const db = getDb();
   let lastId: string | null = null;
-  for (const chunk of chunks) {
+  for (let index = 0; index < plan.length; index++) {
+    const planned = plan[index]!;
     let mid: string;
     try {
-      ({ messageId: mid } = await sendInstagramText({
+      ({ messageId: mid } = await sendInstagramMessage({
         igUserId: integration.igUserId,
         token: integration.token,
         recipientId: igsid,
-        text: chunk,
+        message: planned.message,
         humanAgent: mode.mode === "human_agent",
       }));
     } catch (err) {
+      // 030: si Instagram rechaza el FORMATO (plantilla o respuestas
+      // rápidas), se manda lo que falta como texto con los enlaces escritos.
+      const formatRejected =
+        planned.details !== null &&
+        err instanceof InstagramApiError &&
+        !err.isAuthError &&
+        !err.isUnavailable &&
+        (err.code === 100 || err.code === 2);
+      if (formatRejected) {
+        console.warn(
+          `[instagram] Instagram rechazó el formato (${err.message}); sale como texto`
+        );
+        const pending = plan.slice(index).map((p) => p.text).join("\n\n");
+        const rest = splitInstagramText(fallbackText(pending, interactive));
+        plan = [...plan.slice(0, index), ...rest.map((c) => ({ message: { text: c }, text: c, details: null }))];
+        index--;
+        continue;
+      }
       throw await toSendError(err, organizationId);
     }
+    const chunk = planned.text;
 
     const now = new Date();
     const inserted = await db
@@ -92,6 +123,7 @@ export async function sendInstagramConversationText(input: {
         direction: "out",
         type: "text",
         text: chunk,
+        details: planned.details,
         // Instagram no avisa «entregado»: aceptado = enviado; el «visto»
         // llega por `messaging_seen`.
         status: "sent",
@@ -109,7 +141,7 @@ export async function sendInstagramConversationText(input: {
       // El eco llegó antes: la fila es nuestra, no «Desde Instagram».
       const updated = await db
         .update(schema.message)
-        .set({ source: "cloud", aiGenerated: input.aiGenerated })
+        .set({ source: "cloud", aiGenerated: input.aiGenerated, details: planned.details, text: chunk, type: "text" })
         .where(
           scoped(
             schema.message.organizationId,
@@ -187,6 +219,10 @@ export function friendlyInstagramError(err: { code: number | null; subcode: numb
   // 027: la etiqueta HUMAN_AGENT sin el permiso aprobado en el App Review.
   if (/human agent/i.test(err.message)) {
     return "Instagram todavía no aprobó el permiso «Human Agent» de la app: solo se puede responder dentro de las 24 h del último mensaje del cliente";
+  }
+  // 030: Conversation Routing — otra app (p. ej. ManyChat) tiene el hilo.
+  if (err.code === 2018300 || err.subcode === 2018300 || err.subcode === 2534037 || /controlling this thread|thread owner/i.test(err.message)) {
+    return "Otra app (por ejemplo ManyChat) maneja esta conversación de Instagram. Para responder desde el CRM, dejalo como app principal en Meta Business Suite → Configuración → Integraciones → Conversation Routing";
   }
   if (err.code === 551 || err.subcode === 1545041) {
     return "Instagram: la persona no está disponible (bloqueó a la cuenta o la desactivó)";

@@ -64,8 +64,9 @@ funciona con cuentas que tienen rol en la app. Para probar:
   alcanza.
 
 Para el App Review se piden `instagram_business_basic`,
-`instagram_business_manage_messages` y la función **Human Agent**. Guion del
-video y textos: `specs/023-instagram-direct/app-review.md`.
+`instagram_business_manage_messages`, `instagram_business_manage_comments`
+(030) y la función **Human Agent**. Guion del video y textos:
+`specs/023-instagram-direct/app-review.md`.
 
 ## 4. Reglas del canal (lo que ve el equipo)
 
@@ -82,3 +83,50 @@ video y textos: `specs/023-instagram-direct/app-review.md`.
 - El token dura 60 días y se renueva solo (cada 6 h se revisan los que
   vencen en menos de 15 días). Si Meta lo rechaza, la tarjeta pide
   «Reconectar»; los mensajes entrantes se siguen guardando.
+
+## 5. Instagram que vende (030): comentarios, primer contacto y links
+
+Todo vive en **Ajustes → Instagram**, en pestañas (solo el propietario):
+
+- **Comentarios**: reglas «comentá INFO y te mando el link». Por regla: en
+  qué publicaciones (las elegidas, todas, o los vivos), palabras clave (sin
+  mayúsculas ni tildes; vacío = cualquier comentario), el DM privado (con
+  `{usuario}`), un botón opcional (respuesta rápida), un seguimiento que sale
+  cuando la persona responde, y respuestas públicas (una al azar). Una sola
+  respuesta privada por comentario (regla de Meta) y una vez por persona,
+  publicación y regla. Tope: 700 por hora y cuenta (Meta: 750).
+- **Ocultar comentarios**: lista de palabras; el comentario se oculta y no
+  recibe DM. La actividad reciente permite mostrarlo de nuevo.
+- **Primer contacto**: hasta 4 preguntas frecuentes (ice breakers) y un menú
+  fijo de hasta 5 opciones (pregunta → la responde el agente; enlace;
+  «hablar con una persona» → escala sin pasar por el modelo).
+- **Links con origen**: `https://ig.me/m/<cuenta>?ref=<slug>` con QR (SVG) e
+  instrucción opcional para el agente. La conversación queda etiquetada
+  `ig-<slug>` y el agente recibe el origen. Los anuncios «Enviar mensaje»
+  quedan como `ig-anuncio` con el título del anuncio.
+
+Cómo llegan los comentarios: con acceso **avanzado** por webhook (`comments`,
+`live_comments`, al instante). Con acceso **estándar** Meta no manda esos
+webhooks: el CRM consulta los comentarios de las publicaciones con reglas
+cada minuto (y cada 15 minutos como respaldo cuando el webhook funciona). Los
+vivos solo funcionan por webhook.
+
+Conexiones anteriores a 030 no tienen el permiso de comentarios: la pestaña
+pide **Reconectar con Instagram** (Business Login vuelve a pedir los tres
+permisos). Al reconectar, el primer contacto guardado se vuelve a aplicar.
+
+El agente en Instagram puede responder con botones de enlace, carrusel y
+respuestas rápidas (solo enlaces que estén en su contexto: conocimiento,
+herramientas o la conversación), entiende respuestas y menciones de
+historias (la imagen se baja y se describe) y guarda el email y el teléfono
+que la persona da en el chat (sin pisar lo que cargó el equipo).
+
+### Convivencia con otras apps (ManyChat y similares)
+
+Instagram usa **Conversation Routing**: cada conversación la maneja UNA sola
+app. Si otra herramienta es la app principal, los mensajes llegan al CRM
+como `standby` (se guardan, el agente no responde) y Ajustes avisa «Otra app
+maneja conversaciones de esta cuenta». Para que responda el CRM: Meta
+Business Suite → Configuración → Integraciones → Conversation Routing → app
+principal, o desconectar la otra herramienta. Dos contestadores automáticos
+no conviven en la misma cuenta.

@@ -12,6 +12,13 @@ const knobs = z.object({
   subscribeFails: z.boolean().optional(),
   echoSends: z.boolean().optional(),
   historyFails: z.boolean().optional(),
+  // 030
+  denyComments: z.boolean().optional(),
+  failNextPrivateReply: z.enum(["error", "routing", "down", "invalid"]).nullable().optional(),
+  rejectQuickRepliesInPrivateReply: z.boolean().optional(),
+  rejectTemplates: z.boolean().optional(),
+  profileSaveFails: z.boolean().optional(),
+  commentsReadFails: z.boolean().optional(),
 });
 
 /** Perillas del camino infeliz del ig-mock (one-shot salvo `echoSends`). */

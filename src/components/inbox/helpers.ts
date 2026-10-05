@@ -38,6 +38,8 @@ const MEDIA_LABELS: Record<string, string> = {
   unsupported: "Adjunto no disponible",
   deleted: "Mensaje eliminado",
   reaction: "Reacción",
+  // 030
+  comment: "Comentario en una publicación",
 };
 
 export function mediaLabel(type: string): string {

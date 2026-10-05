@@ -145,6 +145,18 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // esto el self-test no puede distinguir «el agente vio la foto» de «el
   // agente respondió cualquier cosa», que es justo lo que hay que probar.
   if (lastUser.includes(ATTACHMENT_MARKER)) {
+    // 030: historias de Instagram — la respuesta prueba que el agente supo
+    // qué pasó y qué se veía.
+    if (/respondi[oó] a una de tus historias/i.test(lastUser)) {
+      const seen = /se ve[ií]a: ([^\n]+)/.exec(lastUser)?.[1]?.trim();
+      return JSON.stringify({
+        action: "reply",
+        text: `¡Gracias por responder la historia!${seen ? ` (vi: ${seen.slice(0, 60)})` : ""}`,
+      });
+    }
+    if (/te mencion[oó] en una historia/i.test(lastUser)) {
+      return JSON.stringify({ action: "reply", text: "¡Gracias por mencionarnos en tu historia! 💛" });
+    }
     if (/comprobante|transferencia|pago/i.test(lastUser)) {
       // Redactado a propósito para NO prometer una reserva: la guarda de 016
       // reemplaza «te confirmamos la reserva», y hace bien — el negocio no
@@ -228,6 +240,12 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ action: "none" });
   }
 
+  // 030: extras de Instagram y contexto de origen/comentario (E2E). Antes que
+  // el conector: sus palabras («botones», «opciones», «¿de dónde vengo?»)
+  // no son consultas de alojamiento.
+  const igTurn = fromClient ? dispatchInstagram(messages, system, text) : null;
+  if (igTurn) return igTurn;
+
   // Conector MCP (016): VA ANTES QUE LA AGENDA a propósito. El regex de
   // `mentionsCalendar` incluye "disponibilidad" y "reservar", así que una
   // empresa con agenda Y conector le ofrecería un turno de 30 minutos a
@@ -264,6 +282,69 @@ export function aiMockCompletion(messages: InMessage[]): string {
     action: "reply",
     text: `Respuesta de prueba sobre: ${eco}`,
   });
+}
+
+/**
+ * 030: ramas de Instagram. `botones` → un botón con un enlace del contexto y
+ * otro INVENTADO (la guarda tiene que descartarlo); `opciones` → respuestas
+ * rápidas (con «email»); `carrusel` → tarjetas con los enlaces del contexto;
+ * «mi email es …» → contact_email; «¿de dónde vengo?» → el origen del prompt;
+ * «¿qué comenté?» → la nota [COMENTARIO] del historial.
+ */
+function dispatchInstagram(messages: InMessage[], system: string, text: string): string | null {
+  if (!system.includes("mensajes directos de Instagram")) return null;
+  const corpus = messages.map((m) => textOf(m.content)).join("\n");
+  const urls = [...new Set(corpus.match(/https:\/\/[^\s)»"'…]+/g) ?? [])]
+    .map((u) => u.replace(/[.,;]$/, ""))
+    .filter((u) => /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+\//i.test(`${u}/`));
+  if (text.includes("botones")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Te dejo los enlaces para que lo veas tranquilo.",
+      buttons: [
+        ...(urls[0] ? [{ title: "Ver la cabaña", url: urls[0] }] : []),
+        { title: "Inventado", url: "https://inventado.example/reservar" },
+      ],
+    });
+  }
+  if (text.includes("opciones")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¿Querés que te pase fechas o preferís dejarme tu email?",
+      quick_replies: ["Ver fechas", "Hablar por WhatsApp", "email"],
+    });
+  }
+  if (text.includes("carrusel")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "Estas son las opciones:",
+      cards: urls.slice(0, 3).map((u, i) => ({ title: `Opción ${i + 1}`, subtitle: "Para 4 personas", url: u })),
+    });
+  }
+  const email = /mi (?:email|mail|correo) es (\S+@\S+)/.exec(text)?.[1];
+  if (email) {
+    return JSON.stringify({ action: "reply", text: "¡Gracias! Te escribimos ahí.", contact_email: email.replace(/[.,;]$/, "") });
+  }
+  if (/de d[oó]nde vengo/.test(text)) {
+    const origin = /ORIGEN DE LA CONVERSACIÓN \(Instagram\): ([^\n]+?)\.\n/.exec(system)?.[1];
+    const instruction = /Instrucción del negocio para quienes llegan por este link: ([^\n]+)/.exec(system)?.[1];
+    return JSON.stringify({
+      action: "reply",
+      text: origin ? `Llegaste por: ${origin}.${instruction ? ` ${instruction}` : ""}` : "No sé de dónde llegaste.",
+    });
+  }
+  if (/qu[eé] coment[eé]/.test(text)) {
+    const note = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => textOf(m.content))
+      .find((t) => t.includes("[COMENTARIO]"));
+    const said = note ? /comentó[^:]*: «([^»]+)»/.exec(note)?.[1] : null;
+    return JSON.stringify({
+      action: "reply",
+      text: said ? `Comentaste «${said}» en la publicación.` : "No veo ningún comentario.",
+    });
+  }
+  return null;
 }
 
 /**

@@ -33,6 +33,9 @@ const prefixes = {
   mcpToolCall: "mcall",
   historyImport: "hi",
   instagramIntegration: "igint",
+  instagramCommentRule: "igrule",
+  instagramCommentEvent: "igcev",
+  instagramEntryLink: "iglink",
   meliIntegration: "mli",
   meliListing: "mll",
 } as const;
