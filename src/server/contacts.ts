@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { normalizeRecipient } from "@/lib/meta/client";
@@ -145,8 +145,41 @@ export async function deleteContact(
           eq(schema.contact.id, contactId)
         )
       )
-      .returning({ id: schema.contact.id });
+      .returning({ id: schema.contact.id, phone: schema.contact.phone });
     if (deleted.length === 0) return null;
-    return { conversationIds: conversations.map((c) => c.id) };
+    // 030: los comentarios de Instagram que procesamos de esta persona (no
+    // tienen FK al contacto: se guardan aunque nunca escriba por privado).
+    // El ID de quien comenta puede no ser el de mensajería: se juntan los
+    // `from_id` de sus eventos ya vinculados y se borra todo lo de esa persona.
+    const phone = deleted[0]?.phone ?? "";
+    const igsid = phone.startsWith("ig:") ? phone.slice(3) : null;
+    const conversationIds = conversations.map((c) => c.id);
+    const linked = [
+      ...(igsid ? [eq(schema.instagramCommentEvent.recipientId, igsid)] : []),
+      ...(conversationIds.length > 0
+        ? [inArray(schema.instagramCommentEvent.conversationId, conversationIds)]
+        : []),
+    ];
+    if (linked.length > 0) {
+      const fromRows = await tx
+        .select({ fromId: schema.instagramCommentEvent.fromId })
+        .from(schema.instagramCommentEvent)
+        .where(scoped(schema.instagramCommentEvent.organizationId, organizationId, or(...linked)));
+      const fromIds = [
+        ...new Set(
+          [igsid, ...fromRows.map((r) => r.fromId)].filter((x): x is string => typeof x === "string" && x.length > 0)
+        ),
+      ];
+      await tx
+        .delete(schema.instagramCommentEvent)
+        .where(
+          scoped(
+            schema.instagramCommentEvent.organizationId,
+            organizationId,
+            or(...linked, ...(fromIds.length > 0 ? [inArray(schema.instagramCommentEvent.fromId, fromIds)] : []))
+          )
+        );
+    }
+    return { conversationIds };
   });
 }

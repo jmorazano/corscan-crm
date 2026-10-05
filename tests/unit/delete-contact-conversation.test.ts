@@ -47,6 +47,15 @@ vi.mock("@/lib/db", () => {
         __name: "contact",
         id: "contact.id",
         organizationId: "contact.organization_id",
+        phone: "contact.phone",
+      },
+      // 030: el borrado del contacto se lleva sus comentarios de Instagram.
+      instagramCommentEvent: {
+        __name: "instagram_comment_event",
+        organizationId: "instagram_comment_event.organization_id",
+        recipientId: "instagram_comment_event.recipient_id",
+        fromId: "instagram_comment_event.from_id",
+        conversationId: "instagram_comment_event.conversation_id",
       },
     },
   };
@@ -93,7 +102,19 @@ describe("deleteContact", () => {
     const { deleteContact } = await import("@/server/contacts");
     const result = await deleteContact("org_1", "ct_1");
     expect(result).toEqual({ conversationIds: ["cv_a", "cv_b"] });
-    expect(deleteCalls.map((c) => c.table)).toEqual(["contact"]);
+    // 030: con conversaciones, también sus eventos de comentarios de Instagram.
+    expect(deleteCalls.map((c) => c.table)).toEqual(["contact", "instagram_comment_event"]);
+  });
+
+  it("030: un contacto de Instagram borra sus comentarios por su IGSID", async () => {
+    selectReturns = [];
+    deleteReturns = [{ id: "ct_ig", phone: "ig:9555001" }];
+    const { deleteContact } = await import("@/server/contacts");
+    await expect(deleteContact("org_1", "ct_ig")).resolves.toEqual({ conversationIds: [] });
+    expect(deleteCalls.map((c) => c.table)).toEqual(["contact", "instagram_comment_event"]);
+    const where = JSON.stringify(deleteCalls[1]?.where);
+    expect(where).toContain("9555001");
+    expect(where).toContain("organization_id");
   });
 
   it("devuelve null si el contacto no existe en la organización", async () => {
