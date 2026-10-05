@@ -31,6 +31,11 @@ Sirve cualquier SMTP. Algunas opciones:
   SMTP. Hay que verificar el dominio del remitente (registros **SPF** y
   **DKIM** que te da el proveedor, y en lo posible **DMARC**). Sin eso el
   correo cae en spam.
+  - **Resend** (lo que usa CorScan): `SMTP_HOST=smtp.resend.com`,
+    `SMTP_USER=resend`, `SMTP_PASS=<API key>`, `SMTP_FROM` con el dominio
+    verificado y, **en Railway**, `SMTP_PORT=2465` + `SMTP_SECURE=true`
+    (o `SMTP_PORT=2587` con STARTTLS): los puertos alternativos de Resend
+    existen justamente porque muchos hostings bloquean 465/587.
 - **Gmail / Google Workspace**: `smtp.gmail.com`, puerto 465, usuario = la
   casilla, contraseña = una **contraseña de aplicación** (requiere 2FA en la
   cuenta). `SMTP_FROM` debe ser esa misma casilla. Sirve para volúmenes
@@ -39,9 +44,11 @@ Sirve cualquier SMTP. Algunas opciones:
 
 ## Hosting
 
-- **Railway**: el SMTP saliente solo está habilitado en el plan **Pro**
-  (Hobby y Free bloquean los puertos 25/465/587). Cargar las variables en el
-  servicio `app` → Variables y redeployar.
+- **Railway**: bloquea la salida a los puertos SMTP estándar (25/465/587)
+  salvo en el plan Pro. Verificado en producción el 5-oct-2026: 465 y 587 dan
+  timeout desde el contenedor, 2465 y 2587 conectan. Usá el puerto
+  alternativo del proveedor (Resend: 2465 con `SMTP_SECURE=true`, o 2587).
+  Cargar las variables en el servicio `app` → Variables (redeploya solo).
 - **VPS propio**: algunos proveedores bloquean el puerto 25 por defecto; 587 y
   465 suelen estar abiertos.
 
@@ -53,6 +60,9 @@ Sirve cualquier SMTP. Algunas opciones:
    `[mail] recuperación de contraseña no enviada: <código>: <mensaje>` (sin el
    correo del destinatario ni la contraseña del SMTP). La pantalla responde
    igual exista o no la cuenta, a propósito.
+   - `ETIMEDOUT: Connection timeout` → el hosting bloquea ese puerto: pasá al
+     alternativo del proveedor (ver Hosting).
+   - `EAUTH` → usuario/contraseña del SMTP mal cargados.
 
 En el entorno de pruebas (`WA_MOCK_ENABLED=true`, fuera de producción) los
 correos NO salen: quedan en `GET /api/dev/mail-mock`.

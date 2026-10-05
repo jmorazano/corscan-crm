@@ -30,6 +30,10 @@
       SMTP = pantalla de instrucciones + 400 `RESET_PASSWORD_DISABLED`;
       móvil 375 px sin scroll horizontal. Contraseña del usuario E2E
       restaurada por el mismo flujo.
-- [ ] T11 Producción (requiere OK del dueño): SMTP del operador cargado en
-      Railway (runtime), merge a `main`, deploy y prueba real con una cuenta
-      propia.
+- [x] T11 Producción (OK del dueño 5-oct-2026): merge de main (fix IP
+      3bc4ad9) + smoke E2E, `main` → f94a6ca, deploy 350dfc16 SUCCESS. El
+      dueño cargó Resend (`smtp.resend.com`, dominio corscan.com.ar). Primer
+      envío real: `ETIMEDOUT` — Railway bloquea 465/587 (probado desde el
+      contenedor: 465/587 timeout, 2465/2587 abiertos) → `SMTP_PORT=2465` +
+      `SMTP_SECURE=true`, deploy 16f792b4 SUCCESS, envío real a la cuenta del
+      dueño sin error en los logs. Guía y `.env.example` corregidas.
