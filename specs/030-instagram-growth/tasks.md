@@ -37,6 +37,6 @@
 ## Fase 6 — Docs y App Review
 - [x] T060 `specs/023-instagram-direct/app-review.md`: texto de `instagram_business_manage_comments` + guion del video actualizado
 - [x] T061 `docs/integraciones/instagram.md`
-- [ ] T062 Merge + deploy (con OK del dueño)
-- [ ] T063 Política de privacidad (dronebiz): línea de comentarios (con OK del dueño: es contenido público)
+- [x] T062 Merge + deploy (OK del dueño 5-oct): `74a4fc7` (Railway 65efa39f SUCCESS, migración 0024 aplicada, health 200) + fix `ed04a17` (borrar un contacto borra sus comentarios)
+- [x] T063 Política de privacidad y eliminación de datos (dronebiz `9ee13c1`, Netlify `index-fZ9ZCwJJ.js`, 5-oct)
 - [ ] T064 Producción: reconectar @corscan.ing (y Altos) para conceder el permiso; recién ahí corre la consulta de comentarios
