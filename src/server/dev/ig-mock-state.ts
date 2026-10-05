@@ -171,6 +171,16 @@ function sampleMedia(now = Date.now()): IgMockMedia[] {
     { id: "17900000000000101", caption: "Cabaña Alba 🌲 Comentá INFO y te paso el link", media_type: "IMAGE", media_product_type: "FEED", permalink: "https://www.instagram.com/p/mockAlba/", timestamp: at(2) },
     { id: "17900000000000102", caption: "Reel de la pileta climatizada", media_type: "VIDEO", media_product_type: "REELS", permalink: "https://www.instagram.com/reel/mockPileta/", timestamp: at(30) },
     { id: "17900000000000103", caption: "Promo de primavera", media_type: "IMAGE", media_product_type: "FEED", permalink: "https://www.instagram.com/p/mockPromo/", timestamp: at(80) },
+    // Una cuenta con mucho contenido: 27 publicaciones más (paginación y
+    // búsqueda del selector), con epígrafes largos como los reales.
+    ...Array.from({ length: 27 }, (_, i): IgMockMedia => ({
+      id: `179000000000002${String(i).padStart(2, "0")}`,
+      caption: `${["🏞️ Relevamiento", "📈 Modelo digital", "🌲 Cabaña", "🚁 Vuelo"][i % 4]} ${i + 1}: ${"texto largo de epígrafe con hashtags #Topografia #LiDAR ".repeat(4)}`,
+      media_type: i % 3 === 0 ? "VIDEO" : i % 5 === 0 ? "CAROUSEL_ALBUM" : "IMAGE",
+      media_product_type: i % 3 === 0 ? "REELS" : "FEED",
+      permalink: `https://www.instagram.com/p/mockExtra${i}/`,
+      timestamp: at(100 + i * 24),
+    })),
   ];
 }
 

@@ -5,7 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import {
   InstagramApiError,
   deleteMessengerProfile,
-  listInstagramMedia,
+  listInstagramMediaPage,
   setMessengerProfile,
   type IgMedia,
 } from "@/lib/instagram/client";
@@ -101,10 +101,13 @@ export async function applyMessagingProfile(
  * Publicaciones (para elegir en una regla)
  * ============================================================ */
 
-export async function listRecentMedia(organizationId: string): Promise<IgMedia[]> {
+export async function listRecentMedia(
+  organizationId: string,
+  after: string | null = null
+): Promise<{ media: IgMedia[]; next: string | null }> {
   const integration = await readyIntegration(organizationId);
   try {
-    return await listInstagramMedia(integration.token, 24);
+    return await listInstagramMediaPage(integration.token, { limit: 24, after });
   } catch (err) {
     if (err instanceof InstagramApiError && err.isAuthError) await markInstagramReconnectRequired(organizationId);
     throw new InstagramConfigError("meta_error", friendlyCommentError(err));

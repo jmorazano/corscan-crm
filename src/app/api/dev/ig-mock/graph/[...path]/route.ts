@@ -90,8 +90,12 @@ export async function GET(req: Request, ctx: Params) {
   // 030: publicaciones, comentarios y perfil de mensajería.
   if (path[0] === "me" && path[1] === "media") {
     const limit = Number(url.searchParams.get("limit") ?? 25);
+    const start = Number(url.searchParams.get("after") ?? 0) || 0;
+    const page = s.media.slice(start, start + limit);
+    const hasMore = start + limit < s.media.length;
     return Response.json({
-      data: s.media.slice(0, limit).map((m) => ({
+      paging: { cursors: { after: String(start + limit) }, ...(hasMore ? { next: "https://graph.instagram.com/next" } : {}) },
+      data: page.map((m) => ({
         ...m,
         media_url: `${getEnv().APP_BASE_URL.replace(/\/$/, "")}/api/dev/ig-mock/media/mediamock_image_${m.id}`,
         ...(m.media_type === "VIDEO" ? { thumbnail_url: `${getEnv().APP_BASE_URL.replace(/\/$/, "")}/api/dev/ig-mock/media/mediamock_image_thumb_${m.id}` } : {}),

@@ -31,7 +31,12 @@ otra app). Perillas: `denyComments`, `failNextPrivateReply`
 2. **Reconectar**: el Business Login pide los TRES permisos; la suscripción
    suma `comments,live_comments,standby,messaging_handover`;
    `commentsEnabled=true`.
-3. **Regla**: la grilla trae las publicaciones (con miniatura); sin
+3. **Regla**: la grilla trae las publicaciones de a 24 con cursor (el mock
+   tiene 30: la segunda página trae 6 y ya no hay cursor), con miniatura y
+   tipo (Reel/Video/Carrusel). En la UI: imagen cuadrada, texto en 2 líneas
+   con el completo en `title`, fecha, búsqueda sin tildes («cabana» →
+   «Cabaña»), «Ver más publicaciones» y fila de elegidas que no se pierde al
+   buscar ni al cargar más; en 375 px, 3 columnas sin scroll horizontal. Sin
    publicaciones → 422 «Elegí al menos una publicación»; se crea «Link Alba»
    (INFO, link · DM con `{usuario}` · botón · seguimiento con enlace · pública).
 4. **Comentario «INFO por favor!»** (webhook) → evento `replied`; respuesta
@@ -82,7 +87,7 @@ otra app). Perillas: `denyComments`, `failNextPrivateReply`
 
 ## Resultado (5-oct-2026)
 
-**64/64 ✅** tras dos vueltas de corrección:
+**64/64 ✅** tras dos vueltas de corrección (66/66 desde el selector paginado, 5-oct):
 
 - La guarda de enlaces aceptaba `https://..` (resto del EJEMPLO del propio
   prompt) — un modelo real podía copiarlo y mandar un botón roto. Ahora exige

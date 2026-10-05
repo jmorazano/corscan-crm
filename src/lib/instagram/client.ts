@@ -778,11 +778,28 @@ function toMedia(m: RawMedia): IgMedia | null {
 
 /** Las últimas publicaciones de la cuenta (más nuevas primero). */
 export async function listInstagramMedia(token: string, limit = 24): Promise<IgMedia[]> {
-  const res = await igGraphRequest<{ data?: RawMedia[] }>("me/media", {
-    token,
-    query: { fields: MEDIA_FIELDS, limit: String(limit) },
-  });
-  return (res.data ?? []).map(toMedia).filter((m): m is IgMedia => m !== null);
+  return (await listInstagramMediaPage(token, { limit })).media;
+}
+
+/**
+ * Una página de publicaciones (más nuevas primero) con el cursor de la
+ * siguiente: una cuenta con cientos de posts se recorre de a páginas.
+ */
+export async function listInstagramMediaPage(
+  token: string,
+  opts: { limit?: number; after?: string | null } = {}
+): Promise<{ media: IgMedia[]; next: string | null }> {
+  const query: Record<string, string> = { fields: MEDIA_FIELDS, limit: String(opts.limit ?? 24) };
+  if (opts.after) query.after = opts.after;
+  const res = await igGraphRequest<{
+    data?: RawMedia[];
+    paging?: { cursors?: { after?: string }; next?: string };
+  }>("me/media", { token, query });
+  return {
+    media: (res.data ?? []).map(toMedia).filter((m): m is IgMedia => m !== null),
+    // Sin `next` no hay más páginas aunque venga un cursor.
+    next: res.paging?.next ? (res.paging.cursors?.after ?? null) : null,
+  };
 }
 
 /** Una publicación (para el epígrafe de un comentario que llegó por webhook). */

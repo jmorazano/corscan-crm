@@ -14,6 +14,7 @@ import {
   Pencil,
   Plus,
   Radio,
+  Search,
   ShieldAlert,
   Trash2,
   X,
@@ -96,6 +97,7 @@ type Media = {
   id: string;
   caption: string | null;
   mediaType: string | null;
+  mediaProductType?: string | null;
   thumbnailUrl: string | null;
   permalink: string | null;
   timestamp: string | null;
@@ -247,7 +249,11 @@ export function CommentsSection({
           <p className="text-xs text-muted-foreground" data-testid="ig-comments-delivery">
             {integration.commentsDelivery === "webhook"
               ? "Los comentarios llegan al instante."
-              : `El CRM revisa los comentarios de las publicaciones con reglas cada minuto (Meta todavía no habilitó el aviso instantáneo para esta app). Última revisión: ${relTime(integration.commentsPolledAt)}.`}
+              : `El CRM revisa los comentarios de las publicaciones con reglas cada minuto (Meta todavía no habilitó el aviso instantáneo para esta app). ${
+                  integration.commentsPolledAt
+                    ? `Última revisión: ${relTime(integration.commentsPolledAt)}.`
+                    : "Empieza a revisar cuando haya una regla activa."
+                }`}
           </p>
           {integration.commentsError && <Notice kind="warn">{integration.commentsError}</Notice>}
           {error && <Notice kind="error">{error}</Notice>}
@@ -349,6 +355,201 @@ function MediaThumb({ media, size = "md" }: { media: IgMediaPreview | Media; siz
   );
 }
 
+/** «12 sep» (con el año si no es el actual). Tolera el `+0000` de Meta. */
+function shortDate(ts: string | null): string | null {
+  if (!ts) return null;
+  const d = new Date(ts.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("es-AR", {
+    day: "numeric",
+    month: "short",
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+function mediaKind(m: { mediaType: string | null; mediaProductType?: string | null }): string | null {
+  if (m.mediaProductType === "REELS") return "Reel";
+  if (m.mediaType === "VIDEO") return "Video";
+  if (m.mediaType === "CAROUSEL_ALBUM") return "Carrusel";
+  return null;
+}
+
+const normalizeText = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/**
+ * 030: selector de publicaciones para una regla. Pensado para cuentas con
+ * mucho contenido: la IMAGEN manda (cuadrada, ocupa la tarjeta), el texto va
+ * en 2 líneas con el completo al pasar el mouse, fecha y tipo (Reel, Video,
+ * Carrusel) para distinguir posts parecidos, búsqueda por texto, «Ver más»
+ * de a 24 y una fila con las ya elegidas (siguen a la vista aunque se busque
+ * o se cargue más).
+ */
+function MediaPicker({
+  selected,
+  onToggle,
+}: {
+  selected: IgMediaPreview[];
+  onToggle: (m: Media | IgMediaPreview) => void;
+}) {
+  const [items, setItems] = useState<Media[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  const load = useCallback(async (after: string | null) => {
+    const res = await fetch(
+      `/api/integrations/instagram/media${after ? `?after=${encodeURIComponent(after)}` : ""}`
+    ).catch(() => null);
+    if (!res?.ok) {
+      setError(await readError(res, "No se pudieron traer las publicaciones."));
+      setItems((cur) => cur ?? []);
+      return;
+    }
+    const body = (await res.json()) as { media: Media[]; next: string | null };
+    setItems((cur) => {
+      const seen = new Set((cur ?? []).map((m) => m.id));
+      return [...(cur ?? []), ...body.media.filter((m) => !seen.has(m.id))];
+    });
+    setNext(body.next);
+  }, []);
+
+  useEffect(() => {
+    void load(null);
+  }, [load]);
+
+  const needle = normalizeText(q.trim());
+  const shown = (items ?? []).filter((m) => !needle || normalizeText(m.caption ?? "").includes(needle));
+
+  return (
+    <div className="space-y-2" data-testid="ig-media-picker">
+      {selected.length > 0 && (
+        <div className="rounded-md border bg-secondary/40 p-2" data-testid="ig-media-selected">
+          <p className="mb-1.5 text-xs font-medium text-text-2">
+            {selected.length === 1 ? "1 publicación elegida" : `${selected.length} publicaciones elegidas`}
+          </p>
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+            {selected.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onToggle(m)}
+                title={`Quitar: ${m.caption ?? "publicación sin texto"}`}
+                aria-label="Quitar publicación"
+                className="group relative shrink-0"
+              >
+                <MediaThumb media={m} size="sm" />
+                <span className="absolute -right-1 -top-1 rounded-full border bg-background p-0.5 text-text-2 shadow-sm group-hover:text-foreground">
+                  <X className="h-3 w-3" strokeWidth={2} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-3" strokeWidth={1.7} />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar por el texto de la publicación"
+          className="pl-9"
+          aria-label="Buscar publicaciones"
+          data-testid="ig-media-search"
+        />
+      </div>
+
+      {error && <Notice kind="error">{error}</Notice>}
+      {!items ? (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="aspect-square animate-pulse rounded-lg bg-secondary" />
+          ))}
+        </div>
+      ) : items.length === 0 && !error ? (
+        <p className="text-sm text-muted-foreground">La cuenta no tiene publicaciones.</p>
+      ) : shown.length === 0 ? (
+        <p className="text-sm text-muted-foreground" data-testid="ig-media-empty">
+          Ninguna de las {items.length} publicaciones cargadas dice «{q.trim()}».
+          {next ? " Probá «Ver más publicaciones» para buscar en las anteriores." : ""}
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4" data-testid="ig-media-grid">
+          {shown.map((m) => {
+            const on = selected.some((x) => x.id === m.id);
+            const kind = mediaKind(m);
+            const date = shortDate(m.timestamp);
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onToggle(m)}
+                data-testid="ig-media-option"
+                aria-pressed={on}
+                title={m.caption ?? "Publicación sin texto"}
+                className={cn(
+                  "group flex min-w-0 flex-col overflow-hidden rounded-lg border text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                  on ? "border-brand ring-2 ring-brand" : "hover:border-text-3"
+                )}
+              >
+                <span className="relative block aspect-square w-full bg-secondary">
+                  {m.thumbnailUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- CDN de Meta, sin optimizador
+                    <img src={m.thumbnailUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-[11px] text-text-3">
+                      {kind ?? "Publicación"}
+                    </span>
+                  )}
+                  {kind && m.thumbnailUrl && (
+                    <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      {kind}
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 shadow-sm",
+                      on ? "border-brand bg-brand text-white" : "border-white bg-black/20 text-transparent group-hover:bg-black/30"
+                    )}
+                  >
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  </span>
+                  {on && <span className="pointer-events-none absolute inset-0 bg-brand/10" />}
+                </span>
+                <span className="block min-w-0 px-1.5 pb-1.5 pt-1">
+                  <span className="line-clamp-2 text-[11px] leading-snug text-text-2">{m.caption ?? "Sin texto"}</span>
+                  {date && <span className="mt-0.5 block text-[10px] text-text-3">{date}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {items && next && (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loadingMore}
+            data-testid="ig-media-more"
+            onClick={async () => {
+              setLoadingMore(true);
+              await load(next);
+              setLoadingMore(false);
+            }}
+          >
+            {loadingMore && <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.7} />}
+            Ver más publicaciones
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RuleEditor({
   rule,
   onClose,
@@ -366,25 +567,10 @@ function RuleEditor({
   const [buttonLabel, setButtonLabel] = useState(rule?.buttonLabel ?? "");
   const [followUpText, setFollowUpText] = useState(rule?.followUpText ?? "");
   const [publicReplies, setPublicReplies] = useState(rule?.publicReplies.join("\n") ?? "");
-  const [media, setMedia] = useState<Media[] | null>(null);
-  const [mediaError, setMediaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (target !== "media" || media) return;
-    void (async () => {
-      const res = await fetch("/api/integrations/instagram/media").catch(() => null);
-      if (!res?.ok) {
-        setMediaError(await readError(res, "No se pudieron traer las publicaciones."));
-        setMedia([]);
-        return;
-      }
-      setMedia(((await res.json()) as { media: Media[] }).media);
-    })();
-  }, [target, media]);
-
-  const toggleMedia = (m: Media) =>
+  const toggleMedia = (m: Media | IgMediaPreview) =>
     setSelected((cur) =>
       cur.some((x) => x.id === m.id)
         ? cur.filter((x) => x.id !== m.id)
@@ -468,40 +654,7 @@ function RuleEditor({
               </button>
             ))}
           </div>
-          {target === "media" && (
-            <div className="space-y-2">
-              {mediaError && <Notice kind="error">{mediaError}</Notice>}
-              {!media ? (
-                <p className="text-sm text-muted-foreground">Trayendo tus publicaciones…</p>
-              ) : media.length === 0 && !mediaError ? (
-                <p className="text-sm text-muted-foreground">La cuenta no tiene publicaciones.</p>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4" data-testid="ig-media-grid">
-                  {media.map((m) => {
-                    const on = selected.some((x) => x.id === m.id);
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => toggleMedia(m)}
-                        data-testid="ig-media-option"
-                        aria-pressed={on}
-                        className={cn("relative rounded-md border-2 p-0.5 text-left", on ? "border-brand" : "border-transparent")}
-                      >
-                        <MediaThumb media={m} />
-                        <span className="mt-1 line-clamp-2 block text-[11px] text-muted-foreground">{m.caption ?? "Sin texto"}</span>
-                        {on && (
-                          <span className="absolute right-1 top-1 rounded-full bg-brand p-0.5 text-white">
-                            <Check className="h-3 w-3" strokeWidth={2.5} />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {target === "media" && <MediaPicker selected={selected} onToggle={toggleMedia} />}
           {target === "live" && (
             <p className="text-xs text-muted-foreground">
               Responde mientras dura el vivo. Instagram no permite respuestas públicas en vivos y
