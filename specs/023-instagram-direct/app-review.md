@@ -1,25 +1,30 @@
 # App Review — Instagram (023 + 030)
 
 App de Meta `2262662764507422` · Instagram app «Corscan CRM-IG» `2135730170674257`.
-Se piden: `instagram_business_basic`, `instagram_business_manage_messages`,
-`instagram_business_manage_comments` (agregado el 5-oct-2026, feature 030) y
-la función **Human Agent** (se agrega sola al pedir mensajes).
+Se piden: `instagram_business_basic`, `instagram_business_manage_messages` e
+`instagram_business_manage_comments` (agregado el 5-oct-2026, feature 030).
+
+**Human Agent queda FUERA de esta solicitud** (decisión del dueño, 5-oct-2026):
+hasta que Meta lo aprueba, Instagram rechaza los envíos con la etiqueta
+`HUMAN_AGENT`, así que el video solo podría mostrarlo fallando. Se quitó del
+borrador en el panel (App Review → «remove»). Mientras tanto el CRM cierra
+Instagram a las 24 h (`INSTAGRAM_HUMAN_AGENT` apagado). Se pide en una
+solicitud aparte más adelante: textos al final de este archivo.
 
 Prerrequisitos (verificar por MCP antes de enviar — `devtools_app_review
 requirements` y `privileges`, y la columna «API Calls» del panel):
 
 - [x] ≥1 llamada exitosa de basic y manage_messages (45 y 37 al 5-oct-2026).
-- [ ] ≥1 llamada exitosa de `instagram_business_manage_comments`: reconectar
-      `@corscan.ing` en producción (para conceder el permiso nuevo) y dejar
-      una regla de comentarios activa: la consulta de comentarios y la
-      respuesta privada del video generan las llamadas.
-- [x] Política de privacidad publicada con la sección de Instagram
-      (corscan.com.ar/privacidad). ⚠ Sumarle una línea sobre comentarios
-      (ver «Política de privacidad» abajo) antes de enviar.
+- [ ] ≥1 llamada exitosa de `instagram_business_manage_comments` (paso
+      «api_precheck» del MCP): reconectar `@corscan.ing` en producción (para
+      conceder el permiso nuevo) y dejar una regla de comentarios activa: la
+      consulta de comentarios y la respuesta privada del video generan las
+      llamadas.
+- [x] Política de privacidad publicada con Instagram y comentarios
+      (corscan.com.ar/privacidad, 5-oct-2026, dronebiz `9ee13c1`).
 - [x] Webhook de Instagram verificado; campos `messages`, `comments`,
       `live_comments`, `standby` y demás suscriptos a nivel app.
 - [x] Redirect URI, deauthorize y data deletion cargados en Business login settings.
-- [ ] Human Agent: decidir si va en esta solicitud (ver nota del paso 9 del guion).
 
 Las respuestas van en INGLÉS (las leen revisores de Meta).
 
@@ -58,10 +63,10 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 > 7. Moderation: in **Comentarios → Ocultar comentarios**, add a word (for
 >    example `spam`). A new comment containing it is hidden automatically;
 >    the activity list lets the business show it again.
-> 8. Human Agent: if the customer's last message is older than 24 hours (but
->    less than 7 days), the composer explains that only a human can reply and
->    the message is sent with the HUMAN_AGENT tag. The AI assistant never uses
->    this tag; outside 24 h it hands the conversation to a human instead.
+> 8. Messaging window: replies are only possible within 24 hours of the
+>    customer's last message. After that, the composer explains that Instagram
+>    does not allow writing until the customer writes again, and the AI
+>    assistant hands the conversation to a human instead of messaging.
 > 9. **Ajustes → Instagram → Desconectar** removes the token and stops
 >    receiving messages and comments.
 
@@ -90,7 +95,7 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 > where it already handles WhatsApp, and replies from there — either a team
 > member or an optional AI assistant trained with the business's own
 > information. Replies are only sent within the 24-hour standard messaging
-> window (or up to 7 days by a human agent). We never send bulk or
+> window. We never send bulk or
 > promotional messages. The business can also set up to 4 ice breakers and a
 > persistent menu (messenger_profile), and replies may include quick replies,
 > link buttons or a carousel. Messages that the business sends from the
@@ -115,30 +120,14 @@ Las respuestas van en INGLÉS (las leen revisores de Meta).
 > comments on the business's own media; we never comment, like, publish or
 > message people who did not interact with the business first.
 
-## Human Agent — How will your app use it?
+## Política de privacidad
 
-> Human Agent lets a member of the business's team answer a customer's
-> Instagram message after the 24-hour window, up to 7 days, for issues that
-> could not be resolved in time (for example a question received on a
-> weekend or one that requires checking availability with the owner). In our
-> inbox, when the last customer message is between 24 hours and 7 days old,
-> the composer shows that only a human can reply and the message is sent with
-> the HUMAN_AGENT tag. Automated replies from the AI assistant never use the
-> tag: outside the 24-hour window the assistant stops and flags the
-> conversation for a human.
+Publicada el 5-oct-2026 (dronebiz `9ee13c1`): sección de Instagram con
+mensajes, historias, origen de links/anuncios y comentarios (un único
+mensaje privado, respuesta pública opcional, ocultar por palabras), y la
+página de eliminación de datos con los comentarios procesados.
 
-## Política de privacidad (agregar antes de enviar)
-
-Una línea en la sección de Instagram de corscan.com.ar/privacidad (repo
-dronebiz, `components/PrivacyPolicy.tsx`):
-
-> Si el negocio activa las respuestas a comentarios, el CRM lee los
-> comentarios de las publicaciones del negocio que coinciden con sus reglas
-> (texto, @usuario y publicación) para responderlos y registrar la
-> actividad, y puede ocultar los comentarios que contienen las palabras que
-> el negocio elija. No publicamos contenido ni comentamos por nuestra cuenta.
-
-## Guion del video (4–5 min, pantalla del CRM + celular)
+## Guion del video (4 min, pantalla del CRM + celular)
 
 Grabar en `crm.corscan.com.ar` con la empresa «Meta Review» (o la real si se
 prefiere) y un segundo celular/cuenta que hace de cliente. Mostrar la URL.
@@ -180,16 +169,32 @@ La cuenta conectada tiene que tener al menos una publicación.
     pestaña «Primer contacto» → dos preguntas frecuentes → «Guardar en
     Instagram» → en el celular, abrir un chat nuevo con la cuenta y mostrar
     las preguntas.
-11. (4:15) **Human Agent**: mostrar una conversación con el último mensaje de
-    hace más de 24 h (preparar una de prueba el día anterior) → el composer
-    explica que solo una persona puede responder → enviar. ⚠ Desde 027 el
-    CRM cierra Instagram a las 24 h mientras `INSTAGRAM_HUMAN_AGENT` esté
-    apagado: para grabar este paso hay que encenderlo en Railway (Meta va a
-    rechazar el envío hasta aprobarlo; se graba la pantalla del composer y el
-    intento). Si preferís no hacerlo, sacá «Human Agent» de esta solicitud y
-    pedilo después.
-12. (4:40) Ajustes → Instagram → «Desconectar» → confirmar.
+11. (4:15) Ajustes → Instagram → «Desconectar» → confirmar.
+
+No se graba nada de responder pasadas las 24 h: Human Agent no está en esta
+solicitud y el CRM no lo ofrece.
 
 Checklist del video: sin datos personales reales de terceros, subtítulos o
 narración en inglés opcional (los textos de arriba explican cada paso),
 resolución ≥720p, que se vea la URL del CRM al menos una vez.
+
+## Para más adelante: Human Agent (solicitud aparte)
+
+Cuando haga falta responder entre las 24 h y los 7 días: agregar «Human
+Agent» al App Review desde el caso de uso de Instagram, encender
+`INSTAGRAM_HUMAN_AGENT=true` en Railway solo para grabar (el composer pasa
+a «solo una persona puede responder» y el envío sale con la etiqueta; Meta
+lo rechaza hasta aprobarlo), grabar ese paso y apagarlo de nuevo hasta la
+aprobación. Texto para el formulario:
+
+### Human Agent — How will your app use it?
+
+> Human Agent lets a member of the business's team answer a customer's
+> Instagram message after the 24-hour window, up to 7 days, for issues that
+> could not be resolved in time (for example a question received on a
+> weekend or one that requires checking availability with the owner). In our
+> inbox, when the last customer message is between 24 hours and 7 days old,
+> the composer shows that only a human can reply and the message is sent with
+> the HUMAN_AGENT tag. Automated replies from the AI assistant never use the
+> tag: outside the 24-hour window the assistant stops and flags the
+> conversation for a human.

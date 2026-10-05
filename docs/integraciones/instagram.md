@@ -64,9 +64,10 @@ funciona con cuentas que tienen rol en la app. Para probar:
   alcanza.
 
 Para el App Review se piden `instagram_business_basic`,
-`instagram_business_manage_messages`, `instagram_business_manage_comments`
-(030) y la función **Human Agent**. Guion del video y textos:
-`specs/023-instagram-direct/app-review.md`.
+`instagram_business_manage_messages` e `instagram_business_manage_comments`
+(030). **Human Agent** quedó fuera de esta solicitud (5-oct-2026): hasta
+aprobarlo Instagram rechaza la etiqueta, así que se pide aparte más adelante.
+Guion del video y textos: `specs/023-instagram-direct/app-review.md`.
 
 ## 4. Reglas del canal (lo que ve el equipo)
 
