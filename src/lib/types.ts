@@ -71,6 +71,8 @@ export type MessageDto = {
   source: "cloud" | "history" | "phone";
   /** 030: botones/tarjetas/respuestas rápidas, comentario, historia, standby. */
   details: MessageDetails | null;
+  /** 031: lo escribió una persona del equipo (CRM con autor, celular o app). */
+  team: boolean;
   createdAt: string;
 };
 

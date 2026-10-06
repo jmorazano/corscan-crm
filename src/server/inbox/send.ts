@@ -37,6 +37,8 @@ export async function sendText(input: {
    * en WhatsApp los enlaces van escritos en el texto).
    */
   interactive?: Interactive | null;
+  /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
+  sentByUserId?: string | null;
 }): Promise<SendResult> {
   const db = getDb();
 
@@ -78,6 +80,7 @@ export async function sendText(input: {
       text: input.text,
       aiGenerated: input.aiGenerated ?? false,
       interactive: input.interactive ?? null,
+      sentByUserId: input.sentByUserId ?? null,
     });
   }
   // 030: WhatsApp no muestra estos formatos acá: los enlaces van en el texto.
@@ -131,6 +134,7 @@ export async function sendText(input: {
         text: input.text,
         status: "pending",
         aiGenerated: input.aiGenerated ?? false,
+        sentByUserId: input.sentByUserId ?? null,
       })
       .returning();
   } catch (err) {

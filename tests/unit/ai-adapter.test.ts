@@ -155,4 +155,22 @@ describe("chatJson (reintentos y errores tipados)", () => {
     if (!result.ok) expect(result.error).toBe("not_configured");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("031: sin crédito (402) → un solo intento y el status para explicarlo en el hilo", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response('{"error":{"message":"Insufficient credits"}}', { status: 402 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await chatJson(config, schema, [{ role: "user", content: "hola" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ ok: false, error: "provider_error", status: 402 });
+  });
+
+  it("031: un 500 sí se reintenta y conserva el status", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("caído", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await chatJson(config, schema, [{ role: "user", content: "hola" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(res).toMatchObject({ ok: false, status: 503 });
+  });
 });

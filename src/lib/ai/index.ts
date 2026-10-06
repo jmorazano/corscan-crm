@@ -56,7 +56,13 @@ export type AiConfig = {
 
 export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
-  | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
+  | {
+      ok: false;
+      error: "not_configured" | "provider_error" | "invalid_output";
+      detail: string;
+      /** 031: último HTTP del proveedor (402 = sin crédito), para explicarlo en el hilo. */
+      status?: number;
+    };
 
 /** Error HTTP del proveedor con su status (para clasificar sin regex frágil). */
 export class ProviderHttpError extends Error {
@@ -117,6 +123,7 @@ export async function chatJson<T>(
     (opts?.judge ? DEFAULT_MAX_TOKENS_JUDGE : DEFAULT_MAX_TOKENS_AGENT);
 
   let lastDetail = "";
+  let lastStatus: number | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const attemptMessages: ChatMessage[] =
       attempt === 1
@@ -129,6 +136,7 @@ export async function chatJson<T>(
             },
           ];
     try {
+      lastStatus = undefined;
       const raw = await callProvider(
         config.token,
         model,
@@ -151,6 +159,9 @@ export async function chatJson<T>(
       return { ok: true, data: parsed.data, raw };
     } catch (err) {
       lastDetail = err instanceof Error ? err.message : String(err);
+      lastStatus = err instanceof ProviderHttpError ? err.status : undefined;
+      // 031: sin crédito, token o modelo inválidos no se arreglan reintentando.
+      if (lastStatus !== undefined && [400, 401, 402, 403, 404].includes(lastStatus)) break;
       if (attempt < MAX_ATTEMPTS) {
         await sleep(RETRY_DELAY_MS * attempt);
       }
@@ -159,10 +170,12 @@ export async function chatJson<T>(
 
   return {
     ok: false,
-    error: lastDetail.includes("esquema") || lastDetail.includes("JSON")
-      ? "invalid_output"
-      : "provider_error",
+    error:
+      lastStatus === undefined && (lastDetail.includes("esquema") || lastDetail.includes("JSON"))
+        ? "invalid_output"
+        : "provider_error",
     detail: lastDetail,
+    ...(lastStatus !== undefined ? { status: lastStatus } : {}),
   };
 }
 

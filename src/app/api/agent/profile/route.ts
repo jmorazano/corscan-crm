@@ -1,5 +1,6 @@
 import { apiError, parseBody, withAuth, withOwner } from "@/lib/api";
 import { getEnv } from "@/lib/env";
+import { resolveTeamSilenceMs, TEAM_SILENCE_DEFAULT_MS } from "@/lib/agent-presence";
 import { isAiConfigured } from "@/server/ai/credentials";
 import {
   getProfile,
@@ -25,8 +26,12 @@ export const GET = withAuth(async (session) => {
       replyDelayMs: p.replyDelayMs,
       // 025: con esto el agente no le contesta a conocidos del celular.
       sharedPersonalNumber: p.sharedPersonalNumber,
+      // 031: null = 10 min (abajo, el efectivo para la bandeja).
+      teamSilenceMs: p.teamSilenceMs,
     },
     defaultReplyDelayMs: getEnv().AGENT_COALESCE_MS,
+    defaultTeamSilenceMs: TEAM_SILENCE_DEFAULT_MS,
+    effectiveTeamSilenceMs: resolveTeamSilenceMs(p.teamSilenceMs),
     aiConfigured: await isAiConfigured(session.organizationId),
   });
 });

@@ -41,6 +41,7 @@ const profile = {
   escalationRules: "Si piden factura A",
   greeting: null,
   replyDelayMs: null,
+  teamSilenceMs: null,
   sharedPersonalNumber: false,
   createdAt: now,
   updatedAt: now,

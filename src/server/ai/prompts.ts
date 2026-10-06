@@ -41,6 +41,19 @@ export function privacyRules(): string {
 }
 
 /**
+ * 031: el equipo escribió en esta conversación. Sus mensajes llegan al
+ * modelo como «assistant» (son del negocio), así que hay que decirle que no
+ * fueron suyos para que retome sin presentarse otra vez ni desdecir al equipo.
+ */
+function teamInterventionSection(): string {
+  return [
+    "INTERVENCIÓN DEL EQUIPO: algunos mensajes del negocio en esta conversación los escribió una persona del equipo, no vos (en el historial figuran como tuyos).",
+    "- Retomá con naturalidad: no te vuelvas a presentar ni repitas lo que ya se dijo.",
+    "- Respetá lo que el equipo acordó con el cliente (reservas, precios, pagos, plazos). Si el cliente vuelve sobre algo que quedó en manos del equipo y no lo podés resolver, decíselo con amabilidad y usá handoff.",
+  ].join("\n");
+}
+
+/**
  * Sección del NÚMERO PERSONAL (025, US4): el WhatsApp del negocio es también
  * el celular del dueño. A los conocidos del celular el pipeline ni siquiera
  * les llega (corte determinístico); esto cubre los números nuevos.
@@ -124,8 +137,15 @@ export function buildAgentSystemPrompt(input: {
    * comentario, historia). La arma `renderOriginSection`.
    */
   originSection?: string | null;
+  /**
+   * 031: en el historial hay mensajes que escribió una persona del equipo
+   * (entran como «assistant»). Sin esta aclaración el agente se vuelve a
+   * presentar o contradice lo que el equipo acordó.
+   */
+  teamIntervened?: boolean;
 }): string {
   const { profile } = input;
+  const hasTools = Boolean(input.mcpSection || input.listingsSection || input.calendarSection);
   const stageNames = input.stages.map((s) => s.name).join(" | ");
   const calendar = input.calendarSection ?? null;
   const transactional = input.transactionalNotice
@@ -158,11 +178,12 @@ export function buildAgentSystemPrompt(input: {
     input.listingsSection ?? null,
     input.originSection ?? null,
     transactional,
+    input.teamIntervened ? teamInterventionSection() : null,
     input.sharedPersonalNumber ? personalNumberSection() : null,
     privacyRules(),
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
-      '- {"action":"none"} — no responder nada.',
+      '- {"action":"none","reason":"..."} — no responder nada (reason: el porqué en pocas palabras; lo ve solo el equipo, nunca el cliente).',
       '- {"action":"reply","text":"..."} — responder al cliente.',
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       // 021: el nombre viaja con la respuesta. Con una acción por turno, una
@@ -204,8 +225,24 @@ export function buildAgentSystemPrompt(input: {
               : []),
           ]
         : []),
+      ...(hasTools
+        ? [
+            '- Las consultas (search_stays, show_stay, search_listings, show_listing, check_availability) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
+          ]
+        : []),
       "Reglas duras:",
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
+      // 031: el caso Agustina — «Busco opciones…» y nunca buscó.
+      ...(hasTools
+        ? [
+            '- NUNCA anuncies que vas a buscar, consultar o confirmar algo después («busco opciones…», «te confirmo en un rato»): no hay después — no volvés a hablar hasta que el cliente escriba. Si necesitás datos, pedí la herramienta en ESTA respuesta (con "lead_note" si querés anotar algo).',
+          ]
+        : []),
+      // 031: el caso Guillermo — el comprobante que nadie contestó.
+      // El conocimiento del negocio manda (Altos ya tiene su respuesta); esto
+      // es el piso para quien no lo definió. Sin handoff: el aviso push de
+      // cada entrante ya le llega al equipo.
+      "- Si el cliente manda un comprobante de pago o dice que ya pagó o transfirió: respondé lo que indique el conocimiento del negocio; si no dice nada, agradecé y decile que el equipo lo verifica y le confirma. NUNCA des un pago por acreditado ni confirmes una reserva vos.",
       // 020: sin esta línea el modelo trata el marcador como si el cliente
       // hubiera escrito esa frase, y termina respondiendo "ok, mandaste una
       // imagen" en vez de hacer algo útil con eso.

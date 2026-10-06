@@ -43,6 +43,8 @@ export async function sendInstagramConversationText(input: {
   aiGenerated: boolean;
   /** 030: botones, tarjetas y respuestas rápidas. */
   interactive?: Interactive | null;
+  /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
+  sentByUserId?: string | null;
 }): Promise<{ messageId: string }> {
   const { organizationId, conversation, contact } = input;
 
@@ -128,6 +130,7 @@ export async function sendInstagramConversationText(input: {
         // llega por `messaging_seen`.
         status: "sent",
         aiGenerated: input.aiGenerated,
+        sentByUserId: input.sentByUserId ?? null,
         waTimestamp: now,
       })
       .onConflictDoNothing({
@@ -141,7 +144,14 @@ export async function sendInstagramConversationText(input: {
       // El eco llegó antes: la fila es nuestra, no «Desde Instagram».
       const updated = await db
         .update(schema.message)
-        .set({ source: "cloud", aiGenerated: input.aiGenerated, details: planned.details, text: chunk, type: "text" })
+        .set({
+          source: "cloud",
+          aiGenerated: input.aiGenerated,
+          sentByUserId: input.sentByUserId ?? null,
+          details: planned.details,
+          text: chunk,
+          type: "text",
+        })
         .where(
           scoped(
             schema.message.organizationId,

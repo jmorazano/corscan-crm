@@ -34,6 +34,22 @@ import { agentTextFor } from "@/lib/inbound-media";
 import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
+import {
+  lastConversationEvent,
+  lastTeamMessageAt,
+  recordConversationEvent,
+  recordSilence,
+} from "@/server/ai/events";
+import { agentPresence, isTeamMessage, resolveTeamSilenceMs } from "@/lib/agent-presence";
+import {
+  clipReason,
+  friendlyProviderError,
+  friendlySendError,
+  friendlyToolFailure,
+  type ConversationEventDetails,
+  type SilentReason,
+} from "@/lib/conversation-events";
+import { announcesLookup } from "@/lib/lookup-promise";
 import { buildAgentSystemPrompt, renderOriginSection } from "@/server/ai/prompts";
 import {
   executeBookAppointment,
@@ -143,6 +159,7 @@ async function executeTurn(conversationId: string): Promise<void> {
     await runAgentTurn(conversationId);
   } catch (err) {
     console.error("[agente] turno falló:", err);
+    await recordUnexpectedFailure(conversationId);
   } finally {
     entry.running = false;
     if (entry.pending) {
@@ -158,6 +175,34 @@ async function executeTurn(conversationId: string): Promise<void> {
     } else {
       map.delete(conversationId);
     }
+  }
+}
+
+/**
+ * 031: un turno que reventó por algo inesperado deja la línea en el hilo
+ * (antes solo quedaba en el log y el cliente se quedaba sin respuesta sin
+ * que nadie en el CRM lo supiera).
+ */
+async function recordUnexpectedFailure(conversationId: string): Promise<void> {
+  try {
+    const rows = await getDb()
+      .select({
+        organizationId: schema.conversation.organizationId,
+        isTest: schema.conversation.isTest,
+      })
+      .from(schema.conversation)
+      .where(eq(schema.conversation.id, conversationId))
+      .limit(1);
+    const row = rows[0];
+    if (!row || row.isTest) return;
+    await recordConversationEvent({
+      organizationId: row.organizationId,
+      conversationId,
+      kind: "ai_error",
+      reason: "unexpected",
+    });
+  } catch {
+    // la bitácora jamás tumba nada
   }
 }
 
@@ -184,15 +229,11 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const aiConfig = await getAiConfig(organizationId);
   if (!aiConfig) return;
 
-  // Condiciones de silencio: handoff activo o IA apagada en la conversación.
-  if (conversation.handoffAt || !conversation.aiEnabled) return;
-
   // 011 (FR-007): a un contacto dado de baja no se le responde nada —
   // defensa en profundidad además del corte en la ingesta.
   const contactRow = conversation.isTest
     ? null
     : await loadContact(organizationId, conversation.contactId);
-  if (contactRow?.optedOutAt) return;
 
   const profileRows = await db
     .select()
@@ -205,12 +246,29 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
 
+  // 031: de acá en adelante, cada vez que el agente NO responde queda el
+  // motivo en el hilo (solo conversaciones reales: el Laboratorio tiene su
+  // propio informe). Sin IA configurada o con el agente apagado no hay
+  // líneas: ahí no es «no respondió», es «no hay agente».
+  const silence = async (reason: SilentReason, details?: ConversationEventDetails): Promise<void> => {
+    if (conversation.isTest) return;
+    await recordSilence({ organizationId, conversationId, reason, details });
+  };
+
+  if (contactRow?.optedOutAt) {
+    await silence("opted_out");
+    return;
+  }
+
   // 025 (US4): el WhatsApp es también el celular personal del dueño. A quien
   // el dueño ya conocía desde el celular (agenda, historial, o le escribió él
   // primero) el agente NO le contesta: son amigos, familia y conocidos, no
   // leads. Corte determinístico ANTES del proveedor, sin handoff ni push: el
   // dueño ve el mensaje en su teléfono como siempre.
-  if (shouldSkipKnownContact(profile.sharedPersonalNumber, contactRow)) return;
+  if (shouldSkipKnownContact(profile.sharedPersonalNumber, contactRow)) {
+    await silence("known_contact");
+    return;
+  }
 
   const history = await db
     .select()
@@ -221,6 +279,31 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   history.reverse();
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
   if (!lastInbound) return;
+
+  // 031 (decisión del dueño): el equipo presente calla al agente N minutos;
+  // el switch apagado dura hasta que lo prendan; la atención humana espera a
+  // que una persona escriba y, vencida la ventana desde ahí, la IA retoma.
+  // Reemplaza el corte viejo «handoff o IA apagada → return».
+  const windowMs = resolveTeamSilenceMs(profile.teamSilenceMs);
+  const presence = agentPresence({
+    aiEnabled: conversation.aiEnabled,
+    handoffAt: conversation.handoffAt,
+    lastTeamAt: conversation.isTest ? null : await lastTeamMessageAt(organizationId, conversationId),
+    now: new Date(),
+    windowMs,
+  });
+  const windowMinutes = Math.round(windowMs / 60_000);
+  if (presence.silent) {
+    await silence(presence.reason, {
+      ...(presence.until ? { until: presence.until.toISOString() } : {}),
+      minutes: windowMinutes,
+      ...(presence.reason === "handoff" && conversation.handoffReason
+        ? { handoffReason: conversation.handoffReason }
+        : {}),
+    });
+    return;
+  }
+
   // 017: si lo último de la conversación ya es del negocio (el dueño
   // respondió desde el celular, o alguien mandó algo desde el CRM), el
   // agente no habla encima.
@@ -228,20 +311,36 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (lastMessage && lastMessage.direction === "out") return;
   // 030: otra app (p. ej. ManyChat) maneja este hilo de Instagram: el
   // agente no puede responder (Instagram rechazaría el envío).
-  if (lastInbound.details?.standby) return;
+  if (lastInbound.details?.standby) {
+    await silence("standby");
+    return;
+  }
 
   // 014 (FR-011): si lo último que mandó la empresa fue una NOTIFICACIÓN
   // enviada por API (plantilla con api_key_id), un simple acuse de recibo
   // del cliente no merece respuesta — se corta ANTES del proveedor. Si
   // preguntó o pidió algo, el modelo atiende con la sección transaccional.
   const transactional = transactionalContext(history);
-  if (transactional?.allAcknowledgments) return;
+  if (transactional?.allAcknowledgments) {
+    await silence("acknowledgment");
+    return;
+  }
+
+  // 031: vuelve. Si venía de una atención humana ya atendida por el equipo,
+  // se limpia (el panel deja de mostrarla) y queda la línea de la vuelta.
+  if (!conversation.isTest) {
+    await resumeIfSilenced(conversation, presence.resumed, windowMinutes);
+  }
 
   // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
     await applyHandoff(conversationId, organizationId, "ventana");
     return;
   }
+
+  // 031: el equipo intervino en lo que el agente tiene delante — sus mensajes
+  // entran como «assistant», así que el prompt aclara que no los escribió él.
+  const teamIntervened = history.some((m) => isTeamMessage(m));
 
   // Patrón de respaldo ANTES del LLM (FR-022).
   if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
@@ -422,6 +521,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         sharedPersonalNumber: profile.sharedPersonalNumber,
         originSection:
           conversation.kind === "instagram" ? renderOriginSection(conversation.igOrigin ?? null) : null,
+        teamIntervened,
       }),
     },
     // 020: un entrante sin texto (una foto, un audio que no se pudo
@@ -454,11 +554,23 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).
     console.error(`[agente] fallo del proveedor (raw): ${result.detail}`);
-    await applyHandoff(conversationId, organizationId, "error");
+    await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(result));
     return;
   }
 
   let action: AgentActionType = result.data;
+
+  // 031: la nota del lead puede viajar con una herramienta (`lead_note`) o
+  // quedar de un `update_lead` que la guarda de promesas no dejó salir. Se
+  // guarda UNA vez por texto: el modelo suele repetirla en la vuelta siguiente.
+  const savedNotes = new Set<string>();
+  const saveLeadNote = async (note: string | undefined): Promise<void> => {
+    const text = note?.trim();
+    if (!text || savedNotes.has(text)) return;
+    savedNotes.add(text);
+    await appendLeadNote(organizationId, conversation.contactId, text);
+  };
+  const toolsAvailable = mcpSection !== null || calendar !== null || listingsSection !== null;
 
   // Loop de herramienta de la agenda (D6): el servidor ejecuta, el modelo
   // vuelve a decidir con el resultado; acotado a MAX_TOOL_ROUNDS.
@@ -473,157 +585,215 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   let lastListingsSummary: string | null = null;
   let listingsRounds = 0;
   const toolDeadline = Date.now() + TOOL_WALL_CLOCK_MS;
+  let promiseRetried = false;
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS_TOTAL; round++) {
-    const wantsCalendar = isCalendarAction(action);
-    const wantsMcp = isMcpAction(action);
-    const wantsListings = isListingsAction(action);
-    if (!wantsCalendar && !wantsMcp && !wantsListings) break;
-    // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
-    // vueltas al conector, ni al revés.
-    if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
-    if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
-    if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
-    if (Date.now() >= toolDeadline) break;
+  for (;;) {
+    for (let round = 0; round < MAX_TOOL_ROUNDS_TOTAL; round++) {
+      const wantsCalendar = isCalendarAction(action);
+      const wantsMcp = isMcpAction(action);
+      const wantsListings = isListingsAction(action);
+      if (!wantsCalendar && !wantsMcp && !wantsListings) break;
+      // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
+      // vueltas al conector, ni al revés.
+      if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
+      if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
+      if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
+      if (Date.now() >= toolDeadline) break;
 
-    // ---- Publicaciones de Mercado Libre (025) --------------------------
-    if (isListingsAction(action)) {
-      listingsRounds++;
-      if (!listings) {
-        // El modelo pidió publicaciones que esta empresa no tiene: degradar
-        // sin inventar.
-        await say("Dejame confirmar qué propiedades tenemos disponibles y te escribo en un ratito.");
-        await applyHandoff(conversationId, organizationId, "modelo");
-        return;
-      }
-      const out = executeListingsAction(listings, action);
-      if (out.clientSummary) lastListingsSummary = out.clientSummary;
-      // Como el conector MCP: el resultado es un DATO, entra como usuario.
-      messages.push({ role: "user", content: out.toolText });
-      const next = await chatJson(aiConfig, AgentAction, messages);
-      if (!next.ok) {
-        console.error(`[agente] fallo del proveedor tras publicaciones (raw): ${next.detail}`);
-        if (lastListingsSummary) {
-          await say(lastListingsSummary);
+      // 031: la nota del lead que vino con la herramienta.
+      await saveLeadNote((action as { lead_note?: string }).lead_note);
+
+      // ---- Publicaciones de Mercado Libre (025) --------------------------
+      if (isListingsAction(action)) {
+        listingsRounds++;
+        if (!listings) {
+          // El modelo pidió publicaciones que esta empresa no tiene: degradar
+          // sin inventar.
+          await say("Dejame confirmar qué propiedades tenemos disponibles y te escribo en un ratito.");
+          await applyHandoff(conversationId, organizationId, "modelo");
           return;
         }
-        await applyHandoff(conversationId, organizationId, "error");
-        return;
-      }
-      action = next.data;
-      continue;
-    }
-
-    // ---- Conector MCP (016) -------------------------------------------
-    if (isMcpAction(action)) {
-      mcpRounds++;
-      // El modelo pidió una herramienta que esta empresa no tiene: degradar
-      // sin inventar y sin escalar a ciegas.
-      if (!mcp) {
-        await say("Dejame confirmar esa información con el equipo y te escribo en un ratito.");
-        await applyHandoff(conversationId, organizationId, "modelo");
-        return;
-      }
-      const out = await executeMcpAction(mcp, action, {
-        conversationId,
-        sandbox: conversation.isTest,
-        budgetMs: Math.max(0, toolDeadline - Date.now()),
-      });
-      if (out.clientSummary) {
-        lastStaySummary = out.clientSummary;
-        // El enlace ya pasó por safeLink contra los dominios del perfil
-        // cuando el perfil compuso el resumen: extraerlo de ahí es seguro y
-        // evita que el pipeline conozca la forma de la respuesta del PMS.
-        lastStayLink = out.clientSummary.match(/https:\/\/\S+/)?.[0] ?? lastStayLink;
-      }
-      // Corrección #7: el resultado entra como turno de USUARIO, no de
-      // sistema — es un DATO que llegó de afuera, no una regla nuestra.
-      messages.push({ role: MCP_TOOL_TEXT_ROLE, content: out.toolText });
-      const next = await chatJson(aiConfig, AgentAction, messages);
-      if (!next.ok) {
-        console.error(`[agente] fallo del proveedor tras conector (raw): ${next.detail}`);
-        if (lastStaySummary) {
-          await say(lastStaySummary);
+        const out = executeListingsAction(listings, action);
+        if (out.clientSummary) lastListingsSummary = out.clientSummary;
+        // Como el conector MCP: el resultado es un DATO, entra como usuario.
+        messages.push({ role: "user", content: out.toolText });
+        const next = await chatJson(aiConfig, AgentAction, messages);
+        if (!next.ok) {
+          console.error(`[agente] fallo del proveedor tras publicaciones (raw): ${next.detail}`);
+          if (lastListingsSummary) {
+            await say(lastListingsSummary);
+            return;
+          }
+          await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
           return;
         }
-        await applyHandoff(conversationId, organizationId, "error");
-        return;
+        action = next.data;
+        continue;
       }
-      action = next.data;
-      continue;
-    }
 
-    // ---- Agenda (005) --------------------------------------------------
-    // El guard en línea estrecha `action` a la unión de la agenda (con la
-    // variable booleana de arriba TypeScript no puede hacerlo).
-    if (!isCalendarAction(action)) break;
-    calendarRounds++;
-
-    // Sin agenda (o agendado deshabilitado para reservas): el modelo no
-    // debió elegir esto — degradar a derivación amable.
-    if (!calendar || calendar.integration.status === "reconnect_required") {
-      await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
-      await applyHandoff(conversationId, organizationId, "modelo");
-      return;
-    }
-    if (action.action === "book_appointment" && !calendar.integration.rules.agentBookingEnabled) {
-      await deliverReply(conversation, "Perfecto, un compañero del equipo te confirma ese turno enseguida.");
-      await applyHandoff(conversationId, organizationId, "modelo");
-      return;
-    }
-
-    let toolText: string;
-    if (action.action === "check_availability") {
-      const out = await executeCheckAvailability(calendar, action.date, conversation.isTest);
-      toolText = out.text;
-      lastAvailabilityText = out.slots.length > 0 ? out.slots.map((s) => s.label).join(", ") : null;
-    } else {
-      const contact = await loadContact(organizationId, conversation.contactId);
-      if (!contact) return;
-      const out = await executeBookAppointment(calendar, {
-        organizationId,
-        contactId: contact.id,
-        contactName: contact.name,
-        contactPhone: contact.phone,
-        conversationId,
-        start: action.start,
-        note: action.note,
-        sandbox: conversation.isTest,
-      });
-      if (out.kind === "booked") {
-        const reply = action.reply?.trim()
-          ? guardPrivacy(action.reply)
-          : `¡Listo! Tu turno quedó confirmado para el ${out.appointment.whenText}.`;
-        await deliverReply(conversation, reply);
-        if (!conversation.isTest) {
-          await appendLeadNote(
+      // ---- Conector MCP (016) -------------------------------------------
+      if (isMcpAction(action)) {
+        mcpRounds++;
+        // El modelo pidió una herramienta que esta empresa no tiene: degradar
+        // sin inventar y sin escalar a ciegas.
+        if (!mcp) {
+          await say("Dejame confirmar esa información con el equipo y te escribo en un ratito.");
+          await applyHandoff(conversationId, organizationId, "modelo");
+          return;
+        }
+        const out = await executeMcpAction(mcp, action, {
+          conversationId,
+          sandbox: conversation.isTest,
+          budgetMs: Math.max(0, toolDeadline - Date.now()),
+        });
+        // 031: la consulta no llegó al sistema de reservas — queda en el hilo
+        // aunque el agente conteste igual con lo que sepa.
+        if (out.failure && !conversation.isTest) {
+          await recordConversationEvent({
             organizationId,
-            conversation.contactId,
-            `Turno agendado: ${out.appointment.whenText}${action.note ? ` — ${action.note}` : ""}`
-          );
-          publish(organizationId, {
-            type: "conversation.updated",
-            data: { conversation: { id: conversationId } },
+            conversationId,
+            kind: "ai_error",
+            reason: "tool",
+            details: { detail: friendlyToolFailure(out.failure) },
           });
         }
+        if (out.clientSummary) {
+          lastStaySummary = out.clientSummary;
+          // El enlace ya pasó por safeLink contra los dominios del perfil
+          // cuando el perfil compuso el resumen: extraerlo de ahí es seguro y
+          // evita que el pipeline conozca la forma de la respuesta del PMS.
+          lastStayLink = out.clientSummary.match(/https:\/\/\S+/)?.[0] ?? lastStayLink;
+        }
+        // Corrección #7: el resultado entra como turno de USUARIO, no de
+        // sistema — es un DATO que llegó de afuera, no una regla nuestra.
+        messages.push({ role: MCP_TOOL_TEXT_ROLE, content: out.toolText });
+        const next = await chatJson(aiConfig, AgentAction, messages);
+        if (!next.ok) {
+          console.error(`[agente] fallo del proveedor tras conector (raw): ${next.detail}`);
+          if (lastStaySummary) {
+            await say(lastStaySummary);
+            return;
+          }
+          await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
+          return;
+        }
+        action = next.data;
+        continue;
+      }
+
+      // ---- Agenda (005) --------------------------------------------------
+      // El guard en línea estrecha `action` a la unión de la agenda (con la
+      // variable booleana de arriba TypeScript no puede hacerlo).
+      if (!isCalendarAction(action)) break;
+      calendarRounds++;
+
+      // Sin agenda (o agendado deshabilitado para reservas): el modelo no
+      // debió elegir esto — degradar a derivación amable.
+      if (!calendar || calendar.integration.status === "reconnect_required") {
+        await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
+        await applyHandoff(conversationId, organizationId, "modelo");
         return;
       }
-      if (out.kind === "escalate") {
-        await deliverReply(conversation, out.text);
-        await applyHandoff(conversationId, organizationId, "error");
+      if (action.action === "book_appointment" && !calendar.integration.rules.agentBookingEnabled) {
+        await deliverReply(conversation, "Perfecto, un compañero del equipo te confirma ese turno enseguida.");
+        await applyHandoff(conversationId, organizationId, "modelo");
         return;
       }
-      toolText = out.text;
+
+      let toolText: string;
+      if (action.action === "check_availability") {
+        const out = await executeCheckAvailability(calendar, action.date, conversation.isTest);
+        toolText = out.text;
+        lastAvailabilityText = out.slots.length > 0 ? out.slots.map((s) => s.label).join(", ") : null;
+      } else {
+        const contact = await loadContact(organizationId, conversation.contactId);
+        if (!contact) return;
+        const out = await executeBookAppointment(calendar, {
+          organizationId,
+          contactId: contact.id,
+          contactName: contact.name,
+          contactPhone: contact.phone,
+          conversationId,
+          start: action.start,
+          note: action.note,
+          sandbox: conversation.isTest,
+        });
+        if (out.kind === "booked") {
+          const reply = action.reply?.trim()
+            ? guardPrivacy(action.reply)
+            : `¡Listo! Tu turno quedó confirmado para el ${out.appointment.whenText}.`;
+          await deliverReply(conversation, reply);
+          if (!conversation.isTest) {
+            await appendLeadNote(
+              organizationId,
+              conversation.contactId,
+              `Turno agendado: ${out.appointment.whenText}${action.note ? ` — ${action.note}` : ""}`
+            );
+            publish(organizationId, {
+              type: "conversation.updated",
+              data: { conversation: { id: conversationId } },
+            });
+          }
+          return;
+        }
+        if (out.kind === "escalate") {
+          await deliverReply(conversation, out.text);
+          await applyHandoff(conversationId, organizationId, "error", "no se pudo reservar el turno en el calendario");
+          return;
+        }
+        toolText = out.text;
+      }
+
+      messages.push({ role: "system", content: toolText });
+      const next = await chatJson(aiConfig, AgentAction, messages);
+      if (!next.ok) {
+        console.error(`[agente] fallo del proveedor tras herramienta (raw): ${next.detail}`);
+        await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
+        return;
+      }
+      action = next.data;
     }
 
-    messages.push({ role: "system", content: toolText });
-    const next = await chatJson(aiConfig, AgentAction, messages);
-    if (!next.ok) {
-      console.error(`[agente] fallo del proveedor tras herramienta (raw): ${next.detail}`);
-      await applyHandoff(conversationId, organizationId, "error");
-      return;
+    // 031 (US2): guarda de PROMESAS VACÍAS. «Busco opciones para 10 personas…»
+    // sin haber buscado deja al cliente esperando para siempre: el agente solo
+    // vuelve a hablar cuando el cliente escribe. Con herramientas disponibles y
+    // sin ninguna consulta en el turno, ese texto no sale: se guarda la nota (si
+    // la había) y se le pide UNA vez que consulte ahora o conteste sin prometer.
+    const usedTools = calendarRounds + mcpRounds + listingsRounds > 0;
+    if (!promiseRetried && toolsAvailable && !usedTools && announcesLookup(conversationalText(action))) {
+      promiseRetried = true;
+      console.warn(`[agente] promesa de consulta sin consultar en ${conversation.id}: se le pide que consulte`);
+      if (action.action === "update_lead") await saveLeadNote(action.note);
+      messages.push(
+        { role: "assistant", content: JSON.stringify(action) },
+        { role: "system", content: PROMISE_CORRECTION }
+      );
+      const retry = await chatJson(aiConfig, AgentAction, messages);
+      if (!retry.ok) {
+        console.error(`[agente] fallo del proveedor tras la corrección (raw): ${retry.detail}`);
+        await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(retry));
+        return;
+      }
+      action = retry.data;
+      continue;
     }
-    action = next.data;
+    break;
+  }
+
+  // 031 (AC2.3): insistió en prometer sin consultar. Sale (callarlo sería
+  // peor) y pasa a atención humana con aviso, para que una persona consulte.
+  if (
+    promiseRetried &&
+    calendarRounds + mcpRounds + listingsRounds === 0 &&
+    announcesLookup(conversationalText(action))
+  ) {
+    if (action.action === "update_lead") await saveLeadNote(action.note);
+    if (action.action === "reply" || action.action === "update_lead") {
+      await learnContactName(organizationId, conversation.contactId, action.contact_name);
+    }
+    await say(conversationalText(action), action.action === "reply" || action.action === "update_lead" ? action : null);
+    await applyHandoff(conversationId, organizationId, "modelo", "avisó que iba a consultar y no lo hizo");
+    return;
   }
 
   // 016: agotado el presupuesto del CONECTOR, el modelo sigue pidiendo datos.
@@ -726,12 +896,14 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   switch (action.action) {
     case "none":
+      // 031: el agente leyó y eligió callar — que se vea, con su motivo.
+      await silence("no_reply_needed", { detail: clipReason(action.reason) });
       return;
     case "reply":
       await say(action.text, action);
       return;
     case "update_lead": {
-      await appendLeadNote(organizationId, conversation.contactId, action.note);
+      await saveLeadNote(action.note);
       if (action.reply) {
         await say(action.reply, action);
       }
@@ -741,13 +913,73 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       if (action.farewell) {
         await say(action.farewell);
       }
-      await applyHandoff(conversationId, organizationId, "modelo");
+      await applyHandoff(conversationId, organizationId, "modelo", clipReason(action.reason));
       return;
     }
   }
 }
 
 type Conversation = typeof schema.conversation.$inferSelect;
+
+/** 031: lo que el agente le diría al cliente con esta acción (para la guarda de promesas). */
+function conversationalText(action: AgentActionType): string {
+  if (action.action === "reply") return action.text;
+  if (action.action === "update_lead") return action.reply ?? "";
+  return "";
+}
+
+const PROMISE_CORRECTION =
+  "Tu respuesta anuncia que vas a buscar, consultar o confirmar algo después. En este sistema NO hay después: " +
+  "no vas a volver a hablar hasta que el cliente escriba de nuevo. Si necesitás datos para responder, pedí AHORA " +
+  "la herramienta que corresponde (podés sumar \"lead_note\" para guardar la nota del lead). Si no hace falta " +
+  "consultar nada, respondé con lo que sabés, sin prometer una búsqueda.";
+
+/**
+ * 031: la vuelta del agente. Limpia la atención humana que el equipo ya
+ * atendió (y cuya ventana venció) y deja la línea «La IA retomó…». Si venía
+ * callado porque el equipo estaba escribiendo, también queda la vuelta, para
+ * que el hilo cierre el tramo que abrió el silencio. El switch apagado nunca
+ * llega acá: ese lo prende una persona.
+ */
+async function resumeIfSilenced(
+  conversation: Conversation,
+  resumed: "handoff" | null,
+  minutes: number
+): Promise<void> {
+  const { organizationId, id: conversationId } = conversation;
+  if (resumed) {
+    await getDb()
+      .update(schema.conversation)
+      .set({
+        handoffAt: null,
+        handoffReason: null,
+        updatedAt: new Date(),
+      })
+      .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conversationId)));
+    publish(organizationId, {
+      type: "conversation.updated",
+      data: { conversation: { id: conversationId } },
+    });
+    await recordConversationEvent({
+      organizationId,
+      conversationId,
+      kind: "ai_resumed",
+      reason: resumed,
+      details: { minutes },
+    });
+    return;
+  }
+  const last = await lastConversationEvent(organizationId, conversationId).catch(() => null);
+  if (last?.kind === "ai_silent" && last.reason === "team_active") {
+    await recordConversationEvent({
+      organizationId,
+      conversationId,
+      kind: "ai_resumed",
+      reason: "team_active",
+      details: { minutes },
+    });
+  }
+}
 
 /**
  * 025 (US4), PURA: ¿el agente se calla con este contacto? Solo si la empresa
@@ -994,6 +1226,11 @@ async function deliverConversationalReply(
       console.warn(
         `[agente] respuesta idéntica suprimida en ${conversation.id}`
       );
+      await recordSilence({
+        organizationId: conversation.organizationId,
+        conversationId: conversation.id,
+        reason: "duplicate",
+      });
       return;
     }
   }
@@ -1021,6 +1258,20 @@ async function deliverReply(
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
+      return;
+    }
+    if (err instanceof SendError) {
+      // 031: la respuesta no salió (Meta caído, token vencido…). Antes solo
+      // quedaba en el log; ahora queda en el hilo con lo que iba a decir,
+      // para que el equipo lo pueda mandar a mano.
+      console.error(`[agente] la respuesta no salió en ${conversation.id}: ${err.code}`);
+      await recordConversationEvent({
+        organizationId: conversation.organizationId,
+        conversationId: conversation.id,
+        kind: "ai_error",
+        reason: "send",
+        details: { detail: friendlySendError(err.code, err.message), text: text.slice(0, 1500) },
+      });
       return;
     }
     throw err;
@@ -1052,7 +1303,9 @@ async function persistTestOutbound(
 export async function applyHandoff(
   conversationId: string,
   organizationId: string,
-  reason: "cliente" | "modelo" | "error" | "ventana" | "visita"
+  reason: "cliente" | "modelo" | "error" | "ventana" | "visita",
+  /** 031: el porqué en criollo (error del proveedor, motivo del modelo). */
+  detail?: string
 ): Promise<void> {
   const db = getDb();
   const updated = await db
@@ -1073,6 +1326,16 @@ export async function applyHandoff(
       conversation: { id: conversationId, handoffReason: reason },
     },
   });
+  // 031: la derivación y su porqué quedan en el hilo.
+  if (!updated[0].isTest) {
+    await recordConversationEvent({
+      organizationId,
+      conversationId,
+      kind: "ai_handoff",
+      reason,
+      details: detail ? { detail } : null,
+    });
+  }
   // 013 (FR-006): avisar a todos los dispositivos que alguien necesita atención.
   notifyHandoff({ organizationId, conversationId, reason });
 }

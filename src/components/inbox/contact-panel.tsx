@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
+import { presenceHint, TEAM_SILENCE_DEFAULT_MS } from "@/lib/agent-presence";
 import { ChannelIcon } from "@/components/channel-icon";
 import { contactHandle } from "@/lib/instagram/messaging";
 import { ContactAvatar } from "@/components/avatar";
@@ -12,6 +13,19 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TagEditor } from "@/components/tags/tag-editor";
 import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
+
+/** 031: qué falta para que la IA vuelva, en una línea. */
+function resumeLabel(
+  hint: NonNullable<ReturnType<typeof presenceHint>>
+): string {
+  if (hint.kind === "needs_person") {
+    return `La IA vuelve sola ${hint.minutes} min después de que alguien del equipo responda.`;
+  }
+  if (hint.kind === "next_message") return "vuelve a responder cuando el cliente escriba";
+  const time = hint.at.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const sameDay = hint.at.toDateString() === new Date().toDateString();
+  return `vuelve a responder si el cliente escribe desde las ${time}${sameDay ? "" : " de mañana"}`;
+}
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -28,8 +42,11 @@ export function ContactPanel({
   onPatchConversation,
   onDelete,
   onClose,
+  lastTeamAt = null,
 }: {
   conversation: ConversationDto;
+  /** 031: último mensaje del equipo en el hilo (para decir cuándo vuelve la IA). */
+  lastTeamAt?: string | null;
   /** Aumenta con cada evento SSE relevante: dispara un refetch en vivo. */
   refreshKey?: number;
   /** Catálogo de etiquetas de conversación (sugerencias del editor). */
@@ -53,6 +70,8 @@ export function ContactPanel({
   // cuando el agente aún no se ha configurado/encendido.
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
+  // 031: ventana del equipo de la empresa (cuánto se calla la IA).
+  const [teamSilenceMs, setTeamSilenceMs] = useState(TEAM_SILENCE_DEFAULT_MS);
   // Confirmación en dos pasos del borrado (mismo patrón que Ajustes → Datos).
   const [confirmDelete, setConfirmDelete] = useState<
     "conversation" | "contact" | null
@@ -91,6 +110,18 @@ export function ContactPanel({
   const agentReady = aiConfigured && agentEnabled;
   const aiActive =
     agentReady && conversation.aiEnabled && !conversation.handoffAt;
+  // 031: qué tiene que pasar para que la IA vuelva (el equipo escribiendo
+  // vence solo; la atención humana espera a que alguien responda; el switch
+  // apagado lo prende una persona).
+  const hint = agentReady
+    ? presenceHint({
+        aiEnabled: conversation.aiEnabled,
+        handoffAt: conversation.handoffAt ? new Date(conversation.handoffAt) : null,
+        lastTeamAt: lastTeamAt ? new Date(lastTeamAt) : null,
+        windowMs: teamSilenceMs,
+      })
+    : null;
+  const resumeHint = hint ? resumeLabel(hint) : null;
 
   // Carga inicial (incluye notas): se re-ejecuta al cambiar de contacto.
   const refetch = useCallback(async () => {
@@ -108,6 +139,9 @@ export function ContactPanel({
     if (stagesRes) setStages(stagesRes.stages);
     setAgentEnabled(Boolean(agentRes?.profile?.enabled));
     setAiConfigured(Boolean(agentRes?.aiConfigured));
+    if (typeof agentRes?.effectiveTeamSilenceMs === "number") {
+      setTeamSilenceMs(agentRes.effectiveTeamSilenceMs);
+    }
     setNotesLoaded(true);
   }, [contactId]);
 
@@ -126,6 +160,9 @@ export function ContactPanel({
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
       setAiConfigured(Boolean(agentRes.aiConfigured));
+      if (typeof agentRes.effectiveTeamSilenceMs === "number") {
+        setTeamSilenceMs(agentRes.effectiveTeamSilenceMs);
+      }
     }
   }, [contactId]);
 
@@ -269,6 +306,11 @@ export function ContactPanel({
                 {HANDOFF_LABELS[conversation.handoffReason ?? ""] ??
                   "La IA está en pausa en esta conversación."}
               </p>
+              {resumeHint && (
+                <p className="mt-1 text-xs text-[#8a6d3b]/80" data-testid="handoff-resume-hint">
+                  {resumeHint.charAt(0).toUpperCase() + resumeHint.slice(1)}
+                </p>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -285,14 +327,16 @@ export function ContactPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">IA en esta conversación</p>
-                <p className="text-[11px] text-text-3">
+                <p className="text-[11px] text-text-3" data-testid="ai-switch-status">
                   {!agentReady
                     ? "Agente sin activar"
-                    : conversation.handoffAt
-                      ? "En pausa · atención humana"
-                      : conversation.aiEnabled
-                        ? "Respondiendo"
-                        : "En pausa"}
+                    : !conversation.aiEnabled
+                      ? "En pausa · no responde hasta que la prendas"
+                      : conversation.handoffAt
+                        ? "En pausa · atención humana"
+                        : resumeHint
+                          ? `El equipo está atendiendo · ${resumeHint}`
+                          : "Respondiendo"}
                 </p>
               </div>
               <button

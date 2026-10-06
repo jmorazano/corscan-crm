@@ -17,6 +17,8 @@ export type EventHandlers = {
   /** Cambio en bloque (006): varias conversaciones a la vez. */
   onConversationsUpdated?: (data: { conversationIds: string[] }) => void;
   onConversationDeleted?: (data: { conversationId: string }) => void;
+  /** 031: línea nueva del hilo (evento de la IA en una conversación). */
+  onConversationEvent?: (data: { conversationId: string; event: unknown }) => void;
   onLabRun?: (data: {
     runId: string;
     status: string;
@@ -76,6 +78,9 @@ export function useEvents(handlers: EventHandlers): void {
     );
     listen("conversations.updated", (d) =>
       handlersRef.current.onConversationsUpdated?.(d as never)
+    );
+    listen("conversation.event", (d) =>
+      handlersRef.current.onConversationEvent?.(d as never)
     );
     listen("conversation.deleted", (d) =>
       handlersRef.current.onConversationDeleted?.(d as never)

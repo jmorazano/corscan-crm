@@ -19,6 +19,8 @@ export type SseEvent =
   /** Cambio en bloque (006): un solo evento por operación, no uno por fila. */
   | { type: "conversations.updated"; data: { conversationIds: string[] } }
   | { type: "conversation.deleted"; data: { conversationId: string } }
+  /** 031: línea del hilo (quién prendió/apagó la IA, por qué no respondió…). */
+  | { type: "conversation.event"; data: { conversationId: string; event: unknown } }
   | {
       type: "lab.run";
       data: {

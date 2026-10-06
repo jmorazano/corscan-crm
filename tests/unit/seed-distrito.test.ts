@@ -99,6 +99,7 @@ describe("seed de Javier (Distrito Inmobiliario)", () => {
         escalationRules: seed.profile.escalationRules ?? null,
         greeting: seed.profile.greeting ?? null,
         replyDelayMs: null,
+        teamSilenceMs: null,
         sharedPersonalNumber: true,
         createdAt: new Date(),
         updatedAt: new Date(),

@@ -14,6 +14,13 @@ import {
   replyDelayMsToSeconds,
   replyDelaySecondsToMs,
 } from "@/lib/agent-timing";
+import {
+  TEAM_SILENCE_DEFAULT_MS,
+  TEAM_SILENCE_MAX_MS,
+  TEAM_SILENCE_MIN_MS,
+  teamSilenceMinutesToMs,
+  teamSilenceMsToMinutes,
+} from "@/lib/agent-presence";
 
 type Profile = {
   enabled: boolean;
@@ -26,6 +33,8 @@ type Profile = {
   replyDelayMs: number | null;
   /** 025: el WhatsApp es también el número personal del dueño. */
   sharedPersonalNumber: boolean;
+  /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
+  teamSilenceMs: number | null;
 };
 
 type KbEntry = {
@@ -138,6 +147,7 @@ export function AgentClient() {
             defaultMs={defaultReplyDelayMs}
             onSave={saveProfile}
           />
+          <TeamSilenceSection teamSilenceMs={profile.teamSilenceMs} onSave={saveProfile} />
           <PersonalNumberSection
             enabled={profile.sharedPersonalNumber}
             onSave={saveProfile}
@@ -349,6 +359,78 @@ function DelaySection({
               : effective === 0
                 ? "Responde apenas llega cada mensaje: puede interrumpir a quien escribe de a varios."
                 : `El agente espera ${effective} s de silencio del cliente antes de responder.`}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 031: «Cuando alguien del equipo interviene». Si una persona escribe en un
+ * chat (desde el CRM o el celular), el agente se calla esta cantidad de
+ * minutos; pasado ese tiempo sin que el equipo escriba, vuelve a responder
+ * cuando el cliente escribe. La pausa manual y la atención humana vencen
+ * igual.
+ */
+function TeamSilenceSection({
+  teamSilenceMs,
+  onSave,
+}: {
+  teamSilenceMs: number | null;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  const toRaw = (ms: number | null) => (ms === null ? "" : String(teamSilenceMsToMinutes(ms)));
+  const [raw, setRaw] = useState(toRaw(teamSilenceMs));
+  useEffect(() => setRaw(toRaw(teamSilenceMs)), [teamSilenceMs]);
+  const parsed = teamSilenceMinutesToMs(raw);
+  const invalid = parsed === "invalid";
+  const defaultMinutes = teamSilenceMsToMinutes(TEAM_SILENCE_DEFAULT_MS);
+  const effective = parsed === "invalid" || parsed === null ? defaultMinutes : teamSilenceMsToMinutes(parsed);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cuando alguien del equipo interviene</CardTitle>
+        <CardDescription>
+          Si una persona del equipo escribe en un chat (desde acá o desde el
+          celular), el agente se calla para no pisarla. Pasados estos minutos
+          sin que el equipo escriba, si el cliente escribe, el agente vuelve a
+          responder. Lo mismo vale para la pausa manual y la atención humana.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-team-silence">Minutos</Label>
+            <Input
+              id="agent-team-silence"
+              inputMode="numeric"
+              className="w-28"
+              placeholder={String(defaultMinutes)}
+              value={raw}
+              aria-invalid={invalid || undefined}
+              data-testid="team-silence-input"
+              onChange={(e) => setRaw(e.target.value)}
+            />
+          </div>
+          <Button
+            disabled={invalid}
+            data-testid="team-silence-save"
+            onClick={() => void onSave({ teamSilenceMs: parsed === "invalid" ? null : parsed })}
+          >
+            Guardar
+          </Button>
+        </div>
+        {invalid ? (
+          <p className="text-xs text-destructive" data-testid="team-silence-error">
+            Ingresá un número entero entre {TEAM_SILENCE_MIN_MS / 60_000} y {TEAM_SILENCE_MAX_MS / 60_000} minutos.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-testid="team-silence-hint">
+            {raw.trim() === ""
+              ? `Vacío: ${defaultMinutes} minutos.`
+              : `El agente se calla ${effective} min después del último mensaje del equipo.`}
           </p>
         )}
       </CardContent>

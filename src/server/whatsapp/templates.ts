@@ -629,6 +629,8 @@ export async function sendTemplateCore(input: {
   /** 014: origen externo — el mensaje queda marcado con la clave de API y
    * la bandeja muestra «Enviado por API · label». */
   via?: { apiKeyId: string; label: string };
+  /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
+  sentByUserId?: string | null;
 }): Promise<SendTemplateResult> {
   const db = getDb();
   const { template, creds, conversation, contact } = input;
@@ -730,6 +732,7 @@ export async function sendTemplateCore(input: {
       type: "template",
       templateId: template.id,
       apiKeyId: input.via?.apiKeyId ?? null,
+      sentByUserId: input.sentByUserId ?? null,
       text: renderBody(template.body, bodyParams),
       status: "pending",
     })
@@ -818,6 +821,8 @@ export async function sendTemplate(input: {
   templateId: string;
   variable?: string;
   freeTexts?: string[];
+  /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
+  sentByUserId?: string | null;
 }): Promise<{ messageId: string }> {
   const resolved = await resolveTemplateSend(input);
 
@@ -847,6 +852,7 @@ export async function sendTemplate(input: {
       contact: resolved.contact,
       variable: input.variable,
       freeTexts: input.freeTexts,
+      sentByUserId: input.sentByUserId ?? null,
     });
     return { messageId: result.messageId };
   } catch (err) {

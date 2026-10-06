@@ -21,12 +21,22 @@ const INTERACTIVE_FIELDS = {
 };
 
 /**
+ * 031: la nota del lead puede viajar CON una consulta. Antes el modelo que
+ * quería anotar «consulta para 10 personas del 27 al 29» elegía `update_lead`
+ * —que es terminal—, mandaba «busco opciones…» y nunca buscaba.
+ */
+const LEAD_NOTE_FIELD = {
+  lead_note: z.string().trim().max(500).optional(),
+};
+
+/**
  * Acción tipada del agente: exactamente UNA por turno (FR-021).
  * El servidor valida cada acción contra sus allowlists (etapas de la org);
  * lo que no valida se degrada, nunca se ejecuta a ciegas.
  */
 export const AgentAction = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("none") }),
+  /** 031: `reason` (opcional) es el porqué breve; se ve en el hilo, nunca lo lee el cliente. */
+  z.object({ action: z.literal("none"), reason: z.string().optional() }),
   /**
    * 021: `contact_name` viaja CON la respuesta en vez de ser una acción
    * propia. Con una acción por turno, un agente que tuviera que elegir entre
@@ -69,6 +79,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     action: z.literal("check_availability"),
     /** "YYYY-MM-DD" local del negocio; sin fecha: próximos días. */
     date: z.string().trim().optional(),
+    ...LEAD_NOTE_FIELD,
   }),
   z.object({
     action: z.literal("book_appointment"),
@@ -120,11 +131,13 @@ export const AgentAction = z.discriminatedUnion("action", [
       )
       .max(10)
       .optional(),
+    ...LEAD_NOTE_FIELD,
   }),
   z.object({
     action: z.literal("show_stay"),
     /** Código (AC-003), slug o enlace de la ficha. */
     property: z.string().trim().min(1),
+    ...LEAD_NOTE_FIELD,
   }),
   /**
    * Publicaciones de Mercado Libre (025): consultas sobre el SNAPSHOT local
@@ -144,11 +157,13 @@ export const AgentAction = z.discriminatedUnion("action", [
     price_max: z.coerce.number().min(0).optional(),
     currency: z.string().trim().max(10).optional(),
     query: z.string().trim().max(120).optional(),
+    ...LEAD_NOTE_FIELD,
   }),
   z.object({
     action: z.literal("show_listing"),
     /** Id de ML (MLA123…), enlace de la ficha o parte del título. */
     listing: z.string().trim().min(1).max(512),
+    ...LEAD_NOTE_FIELD,
   }),
   /**
    * Pedido de visita (025): TERMINAL. El servidor anota la propiedad y la

@@ -7,6 +7,7 @@ import { SEND_ERROR_STATUS } from "@/server/inbox/send-error";
 import { postTrainerMessage, TrainerError } from "@/server/ai/trainer";
 import { canManageConfig } from "@/lib/roles";
 import { toMediaDto } from "@/lib/message-media";
+import { listConversationEvents } from "@/server/ai/events";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,12 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? new Date(sinceParam) : undefined;
-  const messages = await listMessages(
-    session.organizationId,
-    id,
-    since && !Number.isNaN(since.getTime()) ? since : undefined
-  );
+  const validSince = since && !Number.isNaN(since.getTime()) ? since : undefined;
+  const messages = await listMessages(session.organizationId, id, validSince);
+  // 031: las líneas del hilo (qué pasó con la IA) viajan con los mensajes.
+  const events = await listConversationEvents(session.organizationId, id, validSince);
   return Response.json({
+    events,
     messages: messages.map((r) =>
       serializeMessage(
         r.message,
@@ -83,6 +84,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       conversationId: id,
       organizationId: session.organizationId,
       text: body.data.text,
+      sentByUserId: session.userId,
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

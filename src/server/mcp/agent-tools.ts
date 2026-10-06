@@ -347,7 +347,11 @@ export async function executeMcpAction(
     }
 
     // 4) Transporte o guardrails: texto de primera parte, nada del remoto.
-    return { toolText: transportText(profile, outcome.code), clientSummary: null };
+    return {
+      toolText: transportText(profile, outcome.code),
+      clientSummary: null,
+      failure: toTransportCode(outcome.code),
+    };
   } catch (err) {
     // Cinturón final: si algo del perfil o de la orquestación lanza, el turno
     // sigue vivo. Lo que no puede pasar es que el cliente se quede sin
@@ -356,7 +360,11 @@ export async function executeMcpAction(
       "[agente] acción del conector falló:",
       err instanceof Error ? err.message : err
     );
-    return { toolText: transportText(ctx.profile, "internal_error"), clientSummary: null };
+    return {
+      toolText: transportText(ctx.profile, "internal_error"),
+      clientSummary: null,
+      failure: "internal_error",
+    };
   }
 }
 

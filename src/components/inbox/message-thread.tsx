@@ -15,11 +15,16 @@ import {
   Loader2,
   MessageCircle,
   Mic,
+  Info,
+  PauseCircle,
   Paperclip,
   RotateCw,
   Sparkles,
+  UserRound,
 } from "lucide-react";
 import type { MessageDto } from "@/lib/types";
+import { eventText, type ConversationEventDto, type EventTone } from "@/lib/conversation-events";
+import { linkifyParts } from "@/lib/linkify";
 import { formatFileSize, formatLabel, OUTBOUND_KINDS } from "@/lib/outbound-media";
 import { formatElapsed } from "@/lib/audio-record";
 import { friendlyDeliveryError } from "@/lib/meta-errors";
@@ -102,13 +107,44 @@ async function copyText(text: string): Promise<boolean> {
 /** Umbral para considerar que el operador está «al final» del hilo. */
 const NEAR_BOTTOM_PX = 80;
 
+type ThreadItem =
+  | { kind: "message"; id: string; createdAt: string; message: MessageDto }
+  | { kind: "event"; id: string; createdAt: string; event: ConversationEventDto };
+
+/**
+ * 031: mensajes y líneas de evento en un solo hilo, por hora. Los mensajes
+ * conservan su orden (el del servidor); cada evento entra antes del primer
+ * mensaje posterior a él.
+ */
+function mergeThread(messages: MessageDto[], events: ConversationEventDto[]): ThreadItem[] {
+  const sorted = [...events].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const items: ThreadItem[] = [];
+  let e = 0;
+  for (const m of messages) {
+    const at = new Date(m.createdAt).getTime();
+    while (e < sorted.length && new Date(sorted[e]!.createdAt).getTime() < at) {
+      const ev = sorted[e++]!;
+      items.push({ kind: "event", id: ev.id, createdAt: ev.createdAt, event: ev });
+    }
+    items.push({ kind: "message", id: m.id, createdAt: m.createdAt, message: m });
+  }
+  while (e < sorted.length) {
+    const ev = sorted[e++]!;
+    items.push({ kind: "event", id: ev.id, createdAt: ev.createdAt, event: ev });
+  }
+  return items;
+}
+
 export function MessageThread({
   messages,
+  events = [],
   kind = "whatsapp",
   thinkingLabel = null,
   onRetry,
 }: {
   messages: MessageDto[];
+  /** 031: qué pasó con la IA en este chat (líneas grises entre los mensajes). */
+  events?: ConversationEventDto[];
   /** 015: en el hilo del entrenador no hay ticks de entrega ni etiquetas de API. */
   kind?: "whatsapp" | "trainer" | "instagram";
   /** 015: «{agente} está pensando…» mientras se espera la respuesta. */
@@ -179,6 +215,13 @@ export function MessageThread({
     else setPendingNew((n) => n + added);
   }, [messages, scrollToBottom]);
 
+  // 031: una línea nueva de la IA sigue al final si el operador ya estaba ahí.
+  useEffect(() => {
+    if (events.length > 0 && atBottomRef.current) scrollToBottom(true);
+  }, [events.length, scrollToBottom]);
+
+  const items = mergeThread(messages, events);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -191,23 +234,36 @@ export function MessageThread({
         data-testid="message-thread"
         className="flex flex-1 flex-col gap-[3px] overflow-y-auto overscroll-y-contain bg-chat px-3 py-4 md:px-[6%] md:py-5"
       >
-        {messages.map((m, i) => {
-          const prev = messages[i - 1];
+        {items.map((item, i) => {
+          const prev = items[i - 1];
           const newDay =
             !prev ||
             new Date(prev.createdAt).toDateString() !==
-              new Date(m.createdAt).toDateString();
+              new Date(item.createdAt).toDateString();
+          const dayChip = newDay && (
+            <div className="my-3 flex justify-center">
+              <span className="rounded-full border bg-background px-3 py-1 text-[11.5px] font-semibold text-text-2 shadow-sm">
+                {dayLabel(item.createdAt)}
+              </span>
+            </div>
+          );
+          if (item.kind === "event") {
+            return (
+              <div key={item.id}>
+                {dayChip}
+                <ThreadEvent event={item.event} />
+              </div>
+            );
+          }
+          const m = item.message;
           const grouped =
-            !newDay && prev !== undefined && prev.direction === m.direction;
+            !newDay &&
+            prev !== undefined &&
+            prev.kind === "message" &&
+            prev.message.direction === m.direction;
           return (
             <div key={m.id}>
-              {newDay && (
-                <div className="my-3 flex justify-center">
-                  <span className="rounded-full border bg-background px-3 py-1 text-[11.5px] font-semibold text-text-2 shadow-sm">
-                    {dayLabel(m.createdAt)}
-                  </span>
-                </div>
-              )}
+              {dayChip}
               <Bubble
                 message={m}
                 kind={kind}
@@ -284,6 +340,129 @@ export function MessageThread({
           },
         ]}
       />
+    </div>
+  );
+}
+
+/**
+ * 031: el texto con sus enlaces clicables (los del agente, los que pega el
+ * equipo y los que manda el cliente). Se abren en otra pestaña y sin pasar
+ * el CRM como referente: el enlace lo escribió un tercero.
+ */
+function Linkified({ text }: { text: string | null | undefined }) {
+  const parts = linkifyParts(text);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.type === "link" ? (
+          <a
+            key={i}
+            href={p.href}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            data-testid="message-link"
+            className="break-all text-[#027eb5] underline underline-offset-2 hover:text-[#01628c]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.value}
+          </a>
+        ) : (
+          <span key={i}>{p.value}</span>
+        )
+      )}
+    </>
+  );
+}
+
+/** 031: «HH:MM», o con el día si no es hoy (la ventana puede cruzar la medianoche). */
+function untilLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const tomorrow = new Date(today.getTime() + 86400000);
+  if (d.toDateString() === today.toDateString()) return bubbleTime(iso);
+  if (d.toDateString() === tomorrow.toDateString()) return `${bubbleTime(iso)} de mañana`;
+  return `${bubbleTime(iso)} del ${d.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}`;
+}
+
+const EVENT_TONE: Record<EventTone, string> = {
+  neutral: "border-border bg-background/90 text-text-2",
+  brand: "border-brand-soft bg-brand-tint text-brand-text",
+  warning: "border-[#ece2cf] bg-[#faf7f0] text-[#8a6d3b]",
+  error: "border-destructive/30 bg-destructive/5 text-destructive",
+};
+
+/**
+ * 031: una línea del hilo que NO es un mensaje: quién prendió o apagó la IA,
+ * por qué no respondió, cuándo retomó, qué falló. Si la respuesta de la IA no
+ * salió, se puede ver (y copiar) lo que iba a decir.
+ */
+function ThreadEvent({ event }: { event: ConversationEventDto }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { text, tone } = eventText(event, untilLabel);
+  const Icon =
+    event.kind === "ai_toggled"
+      ? event.reason === "paused"
+        ? PauseCircle
+        : Sparkles
+      : event.kind === "ai_resumed"
+        ? Sparkles
+        : event.kind === "ai_handoff"
+          ? UserRound
+          : event.kind === "ai_error"
+            ? AlertTriangle
+            : Info;
+  const pending = event.details?.text ?? null;
+  return (
+    <div
+      className="my-2 flex justify-center px-1"
+      data-testid="thread-event"
+      data-kind={event.kind}
+      data-reason={event.reason ?? ""}
+    >
+      <div
+        className={cn(
+          "max-w-[94%] rounded-lg border px-2.5 py-1.5 text-[12px] leading-snug shadow-sm md:max-w-[80%]",
+          EVENT_TONE[tone]
+        )}
+      >
+        <p className="flex items-start gap-1.5">
+          <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0" strokeWidth={1.8} aria-hidden />
+          <span>
+            {text}
+            <span className="ml-1 whitespace-nowrap opacity-70">· {bubbleTime(event.createdAt)}</span>
+          </span>
+        </p>
+        {pending && (
+          <div className="mt-1 pl-5">
+            <button
+              type="button"
+              className="font-medium underline underline-offset-2"
+              onClick={() => setOpen((v) => !v)}
+              data-testid="thread-event-toggle"
+            >
+              {open ? "Ocultar lo que iba a decir" : "Ver lo que iba a decir"}
+            </button>
+            {open && (
+              <div className="mt-1 rounded-md border bg-background p-2 text-left text-[12.5px] text-foreground">
+                <p className="whitespace-pre-wrap break-words" data-testid="thread-event-text">
+                  <Linkified text={pending} />
+                </p>
+                <button
+                  type="button"
+                  className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-text-2 hover:text-foreground"
+                  onClick={async () => {
+                    setCopied(await copyText(pending));
+                    window.setTimeout(() => setCopied(false), 1600);
+                  }}
+                >
+                  <Copy className="h-3 w-3" strokeWidth={1.8} /> {copied ? "Copiado" : "Copiar"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -451,7 +630,9 @@ function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
         />
       </button>
       {m.text && (
-        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">
+          <Linkified text={m.text} />
+        </p>
       )}
       {ownerImage && state === "pending" && (
         <div
@@ -546,7 +727,9 @@ function VideoAttachment({ message: m }: { message: MessageDto }) {
         className="max-h-[320px] w-full max-w-[280px] rounded-md bg-black"
       />
       {m.text && (
-        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{m.text}</p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">
+          <Linkified text={m.text} />
+        </p>
       )}
     </div>
   );
@@ -609,7 +792,9 @@ function DocumentAttachment({ message: m }: { message: MessageDto }) {
         </a>
       </div>
       {caption && (
-        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">{caption}</p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-[1.45]">
+          <Linkified text={caption} />
+        </p>
       )}
       {incoming && m.mediaState === "pending" && (
         <div
@@ -752,7 +937,11 @@ function StoryAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
           <span className="text-[12px] text-text-3">
             {m.mediaState === "pending" ? "Descargando la historia…" : "La historia ya no está disponible"}
           </span>
-          {m.text && <p className="mt-1 whitespace-pre-wrap break-words">{m.text}</p>}
+          {m.text && (
+            <p className="mt-1 whitespace-pre-wrap break-words">
+              <Linkified text={m.text} />
+            </p>
+          )}
         </>
       )}
     </div>
@@ -885,7 +1074,9 @@ function Bubble({
             Mensaje eliminado por el cliente
           </span>
         ) : m.type === "text" || m.type === "template" ? (
-          <span className="whitespace-pre-wrap break-words">{m.text}</span>
+          <span className="whitespace-pre-wrap break-words">
+            <Linkified text={m.text} />
+          </span>
         ) : m.type === "audio" ? (
           <AudioNote message={m} plain={out && wa} />
         ) : m.type === "image" ? (

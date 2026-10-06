@@ -97,6 +97,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
     const result = await sendMedia({
       organizationId: session.organizationId,
       conversationId: id,
+      sentByUserId: session.userId,
       file: {
         bytes,
         kind: valid.kind,

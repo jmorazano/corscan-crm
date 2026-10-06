@@ -8,6 +8,7 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
 import { inboxShortcut, neighborIndex } from "@/lib/gestures";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
+import type { ConversationEventDto } from "@/lib/conversation-events";
 import { useEvents } from "@/components/use-events";
 import {
   readTagFilter,
@@ -80,6 +81,14 @@ export function InboxClient() {
   const [selectedFallback, setSelectedFallback] =
     useState<ConversationDto | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
+  // 031: líneas del hilo (quién prendió/apagó la IA, por qué no respondió…).
+  const [threadEvents, setThreadEvents] = useState<ConversationEventDto[]>([]);
+  // 031: último mensaje del equipo en el hilo abierto (el panel dice cuándo vuelve la IA).
+  const lastTeamAt = useMemo(() => {
+    let last: string | null = null;
+    for (const m of messages) if (m.team && (!last || m.createdAt > last)) last = m.createdAt;
+    return last;
+  }, [messages]);
   const [panelOpen, setPanelOpen] = useState(true);
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
@@ -204,8 +213,14 @@ export function InboxClient() {
       `/api/conversations/${conversationId}/messages`
     ).catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { messages: MessageDto[] };
-    if (selectedIdRef.current === conversationId) setMessages(data.messages);
+    const data = (await res.json()) as {
+      messages: MessageDto[];
+      events?: ConversationEventDto[];
+    };
+    if (selectedIdRef.current === conversationId) {
+      setMessages(data.messages);
+      setThreadEvents(data.events ?? []);
+    }
   }, []);
 
   const patchById = useCallback(
@@ -305,11 +320,13 @@ export function InboxClient() {
     if (c) {
       setSelectedId(c);
       setMessages([]);
+      setThreadEvents([]);
       void refetchMessages(c);
       void patchById(c, { markRead: true });
     } else {
       setSelectedId(null);
       setMessages([]);
+      setThreadEvents([]);
     }
   }, [urlConversationId, refetchMessages, patchById]);
 
@@ -420,6 +437,11 @@ export function InboxClient() {
             : m
         )
       );
+    },
+    onConversationEvent: ({ conversationId, event }) => {
+      if (selectedIdRef.current !== conversationId) return;
+      const ev = event as ConversationEventDto;
+      setThreadEvents((prev) => (prev.some((x) => x.id === ev.id) ? prev : [...prev, ev]));
     },
     onConversationUpdated: () => {
       void refetchConversations();
@@ -941,6 +963,7 @@ export function InboxClient() {
             </header>
             <MessageThread
               messages={messages}
+              events={selected.kind === "trainer" ? [] : threadEvents}
               kind={selected.kind}
               thinkingLabel={
                 selected.kind === "trainer" && trainerThinking
@@ -991,6 +1014,7 @@ export function InboxClient() {
             ) : (
               <ContactPanel
                 conversation={selected}
+                lastTeamAt={lastTeamAt}
                 refreshKey={detailRev}
                 conversationFacets={facets}
                 onPatchConversation={patchConversation}

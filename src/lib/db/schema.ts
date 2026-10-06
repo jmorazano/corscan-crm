@@ -17,6 +17,7 @@ import type {
   IgOrigin,
   MessageDetails,
 } from "../instagram/types";
+import type { ConversationEventDetails } from "../conversation-events";
 
 /** bytea de Postgres (drizzle no lo trae de fábrica). Driver postgres.js:
  * escribe/lee Buffer directamente. */
@@ -369,6 +370,12 @@ export const message = pgTable(
      */
     details: jsonb("details").$type<MessageDetails>(),
     aiGenerated: boolean("ai_generated").notNull().default(false),
+    /**
+     * 031: la persona del equipo que lo mandó desde el CRM. Junto con los
+     * ecos del celular (`source` phone/history) define «el equipo está
+     * atendiendo». Campañas, API, automatismos y la IA lo dejan NULL.
+     */
+    sentByUserId: text("sent_by_user_id").references(() => user.id, { onDelete: "set null" }),
     waTimestamp: timestamp("wa_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -380,6 +387,37 @@ export const message = pgTable(
     ),
     // Dedup de ingesta por tenant (los NULL de salientes de prueba no chocan).
     uniqueIndex("message_org_wamid_uq").on(t.organizationId, t.waMessageId),
+  ]
+);
+
+/**
+ * 031: lo que pasó con el agente en una conversación, para verlo en el hilo:
+ * quién prendió o apagó la IA, por qué no respondió, cuándo retomó, cuándo
+ * derivó y qué falló. NO es un mensaje: no cuenta como no leído, no es el
+ * último mensaje de la lista ni entra al contexto del agente.
+ */
+export const conversationEvent = pgTable(
+  "conversation_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error"],
+    }).notNull(),
+    reason: text("reason"),
+    actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    /** Copia del nombre: la línea se sigue leyendo si la cuenta se borra. */
+    actorName: text("actor_name"),
+    details: jsonb("details").$type<ConversationEventDetails>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("conversation_event_org_conv_idx").on(t.organizationId, t.conversationId, t.createdAt),
   ]
 );
 
@@ -464,6 +502,12 @@ export const agentProfile = pgTable(
      * y, ante un mensaje personal de un número nuevo, calla sin escalar.
      */
     sharedPersonalNumber: boolean("shared_personal_number").notNull().default(false),
+    /**
+     * 031: cuánto se calla el agente (ms) después de que alguien del equipo
+     * escribe en un chat; también lo que tarda en vencer una pausa o una
+     * atención humana. NULL = 10 minutos.
+     */
+    teamSilenceMs: integer("team_silence_ms"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

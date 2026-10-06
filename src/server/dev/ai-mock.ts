@@ -219,6 +219,39 @@ export function aiMockCompletion(messages: InMessage[]): string {
     });
   }
 
+  // 031: perillas del guion E2E del agente a la vista.
+  // «[E2E_NADA]» → el modelo elige callar y dice por qué.
+  if (lastUser.includes("[E2E_NADA]")) {
+    return JSON.stringify({ action: "none", reason: "el cliente solo agradeció" });
+  }
+  // «[E2E_PROMESA]» → la promesa vacía del caso real: anota y anuncia una
+  // búsqueda SIN buscar. Tras la corrección del pipeline, consulta de verdad
+  // (con la nota en `lead_note`) o, sin conector, contesta sin prometer.
+  // «[E2E_PROMESA_INSISTE]» → insiste aunque lo corrijan.
+  if (lastUser.includes("[E2E_PROMESA")) {
+    const tail = messages[messages.length - 1];
+    const corrected = tail?.role === "system" && textOf(tail.content).includes("NO hay después");
+    const note = "Consulta para 4 personas del 27 al 29 de noviembre.";
+    if (!corrected || lastUser.includes("INSISTE")) {
+      return JSON.stringify({
+        action: "update_lead",
+        note,
+        reply: "Gracias. Busco opciones disponibles para 4 personas, del 27 al 29 de noviembre.",
+      });
+    }
+    if (system.includes(MCP_MARKER)) {
+      const [checkIn, checkOut] = [...lastUser.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]);
+      return JSON.stringify({
+        action: "search_stays",
+        check_in: checkIn,
+        check_out: checkOut,
+        guests: 4,
+        lead_note: note,
+      });
+    }
+    return JSON.stringify({ action: "reply", text: "Para esas fechas te cuento lo que tenemos: escribime qué tipo de lugar buscás." });
+  }
+
   // 025 (US4): número personal del dueño — un mensaje personal no se contesta.
   if (fromClient && system.includes(PERSONAL_NUMBER_MARKER) && isPersonalMessage(text)) {
     return JSON.stringify({ action: "none" });

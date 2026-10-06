@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
 import { publish } from "@/server/events/bus";
+import { recordConversationEvent } from "@/server/ai/events";
 import {
   serializeConversation,
   getConversation,
@@ -22,6 +25,29 @@ const patchSchema = z.object({
 
 type Params = { params: Promise<{ id: string }> };
 
+type ConversationState = { aiEnabled: boolean; handoffAt: Date | null };
+
+/** 031: qué cambió en la IA del chat (o null si nada). */
+function toggleReason(
+  before: ConversationState,
+  after: ConversationState,
+  reactivate: boolean
+): "paused" | "enabled" | "reactivated" | null {
+  if (reactivate && before.handoffAt && !after.handoffAt) return "reactivated";
+  if (before.aiEnabled && !after.aiEnabled) return "paused";
+  if (!before.aiEnabled && after.aiEnabled) return "enabled";
+  return null;
+}
+
+async function userName(userId: string): Promise<string | null> {
+  const rows = await getDb()
+    .select({ name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1);
+  return rows[0]?.name ?? null;
+}
+
 /** Una conversación por id (006): el hilo abierto no depende de la página. */
 export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
@@ -37,8 +63,23 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
+  // 031: el estado ANTES, para dejar en el hilo quién prendió o apagó la IA
+  // (solo si cambió de verdad).
+  const before = await getConversation(session.organizationId, id);
   const updated = await updateConversation(session.organizationId, id, body.data);
   if (!updated) return apiError(404, "not_found", "Conversación no encontrada");
+  if (before && updated.kind !== "trainer") {
+    const toggle = toggleReason(before.conversation, updated, body.data.reactivate === true);
+    if (toggle) {
+      await recordConversationEvent({
+        organizationId: session.organizationId,
+        conversationId: id,
+        kind: "ai_toggled",
+        reason: toggle,
+        actor: { userId: session.userId, name: await userName(session.userId) },
+      });
+    }
+  }
 
   const row = await getConversation(session.organizationId, id);
   if (row) {

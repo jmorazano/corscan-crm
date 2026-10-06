@@ -31,6 +31,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       templateId: body.data.templateId,
       variable: body.data.variable,
       freeTexts: body.data.freeTexts,
+      sentByUserId: session.userId,
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

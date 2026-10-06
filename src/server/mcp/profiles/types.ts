@@ -192,6 +192,12 @@ export type ValidateResult = ValidatedCall | RejectedCall;
 export type RenderResult = {
   toolText: string;
   clientSummary: string | null;
+  /**
+   * 031: la consulta NO llegó (transporte, guardrails o excepción). El
+   * pipeline lo deja en el hilo («El sistema de reservas no respondió…»).
+   * Un rechazo del proveedor (`tool_error`) no cuenta: es material del modelo.
+   */
+  failure?: McpTransportErrorCode;
 };
 
 /** Códigos de fallo del transporte/guardrails (§F.6), NO del proveedor. */

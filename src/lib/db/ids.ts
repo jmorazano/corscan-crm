@@ -38,6 +38,7 @@ const prefixes = {
   instagramEntryLink: "iglink",
   meliIntegration: "mli",
   meliListing: "mll",
+  conversationEvent: "ev",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

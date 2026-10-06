@@ -223,6 +223,7 @@ export const POST = withAuth(async (session, req: Request) => {
       contact,
       variable: body.data.variable,
       freeTexts: body.data.freeTexts,
+      sentByUserId: session.userId,
     });
     const reconciliation = await reconcileContactWaId(
       organizationId,

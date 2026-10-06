@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import type { MessageDto, MessageMediaDto, MessageVia } from "@/lib/types";
 import type { MessageDetails } from "@/lib/instagram/types";
+import { isTeamMessage } from "@/lib/agent-presence";
 import { publish } from "@/server/events/bus";
 import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -386,6 +387,7 @@ export function serializeMessage(
     mediaSummary: m.mediaSummary ?? null,
     source: m.source ?? "cloud",
     details: m.details ?? null,
+    team: isTeamMessage(m),
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };
 }

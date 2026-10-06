@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { REPLY_DELAY_MAX_MS, REPLY_DELAY_MIN_MS } from "@/lib/agent-timing";
+import { TEAM_SILENCE_MAX_MS, TEAM_SILENCE_MIN_MS } from "@/lib/agent-presence";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { DbOrTx } from "@/server/kb/service";
@@ -38,6 +39,14 @@ export const profileUpdateSchema = z.object({
     .optional(),
   /** 025: el WhatsApp es también el número personal del dueño. */
   sharedPersonalNumber: z.boolean().optional(),
+  /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
+  teamSilenceMs: z
+    .number()
+    .int()
+    .min(TEAM_SILENCE_MIN_MS)
+    .max(TEAM_SILENCE_MAX_MS)
+    .nullable()
+    .optional(),
 });
 export type ProfilePatch = z.infer<typeof profileUpdateSchema>;
 

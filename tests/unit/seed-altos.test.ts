@@ -59,6 +59,7 @@ function promptOf(seed: SeedFile): string {
       escalationRules: seed.profile.escalationRules ?? null,
       greeting: seed.profile.greeting ?? null,
       replyDelayMs: null,
+      teamSilenceMs: null,
       sharedPersonalNumber: false,
       createdAt: new Date(),
       updatedAt: new Date(),

@@ -166,6 +166,8 @@ export async function sendMedia(input: {
   conversationId: string;
   file: OutboundFile;
   caption: string | null;
+  /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
+  sentByUserId?: string | null;
 }): Promise<{ messageId: string; captionError: string | null }> {
   const { organizationId, conversationId, file } = input;
   const { conversation, contact } = await loadConversation(organizationId, conversationId);
@@ -191,6 +193,7 @@ export async function sendMedia(input: {
         status: "pending",
         mediaState: "ready",
         aiGenerated: false,
+        sentByUserId: input.sentByUserId ?? null,
         waTimestamp: now,
       })
       .returning();
@@ -245,7 +248,7 @@ export async function sendMedia(input: {
   let captionError: string | null = null;
   if (caption && !inline) {
     try {
-      await sendText({ organizationId, conversationId, text: caption });
+      await sendText({ organizationId, conversationId, text: caption, sentByUserId: input.sentByUserId ?? null });
     } catch (err) {
       // El adjunto ya salió: el texto se informa aparte para reenviarlo.
       captionError = err instanceof Error ? err.message : String(err);

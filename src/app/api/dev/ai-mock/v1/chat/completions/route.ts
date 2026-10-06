@@ -17,6 +17,14 @@ export async function POST(req: Request) {
       { status: 401 }
     );
   }
+  // 031: `-nocredit` = cuenta de OpenRouter sin saldo (402), el caso que el
+  // hilo tiene que explicar en criollo.
+  if (bearer.endsWith("-nocredit")) {
+    return Response.json(
+      { error: { message: "Insufficient credits. Add more using https://openrouter.ai/settings/credits", code: 402 } },
+      { status: 402 }
+    );
+  }
 
   const body = (await req.json().catch(() => ({}))) as {
     messages?: Parameters<typeof aiMockCompletion>[0];

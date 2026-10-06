@@ -27,6 +27,7 @@ const profile = {
   escalationRules: null,
   greeting: null,
   replyDelayMs: null,
+  teamSilenceMs: null,
   sharedPersonalNumber: false,
   createdAt: new Date(),
   updatedAt: new Date(),
