@@ -352,3 +352,68 @@ describe("handshakeGuarded (corrección #16)", () => {
     expect(extra.code).toBe("rate_limited");
   });
 });
+
+/* ============================================================
+ * 032: herramientas GENÉRICAS (lo que publica el servidor)
+ * ============================================================ */
+
+const { effectiveTools, toolSignature } = await import("@/lib/mcp/tool-policy");
+
+function withGeneric(approveWrite: boolean): McpIntegration {
+  const start = { name: "start-booking", description: "x", readOnly: true, annotations: { readOnlyHint: true } };
+  const confirm = { name: "confirm-booking", description: "y", readOnly: false, annotations: { readOnlyHint: false } };
+  const s1 = { ...start, signature: toolSignature(start) };
+  const s2 = { ...confirm, signature: toolSignature(confirm) };
+  const policy = approveWrite
+    ? { "confirm-booking": { enabled: true, signature: s2.signature, by: "u", at: "x" } }
+    : null;
+  return integration({ tools: effectiveTools([s1, s2], policy, altos.allowedTools) });
+}
+
+describe("032: allowlist ampliada a las genéricas activas", () => {
+  it("una consulta genérica ACTIVA sale y deja extracto en la bitácora", async () => {
+    state.next = { draft_id: "drf_1", link: "https://evil.tld/x" };
+    const out = await call({ integration: withGeneric(false), tool: "start-booking", args: { a: 1 } });
+    expect(out.ok).toBe(true);
+    expect(state.calls).toHaveLength(1);
+    const row = state.inserted.at(-1)!;
+    expect(row.write).toBe(false);
+    expect(String(row.resultExcerpt)).toContain("drf_1");
+    expect(String(row.resultExcerpt)).not.toContain("evil.tld");
+  });
+
+  it("una escritura PENDIENTE no sale (not_allowed), aprobada sí y queda marcada", async () => {
+    const pending = await call({ integration: withGeneric(false), tool: "confirm-booking", args: { d: 1 } });
+    expect(pending.ok).toBe(false);
+    expect(state.calls).toHaveLength(0);
+    const ok = await call({ integration: withGeneric(true), tool: "confirm-booking", args: { d: 1 } });
+    expect(ok.ok).toBe(true);
+    expect(state.calls).toHaveLength(1);
+    expect(state.inserted.at(-1)!.write).toBe(true);
+  });
+
+  it("una escritura NUNCA sale de la caché (dos llamadas = dos pedidos)", async () => {
+    await call({ integration: withGeneric(true), tool: "confirm-booking", args: { d: 1 } });
+    await call({ integration: withGeneric(true), tool: "confirm-booking", args: { d: 1 } });
+    expect(state.calls).toHaveLength(2);
+  });
+
+  it("una consulta NO idempotente tampoco sale de la caché", async () => {
+    await call({ integration: withGeneric(false), tool: "start-booking", args: { a: 1 } });
+    await call({ integration: withGeneric(false), tool: "start-booking", args: { a: 1 } });
+    expect(state.calls).toHaveLength(2);
+  });
+
+  it("en el Laboratorio: respuesta simulada, sin red, fila is_test", async () => {
+    const out = await call({
+      integration: withGeneric(true),
+      tool: "confirm-booking",
+      args: { d: 1 },
+      sandbox: true,
+    });
+    expect(out.ok && out.sandbox).toBe(true);
+    expect(out.ok && (out.data as { simulated?: boolean }).simulated).toBe(true);
+    expect(state.calls).toHaveLength(0);
+    expect(state.inserted.at(-1)!.isTest).toBe(true);
+  });
+});

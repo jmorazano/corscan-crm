@@ -21,6 +21,7 @@ import {
   RotateCw,
   Sparkles,
   UserRound,
+  CheckCircle2,
 } from "lucide-react";
 import type { MessageDto } from "@/lib/types";
 import { eventText, type ConversationEventDto, type EventTone } from "@/lib/conversation-events";
@@ -411,7 +412,9 @@ function ThreadEvent({ event }: { event: ConversationEventDto }) {
           ? UserRound
           : event.kind === "ai_error"
             ? AlertTriangle
-            : Info;
+            : event.kind === "ai_tool_write"
+              ? CheckCircle2
+              : Info;
   const pending = event.details?.text ?? null;
   return (
     <div

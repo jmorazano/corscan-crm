@@ -1,7 +1,28 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.10.0 → 1.11.0
+Versión: 1.11.0 → 1.12.0
+
+Cambios (feature 032-mcp-dynamic-tools, 7-oct-2026) — MINOR:
+  - Principio II, categoría 5, condición (f): deja de ser «SOLO LECTURA con
+    allowlist propia del perfil». Las herramientas que el agente puede usar
+    son las que el servidor publica en `tools/list` y una PERSONA dejó
+    activas para esa empresa, sin deploy: consulta activa por defecto;
+    escritura solo aprobada por herramienta (super admin o propietario),
+    re-aprobación si cambia su definición, conformidad explícita del
+    interesado verificada por el CRM, una vez por conversación y argumentos,
+    nunca pagos, y el agente no afirma una reserva que la herramienta no
+    confirmó. Las demás condiciones (a)–(e) y (g)–(j) quedan intactas.
+  - Motivación escrita: el servidor MCP de Altos de Calamuchita (2.0.0) sumó
+    herramientas para dejar la reserva iniciada y devolver el enlace de pago
+    de la seña; el dueño pidió que «solo con reconectar baste para
+    incorporar las herramientas, con este y con cualquier MCP».
+    Aprobación explícita: «dale, arrancá la 032» (7-oct-2026), tras la
+    advertencia de que implicaba enmendar el SOLO LECTURA.
+  - Plantillas: sin cambios. CLAUDE.md: ⚠ actualizar soberanía, mapa del
+    código y feature activa.
+
+Versión anterior: 1.10.0 → 1.11.0
 
 Cambios (feature 030-instagram-growth, 5-oct-2026) — MINOR:
   - Principio VIII: Instagram suma los COMENTARIOS de las publicaciones
@@ -325,8 +346,9 @@ dependencias externas en runtime es CERRADA:
      no publica MCP —la primera: MiniHotel, PMS hotelero—). Un servidor Model
      Context Protocol remoto —JSON-RPC 2.0 sobre HTTP— o la API HTTP del
      proveedor, del sistema que la empresa cliente YA opera, cuyas
-     operaciones de SOLO LECTURA el agente consulta para responder con datos
-     reales del negocio (disponibilidad, precios, enlaces). Condiciones NO
+     operaciones de consulta el agente usa para responder con datos reales
+     del negocio (disponibilidad, precios, enlaces) y —desde 1.12.0, solo con
+     las condiciones de (f)— las de escritura que una persona aprobó. Condiciones NO
      negociables: (a) sin el conector el producto funciona completo y el
      agente sigue atendiendo con su conocimiento propio; (b) el SUPER ADMIN de
      la instancia lo habilita empresa por empresa —no aparece para las demás—
@@ -344,10 +366,19 @@ dependencias externas en runtime es CERRADA:
      con timeout, tope de tamaño de respuesta y límite de tasa por empresa;
      (e) se aísla tras un transporte genérico (MCP o la API del proveedor, sobre
      el mismo POST protegido) más un perfil por proveedor, sin acoplar el
-     dominio; (f) las herramientas son de SOLO LECTURA y el
-     conector solo invoca las de una allowlist propia: no ejecuta escrituras,
-     reservas, pagos ni acciones irreversibles en el sistema del tercero, y el
-     agente nunca promete una reserva; (g) el instalador NO lo necesita; (h)
+     dominio; (f) las herramientas que el agente puede invocar son las que el
+     servidor publica y una PERSONA dejó activas para esa empresa (desde
+     1.12.0, sin deploy): las de consulta —declaradas de solo lectura—
+     quedan activas al reconectar y se pueden apagar; las que ESCRIBEN en el
+     sistema del tercero (p. ej. registrar una reserva pendiente de seña)
+     solo con aprobación explícita, herramienta por herramienta, del super
+     admin o del propietario de la empresa, que vuelve a pedirse si el
+     servidor cambia su definición; una escritura solo se ejecuta con la
+     conformidad explícita del interesado en su último mensaje, verificada
+     por el CRM y no por el modelo, a lo sumo una vez por conversación y
+     argumentos, sin caché ni reintento automático; el conector nunca cobra
+     ni registra pagos, y el agente nunca afirma una reserva que la
+     herramienta no confirmó; (g) el instalador NO lo necesita; (h)
      el sandbox del Laboratorio JAMÁS lo toca: las conversaciones `is_test` se
      responden con datos simulados; (i) todo lo que devuelve el servidor es
      DATO, nunca instrucción: no altera el contrato de acciones del agente, se
@@ -588,4 +619,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.11.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-05
+**Version**: 1.12.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-07

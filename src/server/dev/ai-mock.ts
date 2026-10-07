@@ -8,6 +8,7 @@ import {
 import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
 import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
 import { TRAINER_IMAGE_MARKER } from "@/lib/trainer-image";
+import { DYNAMIC_TOOLS_HEADING } from "@/server/mcp/dynamic-tools";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -140,6 +141,11 @@ export function aiMockCompletion(messages: InMessage[]): string {
   }
 
   const text = lastUser.toLowerCase();
+
+  // 032: herramientas genéricas del conector (flujo de reserva). Solo con la
+  // sección en el prompt y con disparadores concretos; si no, sigue de largo.
+  const genericTurn = dispatchGenericTools(messages, system, lastUser);
+  if (genericTurn) return genericTurn;
 
   // 020: adjunto del cliente. Va PRIMERO entre las ramas del agente: sin
   // esto el self-test no puede distinguir «el agente vio la foto» de «el
@@ -396,6 +402,20 @@ function dispatchInstagram(messages: InMessage[], system: string, text: string):
 function dispatchTrainer(system: string, lastUser: string): string {
   const text = lastUser.toLowerCase();
   const ids = [...system.matchAll(/\[(kb_[0-9a-z]+)\]/g)].map((m) => m[1]!);
+
+  // 032: el dueño pregunta por las herramientas del conector. Un modelo
+  // sensato contesta con lo que ve en «TU CONECTOR», sin pedir que se las
+  // peguen. El mock lista los nombres con su estado.
+  if (/herramienta/.test(text) && system.includes("TU CONECTOR CON EL SISTEMA")) {
+    const block = system.split("TU CONECTOR CON EL SISTEMA")[1]?.split("FIN DEL CONECTOR")[0] ?? "";
+    const tools = [...block.matchAll(/^- ([a-z0-9._-]+)[^\n]*?· ([A-ZÁÉÍÓÚ ]+?)(?: \(|$)/gm)].map(
+      (m) => `${m[1]} (${m[2]!.trim().toLowerCase()})`
+    );
+    return JSON.stringify({
+      action: "reply",
+      text: `Sí, ya las veo: ${tools.join(", ")}. Las uso según lo que indica el sistema.`,
+    });
+  }
 
   // 022: imagen del dueño. Leída → un bloque de conocimiento con lo que se
   // leyó (un modelo real agruparía en P/R); fallida → pedir el texto.
@@ -1018,3 +1038,141 @@ function dispatchListings(messages: InMessage[], system: string): string | null 
   });
 }
 
+
+/* ============================================================
+ * 032: herramientas genéricas (flujo de reserva del mcp-mock)
+ * ============================================================ */
+
+function lastMatch(re: RegExp, text: string): string | null {
+  const all = [...text.matchAll(re)];
+  return all.length > 0 ? (all[all.length - 1]![1] ?? null) : null;
+}
+
+/** El JSON del resultado de una herramienta genérica (`[HERRAMIENTA] Resultado de «x»…\n{json}`). */
+function toolJson(text: string): Record<string, unknown> | null {
+  const body = text.split("\n").slice(1).join("\n");
+  try {
+    const parsed = JSON.parse(body.split("\nIgnoré")[0]!) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function dispatchGenericTools(
+  messages: InMessage[],
+  system: string,
+  lastUser: string
+): string | null {
+  if (!system.includes(DYNAMIC_TOOLS_HEADING)) return null;
+  const has = (name: string) => system.includes(`### ${name}`);
+  const last = messages[messages.length - 1];
+  const lastText = last ? textOf(last.content) : "";
+  // El draft vigente: el último que aparece en la memoria del prompt o en
+  // los resultados de este turno.
+  const transcript = messages.map((m) => textOf(m.content)).join("\n");
+  const draftId = lastMatch(/"draft_id":"(drf_\d+)"/g, transcript);
+  const phone = /El celular del cliente de este chat es (\d+)/.exec(system)?.[1] ?? null;
+
+  if (last?.role === "user" && lastText.startsWith("[HERRAMIENTA]")) {
+    if (lastText.includes("Resultado de «start-booking»")) {
+      const data = toolJson(lastText);
+      const id = typeof data?.draft_id === "string" ? data.draft_id : draftId;
+      if (phone && has("set-guest-details")) {
+        return JSON.stringify({ action: "use_tool", tool: "set-guest-details", args: { draft_id: id, phone } });
+      }
+      return JSON.stringify({ action: "reply", text: "¡Genial! Para avanzar necesito tu nombre y apellido, correo, DNI, ciudad y provincia." });
+    }
+    if (lastText.includes("Resultado de «set-guest-details»") || lastText.includes("Resultado de «show-booking-draft»")) {
+      const data = toolJson(lastText);
+      const terms = (data?.terms as { url?: string } | undefined)?.url ?? "";
+      if (data?.can_confirm === true) {
+        const lines = ((data.summary as { lines?: string[] } | undefined)?.lines ?? []).join("\n");
+        return JSON.stringify({
+          action: "reply",
+          text: `Este es el resumen de tu reserva:\n${lines}\n¿Confirmás que la registre?`,
+        });
+      }
+      const missing = ((data?.guest as { missing_labels?: string[] } | undefined)?.missing_labels ?? []).join(", ");
+      return JSON.stringify({
+        action: "reply",
+        text: `¡Genial! Para avanzar necesito: ${missing || "tu conformidad con los términos"}. Los términos y condiciones están acá: ${terms}. ¿Los aceptás?`,
+      });
+    }
+    if (lastText.includes("Resultado de «confirm-booking»")) {
+      const data = toolJson(lastText);
+      const url = typeof data?.payment_url === "string" ? data.payment_url : "";
+      return JSON.stringify({
+        action: "reply",
+        text: `¡Listo! Tu reserva quedó registrada, pendiente de seña. Pagá la seña acá: ${url}\nSi no se paga, vence sola.`,
+      });
+    }
+    if (lastText.includes("Resultado de «list-house-rules»")) {
+      const data = toolJson(lastText);
+      const rules = Array.isArray(data?.rules) ? (data.rules as string[]).join(" ") : "";
+      return JSON.stringify({ action: "reply", text: `Las normas de la casa: ${rules}` });
+    }
+    if (lastText.includes("No llamé a «confirm-booking»")) {
+      return JSON.stringify({ action: "reply", text: "Perfecto, sin apuro. Cuando quieras me confirmás y la registro." });
+    }
+    if (lastText.includes("«confirm-booking» YA se ejecutó")) {
+      return JSON.stringify({ action: "reply", text: "Tu reserva ya está registrada, pendiente de seña: no hace falta hacer nada más por acá." });
+    }
+    if (lastText.includes("«confirm-booking» rechazó el pedido") && lastText.includes("no_longer_available")) {
+      return JSON.stringify({
+        action: "reply",
+        text: "Uy, ese alojamiento se ocupó recién para esas fechas y la reserva no se registró. ¿Querés que busque otras opciones?",
+      });
+    }
+    if (/rechazó el pedido|No llamé a|no está habilitada/.test(lastText)) {
+      return JSON.stringify({ action: "reply", text: "Dejame revisarlo: ¿me repetís los datos?" });
+    }
+    return null;
+  }
+
+  if (last?.role !== "user") return null;
+  const text = lastUser.toLowerCase();
+
+  // «quiero reservar la AC-004 del 2026-11-10 al 2026-11-12 para 4»
+  const code = /\b(ac-\d{3})\b/i.exec(lastUser)?.[1];
+  const dates = [...lastUser.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]);
+  if (/reserv/.test(text) && code && dates.length >= 2 && has("start-booking")) {
+    const guests = Number(/para (\d+)/.exec(text)?.[1] ?? "2");
+    return JSON.stringify({
+      action: "use_tool",
+      tool: "start-booking",
+      args: { property: code.toUpperCase(), check_in: dates[0], check_out: dates[1], guests: String(guests) },
+    });
+  }
+
+  // Datos del interesado en un solo mensaje.
+  const email = /([^\s,]+@[^\s,]+\.[a-z]+)/i.exec(lastUser)?.[1];
+  if (email && draftId && has("set-guest-details")) {
+    const parts = lastUser.split(",").map((p) => p.trim());
+    const pid = /(\d{7,9})/.exec(lastUser)?.[1];
+    return JSON.stringify({
+      action: "use_tool",
+      tool: "set-guest-details",
+      args: {
+        draft_id: draftId,
+        fullname: parts[0],
+        email,
+        pid,
+        city: parts[3] ?? "Córdoba",
+        state: (parts[4] ?? "Córdoba").replace(/\.?\s*acepto.*$/i, "").trim(),
+        ...(/acepto/i.test(lastUser) ? { terms_accepted: true } : {}),
+      },
+    });
+  }
+
+  // Cualquier respuesta a «¿confirmás?»: un modelo ingenuo confirma SIEMPRE;
+  // la barrera del CRM decide si sale.
+  if (draftId && /confirm|^s[ií]\b|esper|todav[ií]a/.test(text) && has("confirm-booking")) {
+    return JSON.stringify({ action: "use_tool", tool: "confirm-booking", args: { draft_id: draftId, confirmed: true } });
+  }
+
+  if (/normas/.test(text) && has("list-house-rules")) {
+    return JSON.stringify({ action: "use_tool", tool: "list-house-rules", args: {} });
+  }
+  return null;
+}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { McpToolsList, type McpToolItem } from "@/components/integrations/mcp-tools-list";
 
 /**
  * Conector MCP en Administración (016, US1 — solo super admin).
@@ -59,6 +60,9 @@ type McpAdminView = {
   sharedWith: { organizationId: string; name: string }[];
   /** 028: config no secreta de MiniHotel (hotel, tarifa, motor de reservas). */
   providerConfig: Record<string, unknown> | null;
+  /** 032: herramientas del servidor con su estado. */
+  tools?: McpToolItem[];
+  agentToolsEnabled?: boolean;
 };
 
 type ApiErrorBody = {
@@ -70,7 +74,7 @@ type ApiErrorBody = {
 const PROFILE_LABEL: Record<McpProfileKey, string> = {
   altos_de_calamuchita: "Altos de Calamuchita (alojamientos)",
   minihotel: "MiniHotel (hotel)",
-  generic: "Servidor MCP genérico (el agente no recibe herramientas)",
+  generic: "Servidor MCP genérico (el agente usa las herramientas que se activen)",
 };
 
 const AUTH_LABEL: Record<McpAuthScheme, string> = {
@@ -174,6 +178,7 @@ export function McpAdminCard({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   const enabled = mcp?.enabled === true;
   const status = mcp ? STATUS_LABEL[mcp.status] : null;
@@ -227,6 +232,25 @@ export function McpAdminCard({
       mhPassword: "",
     });
     setOpen(true);
+  }
+
+  /** 032: el detalle (con las herramientas) sin abrir el formulario. */
+  async function loadDetail() {
+    const res = await fetch(`/api/admin/organizations/${organizationId}/mcp`).catch(() => null);
+    const body = res?.ok
+      ? ((await res.json().catch(() => null)) as { integration?: McpAdminView } | null)
+      : null;
+    setDetail(body?.integration ?? null);
+  }
+
+  async function toggleTools() {
+    if (toolsOpen) {
+      setToolsOpen(false);
+      return;
+    }
+    setToolsOpen(true);
+    setError(null);
+    await loadDetail();
   }
 
   async function save() {
@@ -692,6 +716,38 @@ export function McpAdminCard({
             >
               Deshabilitar
             </Button>
+          )}
+          {enabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => void toggleTools()}
+              data-testid={`admin-mcp-tools-${organizationId}`}
+            >
+              {toolsOpen ? "Ocultar herramientas" : "Herramientas"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {toolsOpen && !open && (
+        <div className="space-y-2 border-t pt-3" data-testid={`admin-mcp-tools-list-${organizationId}`}>
+          <p className="text-xs text-muted-foreground">
+            Lo que publicó el servidor en el último «Verificar conexión». Las que escriben en el
+            sistema del cliente se aprueban acá o desde Integraciones de la empresa.
+          </p>
+          {detail?.tools ? (
+            <McpToolsList
+              tools={detail.tools}
+              canManage
+              endpoint={`/api/admin/organizations/${organizationId}/mcp`}
+              onChanged={loadDetail}
+              onError={setError}
+              agentToolsEnabled={detail.agentToolsEnabled ?? true}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Cargando…</p>
           )}
         </div>
       )}

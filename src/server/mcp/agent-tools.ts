@@ -12,6 +12,12 @@ import type {
   StayCatalog,
 } from "@/server/mcp/profiles";
 import { makeForeignFence } from "@/server/mcp/sanitize";
+import {
+  USE_TOOL_MENU_LINE,
+  loadDynamicTools,
+  renderDynamicSection,
+  type DynamicToolsContext,
+} from "@/server/mcp/dynamic-tools";
 
 /**
  * Puente agente ↔ conector MCP (016, FR-008/FR-009/FR-016, design §F.3-§F.6).
@@ -112,7 +118,39 @@ export type McpContext = {
    * sobre su `providerConfig`: un hotel informa precios y otro no).
    */
   hidePrices: boolean;
+  /**
+   * 032: herramientas GENÉRICAS activas (las que el servidor publicó y una
+   * persona dejó activas) + la memoria de la conversación. `null` = ninguna:
+   * el turno es idéntico a 031. Solo existe con el conector usable.
+   */
+  dynamic: DynamicToolsContext | null;
 };
+
+/** 032: ¿el perfil le da acciones propias al agente? */
+export function profileHasActions(ctx: McpContext): boolean {
+  return ctx.profile.agentActions.length > 0;
+}
+
+/**
+ * 032: líneas del menú de acciones del conector. Las del perfil (si tiene)
+ * más `use_tool` (si hay genéricas activas). Un conector `generic` con
+ * herramientas activas ya no ofrece `search_stays`, que no sabría ejecutar.
+ */
+export function mcpMenuLines(ctx: McpContext): string[] {
+  const lines: string[] = [];
+  if (profileHasActions(ctx)) {
+    lines.push(
+      ...(ctx.profile.actionMenu && ctx.profile.actionMenu.length > 0
+        ? ctx.profile.actionMenu
+        : [
+            '- {"action":"search_stays","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":4} — consultar el sistema de reservas (ver la sección de alojamientos para los filtros opcionales). Te respondo con las opciones y vos volvés a contestarle al cliente.',
+            '- {"action":"show_stay","property":"AC-003"} — el detalle de UNA propiedad por código, slug o enlace.',
+          ])
+    );
+  }
+  if (ctx.dynamic) lines.push(USE_TOOL_MENU_LINE);
+  return lines;
+}
 
 /**
  * Lee la fila y arma el contexto del turno. **Nunca toca la red cuando
@@ -138,22 +176,37 @@ export async function loadMcpContext(
   if (integration.status === "disabled") return null;
 
   const profile = integration.profile;
-  // `generic` (o cualquier perfil sin acciones) se conecta y se diagnostica en
-  // la UI, pero no se le ofrece al modelo (FR-007, §C.4).
-  if (profile.agentActions.length === 0) return null;
+  const toolsUsable = integration.status === "connected" && integration.agentToolsEnabled;
+
+  // 032: las herramientas GENÉRICAS activas. Solo con el conector usable:
+  // con la credencial rota o el interruptor apagado no se ofrecen (no hay
+  // degradación que explicar herramienta por herramienta).
+  let dynamic: DynamicToolsContext | null = null;
+  if (toolsUsable) {
+    dynamic = await loadDynamicTools(integration, conversationId);
+  }
+
+  // `generic` (o cualquier perfil sin acciones) sin herramientas genéricas
+  // activas: se conecta y se diagnostica en la UI, pero no se le ofrece nada
+  // al modelo (FR-007, §C.4).
+  if (profile.agentActions.length === 0 && !dynamic) return null;
 
   const now = options.now ?? new Date();
 
   // Stale-while-revalidate: devuelve lo que haya sin esperar red, y el
   // refresco queda cortado por `sandbox` dentro de `catalog.ts`.
-  const catalog = getCatalogStaleWhileRevalidate(integration, {
-    sandbox: options.sandbox,
-    now,
-  });
+  const catalog =
+    profile.agentActions.length > 0
+      ? getCatalogStaleWhileRevalidate(integration, {
+          sandbox: options.sandbox,
+          now,
+        })
+      : null;
 
-  const lastSearch = conversationId
-    ? await readLastSearch(organizationId, conversationId, profile)
-    : null;
+  const lastSearch =
+    conversationId && profile.agentActions.length > 0
+      ? await readLastSearch(organizationId, conversationId, profile)
+      : null;
 
   return {
     integration,
@@ -163,7 +216,8 @@ export async function loadMcpContext(
     now,
     actions: profile.agentActions,
     lastSearch,
-    toolsUsable: integration.status === "connected" && integration.agentToolsEnabled,
+    toolsUsable,
+    dynamic,
     hidePrices:
       profile.hidePricesInReply === true ||
       (profile.hidePrices?.(integration.providerConfig ?? null) ?? false),
@@ -223,13 +277,18 @@ async function readLastSearch(
  */
 export function renderMcpSection(
   ctx: McpContext,
-  options: { hasCalendar?: boolean } = {}
+  options: { hasCalendar?: boolean; contactPhone?: string | null } = {}
 ): string | null {
   // Valla NUEVA por turno: un delimitador fijo es adivinable, y un proveedor
   // que lo adivina lo cierra y escribe un bloque que parece nuestro.
   const fence = makeForeignFence();
 
-  const section = ctx.profile.renderSection({
+  // 032: con herramientas genéricas, las notas del servidor van en SU
+  // sección (completas: son el manual de esas herramientas). El perfil no
+  // las repite.
+  const profileSection = !profileHasActions(ctx)
+    ? null
+    : ctx.profile.renderSection({
     catalog: ctx.catalog,
     now: ctx.now,
     // `enabled` y `reconnect_required` caen los dos en la variante degradada:
@@ -238,14 +297,27 @@ export function renderMcpSection(
     agentToolsEnabled: ctx.integration.agentToolsEnabled,
     timezone: ctx.timezone,
     instructions: ctx.integration.instructions,
-    useServerInstructions: ctx.integration.useServerInstructions,
+    useServerInstructions: ctx.dynamic ? false : ctx.integration.useServerInstructions,
     fence,
     lastSearch: ctx.lastSearch,
     providerConfig: ctx.integration.providerConfig ?? null,
+    bookingTools: ctx.dynamic?.canWrite ?? false,
   });
 
+  const dynamicSection = ctx.dynamic
+    ? renderDynamicSection({
+        integration: ctx.integration,
+        dynamic: ctx.dynamic,
+        fence,
+        contactPhone: options.contactPhone ?? null,
+      })
+    : null;
+
+  const section = [profileSection, dynamicSection].filter(Boolean).join("\n\n");
   if (!section) return null;
-  return options.hasCalendar ? `${section}\n\n${CALENDAR_DISAMBIGUATION}` : section;
+  return options.hasCalendar && profileSection
+    ? `${section}\n\n${CALENDAR_DISAMBIGUATION}`
+    : section;
 }
 
 /* ============================================================

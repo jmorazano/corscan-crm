@@ -11,6 +11,7 @@ import {
   getMcpIntegration,
   getMcpIntegrationView,
   setMcpCredential,
+  setToolDecision,
   updateMcpSettings,
 } from "@/server/mcp/integration";
 import { withMiniHotelOwnerSettings } from "@/server/mcp/profiles/minihotel-config";
@@ -198,3 +199,42 @@ export const DELETE = withAuth(async (session) => {
   if (!result.ok) return apiError(404, "not_enabled", NOT_ENABLED);
   return Response.json({ ok: true });
 });
+
+/**
+ * 032: activar o apagar UNA herramienta del servidor para el agente. Solo el
+ * propietario (también lo puede hacer el super admin desde Administración).
+ * Activar una que ESCRIBE aprueba su definición actual: si el servidor la
+ * cambia, vuelve a pendiente sola.
+ */
+const toolDecisionSchema = z.object({
+  tool: z.string().trim().min(1).max(128),
+  enabled: z.boolean(),
+});
+
+export const PATCH = withAuth(async (session, req: Request) => {
+  if (session.role !== "owner") {
+    return apiError(403, "forbidden", "Solo el propietario puede activar o apagar herramientas");
+  }
+  const body = await parseBody(req, toolDecisionSchema);
+  if (!body.ok) return body.response;
+  const result = await setToolDecision({
+    organizationId: session.organizationId,
+    tool: body.data.tool,
+    enabled: body.data.enabled,
+    userId: session.userId,
+  });
+  if (!result.ok) return toolDecisionError(result.code);
+  return Response.json({ ok: true, integration: result.integration });
+});
+
+function toolDecisionError(code: "not_enabled" | "unknown_tool" | "profile_tool"): Response {
+  if (code === "not_enabled") return apiError(404, "not_enabled", NOT_ENABLED);
+  if (code === "unknown_tool") {
+    return apiError(404, "unknown_tool", "El servidor no publica esa herramienta. Verificá la conexión para actualizar la lista.");
+  }
+  return apiError(
+    422,
+    "profile_tool",
+    "Esa herramienta la usa el perfil del proveedor: se gobierna con «Herramientas del agente»."
+  );
+}

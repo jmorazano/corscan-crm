@@ -377,7 +377,8 @@ function esSoloAnotacion(plano: string, fin: number): boolean {
  * del incidente.
  */
 export function detectBookingPromise(
-  text: string | null | undefined
+  text: string | null | undefined,
+  options?: { claimsOnly?: boolean }
 ): BookingPromiseMatch {
   const original = text ?? "";
   if (!original.trim()) return { promises: false, match: null };
@@ -386,6 +387,10 @@ export function detectBookingPromise(
   let mejor: { indice: number; largo: number } | null = null;
 
   for (const regla of REGLAS) {
+    // 032: con reservas habilitadas, el agente PUEDE ofrecer y hacer la
+    // reserva («¿querés que te la deje iniciada?»): solo se vigila que no
+    // AFIRME que quedó hecha sin que la herramienta lo haya confirmado.
+    if (options?.claimsOnly && regla.familia !== "estado") continue;
     regla.patron.lastIndex = 0;
     for (
       let encontrado = regla.patron.exec(plano);
@@ -462,16 +467,24 @@ export function safeBookingReply(link?: string | null): string {
  */
 export function stripBookingPromise(
   text: string | null | undefined,
-  options?: { link?: string | null }
+  options?: { link?: string | null; claimsOnly?: boolean }
 ): GuardedReply {
   const original = text ?? "";
-  const deteccion = detectBookingPromise(original);
+  const deteccion = detectBookingPromise(original, { claimsOnly: options?.claimsOnly });
   if (!deteccion.promises) {
     return { text: original, replaced: false, match: null };
   }
   return {
-    text: safeBookingReply(options?.link ?? null),
+    text: options?.claimsOnly ? PENDING_BOOKING_REPLY : safeBookingReply(options?.link ?? null),
     replaced: true,
     match: deteccion.match,
   };
 }
+
+/**
+ * 032: la frase segura cuando el agente PUEDE reservar pero afirmó que la
+ * reserva quedó hecha sin que la herramienta lo confirmara. Escrita para no
+ * disparar la propia guarda (la negación es adyacente).
+ */
+export const PENDING_BOOKING_REPLY =
+  "Ojo: la reserva todavía no está registrada. Para registrarla necesito tus datos completos y que me confirmes el resumen; apenas lo tenga, te paso el enlace para pagar la seña.";

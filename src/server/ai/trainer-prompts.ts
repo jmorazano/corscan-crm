@@ -38,6 +38,8 @@ export function buildTrainerSystemPrompt(input: {
   kb: KbEntry[];
   kbChars: number;
   warnAt: number;
+  /** 032: el conector con el sistema del negocio (lo arma `renderConnectorForTrainer`). */
+  connectorSection?: string | null;
 }): string {
   const { profile } = input;
   const sizeNotice =
@@ -66,6 +68,7 @@ export function buildTrainerSystemPrompt(input: {
       "=== FIN DEL CONOCIMIENTO ===",
     ].join("\n"),
     sizeNotice,
+    input.connectorSection ?? null,
     [
       "FORMATO DE RESPUESTA: en cada turno respondés ÚNICAMENTE un objeto JSON con UNA de estas dos formas.",
       "1) Sin cambios (aclaraciones, preguntas, charla):",

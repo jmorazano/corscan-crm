@@ -157,7 +157,8 @@ export async function mcpCallTool(
   cfg: McpEndpointConfig,
   tool: string,
   args: Record<string, unknown>,
-  session?: McpSession
+  session?: McpSession,
+  options?: { lenientText?: boolean }
 ): Promise<McpCallToolResult> {
   const { result, httpStatus, bytes } = await rpc(
     cfg,
@@ -165,7 +166,7 @@ export async function mcpCallTool(
     { name: tool, arguments: args },
     session
   );
-  const outcome = unwrapToolResult(result);
+  const outcome = unwrapToolResult(result, options);
   if (!outcome.ok && isUnauthorizedCode(outcome.code)) {
     throw new McpError("unauthorized", { providerCode: outcome.code, httpStatus });
   }

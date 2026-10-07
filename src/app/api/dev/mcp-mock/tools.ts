@@ -37,12 +37,14 @@ export const MCP_MOCK_INSTRUCTIONS = [
 
 export type McpMockTool = {
   name: string;
+  title?: string;
   description: string;
   inputSchema: Record<string, unknown>;
   annotations: {
-    readOnlyHint: true;
-    idempotentHint: true;
+    readOnlyHint: boolean;
+    idempotentHint?: boolean;
     openWorldHint: false;
+    destructiveHint?: boolean;
   };
 };
 
@@ -149,3 +151,112 @@ export const MCP_MOCK_TOOLS: readonly McpMockTool[] = [
     annotations: SOLO_LECTURA,
   },
 ];
+
+/* ------------------------------------------------------------------ */
+/* 032: reservas (servidor real 2.0.0) y una herramienta «nueva»        */
+/* ------------------------------------------------------------------ */
+
+const NULLABLE_STRING = { type: ["string", "null"] } as const;
+
+/**
+ * Las cuatro de reserva, con las MISMAS anotaciones que el real:
+ * `start-booking` se declara de solo lectura pero NO idempotente (abre un
+ * borrador nuevo cada vez), y `confirm-booking` es la única que escribe.
+ * Se publican solo con el knob `bookingTools` (los guiones viejos de 016
+ * siguen viendo las tres de siempre).
+ */
+export const MCP_MOCK_BOOKING_TOOLS: readonly McpMockTool[] = [
+  {
+    name: "start-booking",
+    title: "Iniciar una reserva (todavía sin registrarla)",
+    description:
+      "Abre una reserva EN PREPARACIÓN para un alojamiento y unas fechas ya elegidas, y devuelve el draft_id. NO registra la reserva ni retiene las fechas. Devuelve summary.lines (el resumen con total y seña), terms.url y guest.missing_labels.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        property: { type: "string", description: "Código (AC-003), slug o enlace de la ficha." },
+        check_in: { type: "string", description: "Fecha de ingreso, AAAA-MM-DD." },
+        check_out: { type: "string", description: "Fecha de salida, AAAA-MM-DD." },
+        guests: { type: "integer", description: "Cantidad de huéspedes." },
+        detail: { ...NULLABLE_STRING, description: "Comentario del interesado (opcional)." },
+        conversation_id: { ...NULLABLE_STRING, description: "Identificador de la conversación." },
+      },
+      required: ["property", "check_in", "check_out", "guests"],
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "set-guest-details",
+    title: "Cargar o corregir los datos del interesado",
+    description:
+      "Carga en la reserva en preparación los datos del interesado (todos opcionales, se acumulan). Seis obligatorios: fullname, email, pid, phone, city y state. Con terms_accepted: true registra la aceptación de los términos. NO registra la reserva.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draft_id: { type: "string", description: "El identificador que devolvió start-booking." },
+        fullname: { ...NULLABLE_STRING, description: "Nombre y apellido." },
+        email: { ...NULLABLE_STRING, description: "Correo electrónico." },
+        pid: { ...NULLABLE_STRING, description: "DNI, solo números." },
+        phone: { ...NULLABLE_STRING, description: "Celular, solo números." },
+        city: { ...NULLABLE_STRING, description: "Ciudad donde vive el interesado." },
+        state: { ...NULLABLE_STRING, description: "Provincia donde vive el interesado." },
+        detail: { ...NULLABLE_STRING, description: "Comentario opcional." },
+        terms_accepted: { type: ["boolean", "null"], description: "true cuando el interesado YA aceptó los términos." },
+      },
+      required: ["draft_id"],
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "show-booking-draft",
+    title: "Ver el estado de la reserva en preparación",
+    description:
+      "Devuelve el estado de la reserva en preparación sin modificarla: datos cargados, faltantes y el resumen (alojamiento, fechas, total y seña).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draft_id: { type: "string", description: "El identificador que devolvió start-booking." },
+      },
+      required: ["draft_id"],
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "confirm-booking",
+    title: "Registrar la reserva y obtener el enlace de pago de la seña",
+    description:
+      "Registra la reserva y devuelve payment_url. ES LA ÚNICA QUE CREA ALGO. Exige los seis datos, la aceptación de los términos y confirmed: true (la conformidad explícita del interesado con el resumen). No reintentar después de un éxito.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draft_id: { type: "string", description: "El identificador que devolvió start-booking." },
+        confirmed: { type: "boolean", description: "La conformidad EXPLÍCITA del interesado con el resumen." },
+      },
+      required: ["draft_id", "confirmed"],
+    },
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+  },
+];
+
+/** 032: la herramienta que «aparece» al reconectar (knob `extraTool`). */
+export const MCP_MOCK_EXTRA_TOOL: McpMockTool = {
+  name: "list-house-rules",
+  title: "Normas de la casa",
+  description: "Devuelve las normas de convivencia de los alojamientos (horarios de ingreso y egreso, mascotas, ruidos).",
+  inputSchema: { type: "object", properties: {} },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+};
+
+/** 032: manual de reservas que se suma a las `instructions` con `bookingTools`. */
+export const MCP_MOCK_BOOKING_INSTRUCTIONS = [
+  "## Cómo avanzar una reserva",
+  "El orden es: check-availability → start-booking → set-guest-details (las veces que haga falta, hasta tener los seis datos Y la aceptación de los términos) → mostrarle el resumen al interesado y esperar su confirmación → confirm-booking.",
+  "Seis obligatorios: nombre y apellido, correo, DNI, celular, ciudad y provincia. El celular suele poder tomarse del propio chat.",
+  "Antes de registrar, mostrale el resumen (summary.lines) y esperá su conformidad. No reintentes confirm-booking después de un éxito.",
+  "confirm-booking devuelve payment_url: es el enlace para pagar la seña. La reserva queda pendiente de seña y vence sola si no se paga.",
+].join("\n");

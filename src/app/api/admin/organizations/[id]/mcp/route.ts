@@ -17,6 +17,7 @@ import {
   enableMcpIntegration,
   getMcpAdminView,
   removeMcpIntegration,
+  setToolDecision,
 } from "@/server/mcp/integration";
 import {
   buildMiniHotelAdminConfig,
@@ -303,4 +304,42 @@ export const DELETE = withSuperAdmin(async (_ctx, req: Request, routeCtx: Params
   }
   // Idempotente: sin fila también responde 200.
   return Response.json({ ok: true });
+});
+
+/* ============================================================
+ * PATCH — activar o apagar UNA herramienta (032)
+ * ============================================================ */
+
+const toolDecisionSchema = z.object({
+  tool: z.string().trim().min(1).max(128),
+  enabled: z.boolean(),
+});
+
+/**
+ * El super admin decide lo mismo que el propietario, sin entrar como la
+ * empresa. No toca dirección, perfil ni credencial (no es el upsert del PUT).
+ */
+export const PATCH = withSuperAdmin(async (ctx, req: Request, routeCtx: Params) => {
+  const { id } = await routeCtx.params;
+  const body = await parseBody(req, toolDecisionSchema);
+  if (!body.ok) return body.response;
+  if (!(await organizationExists(id))) {
+    return apiError(404, "organization_not_found", ORG_NOT_FOUND);
+  }
+  const result = await setToolDecision({
+    organizationId: id,
+    tool: body.data.tool,
+    enabled: body.data.enabled,
+    userId: ctx.userId,
+  });
+  if (!result.ok) {
+    if (result.code === "not_enabled") {
+      return apiError(404, "not_enabled", "Esta empresa no tiene el conector habilitado");
+    }
+    if (result.code === "unknown_tool") {
+      return apiError(404, "unknown_tool", "El servidor no publica esa herramienta. Verificá la conexión para actualizar la lista.");
+    }
+    return apiError(422, "profile_tool", "Esa herramienta la usa el perfil del proveedor.");
+  }
+  return Response.json({ ok: true, integration: await getMcpAdminView(id) });
 });

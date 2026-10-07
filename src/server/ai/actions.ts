@@ -140,6 +140,19 @@ export const AgentAction = z.discriminatedUnion("action", [
     ...LEAD_NOTE_FIELD,
   }),
   /**
+   * 032: cualquier herramienta que el servidor del conector publicó y una
+   * persona dejó activa, sin un deploy. Los argumentos son LAXOS a propósito:
+   * los valida el servidor del CRM contra el `inputSchema` publicado
+   * (`validateToolArgs`), y un modelo que manda una forma rara recibe qué
+   * corregir en vez de tumbar el turno.
+   */
+  z.object({
+    action: z.literal("use_tool"),
+    tool: z.string().trim().min(1).max(128),
+    args: z.record(z.unknown()).optional(),
+    ...LEAD_NOTE_FIELD,
+  }),
+  /**
    * Publicaciones de Mercado Libre (025): consultas sobre el SNAPSHOT local
    * de la empresa (nunca la red en el turno). Solo se ofrecen en el prompt
    * cuando la empresa tiene publicaciones sincronizadas. Todos los filtros
@@ -192,6 +205,13 @@ export function isMcpAction(
   action: AgentActionType
 ): action is Extract<AgentActionType, { action: "search_stays" | "show_stay" }> {
   return action.action === "search_stays" || action.action === "show_stay";
+}
+
+/** 032: herramienta GENÉRICA del conector (lo que el servidor publique). */
+export function isGenericToolAction(
+  action: AgentActionType
+): action is Extract<AgentActionType, { action: "use_tool" }> {
+  return action.action === "use_tool";
 }
 
 /** Acciones-herramienta de la agenda (005). */

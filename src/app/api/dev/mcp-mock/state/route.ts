@@ -4,6 +4,7 @@ import { mockGuard } from "@/lib/dev-guard";
 import { ventanaDisponibilidad, MCP_MOCK_TOOL_NAMES } from "../engine";
 import { MCP_MOCK_PROPERTIES } from "../data";
 import { getMcpMockState, resetMcpMockState } from "../state";
+import { confirmedBookings, resetBookingState } from "../booking";
 
 /**
  * Inspección y control del mcp-mock (016), en el estilo de
@@ -64,6 +65,10 @@ const bodySchema = z.object({
 
   /** Limpia solo la bitácora, sin tocar los knobs. */
   clearCalls: z.boolean().optional(),
+  /** 032: herramientas de reserva / herramienta nueva / alojamiento ocupado. */
+  bookingTools: z.boolean().optional(),
+  extraTool: z.boolean().optional(),
+  bookingUnavailable: z.boolean().optional(),
 });
 
 /** Demora que usa el alias `timeout: true` (por encima de cualquier cliente). */
@@ -80,6 +85,8 @@ export async function GET() {
     // vez de cablear un 2026 que caduca.
     availabilityWindow: ventanaDisponibilidad(),
     tools: [...MCP_MOCK_TOOL_NAMES],
+    // 032: reservas registradas (el guion prueba que no se duplican).
+    bookings: confirmedBookings(),
     properties: MCP_MOCK_PROPERTIES.map((p) => ({
       code: p.code,
       city: p.city,
@@ -124,6 +131,9 @@ export async function POST(req: Request) {
   if (d.evilText !== undefined) k.evilText = d.evilText;
 
   if (d.clearCalls) getMcpMockState().calls.length = 0;
+  if (d.bookingTools !== undefined) k.bookingTools = d.bookingTools;
+  if (d.extraTool !== undefined) k.extraTool = d.extraTool;
+  if (d.bookingUnavailable !== undefined) k.bookingUnavailable = d.bookingUnavailable;
 
   return Response.json({ knobs: k });
 }
@@ -132,5 +142,6 @@ export async function DELETE() {
   const guard = mockGuard();
   if (guard) return guard;
   resetMcpMockState();
+  resetBookingState();
   return Response.json({ cleared: true });
 }

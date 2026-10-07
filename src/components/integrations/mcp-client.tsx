@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { McpToolsList, type McpToolItem } from "@/components/integrations/mcp-tools-list";
 
 /**
  * Conector MCP de la empresa (016, US2): conexión, diagnóstico del servidor,
@@ -47,11 +48,8 @@ import { Label } from "@/components/ui/label";
 
 type McpStatus = "enabled" | "connected" | "reconnect_required" | "disabled";
 
-type ToolView = {
-  name: string;
-  description: string | null;
-  readOnly: boolean;
-};
+/** 032: con título, tipo y estado (activa / pendiente / apagada / perfil). */
+type ToolView = McpToolItem;
 
 type CatalogView = {
   propertyTypes: string[];
@@ -99,6 +97,8 @@ type IntegrationView = {
   timezone: string;
   tools: ToolView[];
   instructions: string | null;
+  /** 032: largo de las notas del proveedor. */
+  instructionsChars?: number;
   useServerInstructions: boolean;
   agentToolsEnabled: boolean;
   catalog: CatalogView | null;
@@ -1090,39 +1090,32 @@ function ServerCard({
 
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Herramientas descubiertas ({integration.tools.length})
+            Herramientas que publica el servidor ({integration.tools.length})
           </p>
-          {integration.tools.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              El servidor no declaró ninguna herramienta.
-            </p>
-          )}
-          <ul className="space-y-2">
-            {integration.tools.map((tool) => (
-              <li
-                key={tool.name}
-                className="rounded-md border p-3"
-                data-testid={`mcp-tool-${tool.name}`}
+          <p className="text-xs text-muted-foreground">
+            Se actualizan solas cada vez que verificás la conexión. Las de consulta quedan activas;
+            las que escriben en el sistema esperan tu aprobación.
+          </p>
+          <McpToolsList
+            tools={integration.tools}
+            canManage={canManage}
+            endpoint="/api/integrations/mcp"
+            onChanged={onChanged}
+            onError={onError}
+            agentToolsEnabled={integration.agentToolsEnabled}
+          />
+          {integration.instructions &&
+            !integration.useServerInstructions &&
+            integration.tools.some((t) => t.state === "active") && (
+              <p
+                className="rounded-md border border-[#ece2cf] bg-[#faf7f0] px-3 py-2 text-xs text-[#8a6d3b]"
+                data-testid="mcp-instructions-off-hint"
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="break-all text-xs font-medium">
-                    {tool.name}
-                  </code>
-                  <Badge variant={tool.readOnly ? "secondary" : "warning"}>
-                    {tool.readOnly ? "Solo lectura" : "Escribe"}
-                  </Badge>
-                </div>
-                {tool.description && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <span className="font-medium">
-                      Texto del proveedor (sin verificar):
-                    </span>{" "}
-                    {tool.description}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+                El servidor publica un manual de uso de sus herramientas y está desactivado para el
+                agente. Activalo abajo en «Notas del proveedor» para que siga el flujo que indica el
+                sistema (orden de los pasos, datos que pide, errores).
+              </p>
+            )}
         </div>
 
         {catalog && catalog.roomTypes && catalog.roomTypes.length > 0 && (
@@ -1190,7 +1183,10 @@ function ServerCard({
         {integration.instructions && (
           <details className="rounded-md border p-3">
             <summary className="cursor-pointer text-sm font-medium">
-              Notas del proveedor (informativas)
+              Notas del proveedor (manual de uso)
+              {integration.instructionsChars
+                ? ` · ${integration.instructionsChars.toLocaleString("es-AR")} caracteres`
+                : ""}
             </summary>
             <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
               {integration.instructions}
@@ -1313,8 +1309,9 @@ function AgentCard({
           </>
         )}
         <p className="rounded-md border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-          El agente informa y pasa el enlace. Nunca confirma ni promete una
-          reserva.
+          {integration.tools.some((t) => t.kind === "write" && t.state === "active")
+            ? "Además de informar, el agente puede registrar en el sistema con las herramientas de escritura que aprobaste: solo con la conformidad explícita del cliente, una vez por conversación, y nunca afirma algo que el sistema no confirmó."
+            : "El agente informa y pasa el enlace. Nunca confirma ni promete una reserva."}
         </p>
         {!canManage && (
           <p className="text-xs text-muted-foreground">

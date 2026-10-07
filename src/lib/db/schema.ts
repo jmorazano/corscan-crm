@@ -407,7 +407,7 @@ export const conversationEvent = pgTable(
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error"],
+      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error", "ai_tool_write"],
     }).notNull(),
     reason: text("reason"),
     actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -1319,10 +1319,36 @@ export const mcpIntegration = pgTable(
     useServerInstructions: boolean("use_server_instructions")
       .notNull()
       .default(false),
-    /** tools/list congelado en el último handshake (nombre + descripción). */
+    /**
+     * tools/list congelado en el último handshake. 032: además del nombre y
+     * la descripción, el título, el esquema de parámetros, las anotaciones y
+     * la FIRMA (hash de lo anterior): con eso el agente usa cualquier
+     * herramienta habilitada sin un deploy. Filas viejas: solo los tres
+     * primeros campos (siguen andando hasta el próximo «Verificar»).
+     */
     tools: jsonb("tools").$type<
-      { name: string; description: string | null; readOnly: boolean }[] | null
+      | {
+          name: string;
+          description: string | null;
+          readOnly: boolean;
+          title?: string | null;
+          inputSchema?: Record<string, unknown> | null;
+          annotations?: Record<string, boolean> | null;
+          signature?: string;
+        }[]
+      | null
     >(),
+    /**
+     * 032: qué herramientas del servidor puede usar el agente, decidido por
+     * una PERSONA (propietario o super admin). Sin entrada para una
+     * herramienta rige el default: consulta activa, escritura pendiente. La
+     * aprobación de una escritura vale para su `signature`: si el servidor
+     * cambia la definición, vuelve a pendiente.
+     */
+    toolPolicy: jsonb("tool_policy").$type<Record<
+      string,
+      { enabled: boolean; signature: string | null; by: string | null; at: string }
+    > | null>(),
     lastHandshakeAt: timestamp("last_handshake_at"),
     lastErrorCode: text("last_error_code"),
     lastErrorAt: timestamp("last_error_at"),
@@ -1398,6 +1424,19 @@ export const mcpToolCall = pgTable(
     httpStatus: integer("http_status"),
     durationMs: integer("duration_ms"),
     responseBytes: integer("response_bytes"),
+    /**
+     * 032: la herramienta ESCRIBE en el sistema del tercero (p. ej. registra
+     * una reserva). Con `status='ok'` + `argsHash` es lo que impide repetirla
+     * en la misma conversación.
+     */
+    write: boolean("write").notNull().default(false),
+    /**
+     * 032: extracto SANEADO (≤ 1.500 caracteres) del resultado de una
+     * herramienta genérica. Es la memoria de la conversación: el `draft_id`
+     * de una reserva en preparación sobrevive entre turnos. Nunca la
+     * credencial; nunca bytes crudos sin sanear.
+     */
+    resultExcerpt: text("result_excerpt"),
     isTest: boolean("is_test").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

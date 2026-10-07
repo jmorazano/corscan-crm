@@ -163,6 +163,12 @@ export type SectionInput = {
   lastSearch?: Record<string, unknown> | null;
   /** 028: configuración no secreta del proveedor (ver `ProviderConfig`). */
   providerConfig?: ProviderConfig;
+  /**
+   * 032: hay herramientas genéricas de ESCRITURA activas (p. ej. iniciar una
+   * reserva). El perfil cambia sus reglas de «no tomamos reservas» y de
+   * importes en consecuencia.
+   */
+  bookingTools?: boolean;
 };
 
 /** `validate` OK: herramienta y argumentos listos para el transporte. */

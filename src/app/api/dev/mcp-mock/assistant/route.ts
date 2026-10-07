@@ -13,11 +13,49 @@ import {
   type McpMockMalformed,
 } from "../state";
 import {
+  MCP_MOCK_BOOKING_INSTRUCTIONS,
+  MCP_MOCK_BOOKING_TOOLS,
+  MCP_MOCK_EXTRA_TOOL,
   MCP_MOCK_INSTRUCTIONS,
   MCP_MOCK_PROTOCOL_VERSION,
   MCP_MOCK_SERVER_INFO,
   MCP_MOCK_TOOLS,
 } from "../tools";
+import { confirmBooking, setGuestDetails, showBookingDraft, startBooking } from "../booking";
+
+/** 032: lo que publica el mock según los knobs persistentes. */
+function herramientasPublicadas() {
+  const k = getMcpMockState().knobs;
+  return [
+    ...MCP_MOCK_TOOLS,
+    ...(k.bookingTools ? MCP_MOCK_BOOKING_TOOLS : []),
+    ...(k.extraTool ? [MCP_MOCK_EXTRA_TOOL] : []),
+  ];
+}
+
+/** 032: despacho de las herramientas nuevas (fuera de `engine.ts`). */
+function ejecutarExtra(tool: string, args: Record<string, unknown>) {
+  const k = getMcpMockState().knobs;
+  if (k.bookingTools) {
+    if (tool === "start-booking") return startBooking(args);
+    if (tool === "set-guest-details") return setGuestDetails(args);
+    if (tool === "show-booking-draft") return showBookingDraft(args);
+    if (tool === "confirm-booking") return confirmBooking(args, { unavailable: k.bookingUnavailable });
+  }
+  if (k.extraTool && tool === "list-house-rules") {
+    return {
+      ok: true as const,
+      data: {
+        rules: [
+          "Ingreso desde las 14 h; egreso hasta las 10 h.",
+          "Se aceptan mascotas pequeñas con aviso previo.",
+          "Silencio de 23 a 8 h.",
+        ],
+      },
+    };
+  }
+  return null;
+}
 
 /**
  * Servidor MCP simulado (016). La ruta se llama `assistant/` para que la URL
@@ -430,7 +468,9 @@ function manejarInitialize(
         protocolVersion: MCP_MOCK_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: MCP_MOCK_SERVER_INFO,
-        instructions: MCP_MOCK_INSTRUCTIONS,
+        instructions: getMcpMockState().knobs.bookingTools
+          ? `${MCP_MOCK_INSTRUCTIONS}\n\n${MCP_MOCK_BOOKING_INSTRUCTIONS}`
+          : MCP_MOCK_INSTRUCTIONS,
       },
     },
     knobs
@@ -447,7 +487,7 @@ function manejarToolsList(
   knobs: KnobsEfectivos,
   iniciado: number
 ): Response {
-  const e = emitir({ jsonrpc: "2.0", id, result: { tools: MCP_MOCK_TOOLS } }, knobs);
+  const e = emitir({ jsonrpc: "2.0", id, result: { tools: herramientasPublicadas() } }, knobs);
   registrar({ method: "tools/list", tool: null, args: null, cred: null, knobs, iniciado, status: e.status, ok: true, errorCode: null, bytes: e.body.length });
   return responder(e);
 }
@@ -490,7 +530,7 @@ function manejarToolsCall(
   // 2. Herramienta desconocida: también error de aplicación, no JSON-RPC.
   const resultado = knobs.forceError !== null
     ? ({ ok: false, error: errorForzado(knobs.forceError) } as const)
-    : ejecutarHerramienta(tool, args, { sinResultados: knobs.emptyResults });
+    : (ejecutarExtra(tool, args) ?? ejecutarHerramienta(tool, args, { sinResultados: knobs.emptyResults }));
 
   if (!resultado.ok) {
     const e = emitir(sobreIsError(id, resultado.error), knobs);

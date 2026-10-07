@@ -11,6 +11,8 @@ import { kbSize, listEntries } from "@/server/kb/service";
 import { getProfile } from "@/server/ai/profile";
 import { TrainerAction, type TrainerActionType } from "@/server/ai/trainer-actions";
 import { buildTrainerSystemPrompt } from "@/server/ai/trainer-prompts";
+import { getMcpIntegration } from "@/server/mcp/integration";
+import { renderConnectorForTrainer } from "@/server/mcp/dynamic-tools";
 import { trainerImageContext } from "@/lib/trainer-image";
 import { applyTrainerChanges, type ApplyOutcome } from "@/server/trainer/changes";
 
@@ -249,6 +251,14 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
   if (!profile) return;
   const kb = await listEntries(organizationId);
   const size = kbSize(kb);
+  // 032: el conector (si hay). Un fallo al leerlo no tumba el turno.
+  let connectorSection: string | null = null;
+  try {
+    const integration = await getMcpIntegration(organizationId);
+    connectorSection = integration ? renderConnectorForTrainer(integration) : null;
+  } catch (err) {
+    console.error("[entrenador] no se pudo leer el conector:", err instanceof Error ? err.message : err);
+  }
 
   const messages: ChatMessage[] = [
     {
@@ -258,6 +268,7 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
         kb,
         kbChars: size.chars,
         warnAt: size.warnAt,
+        connectorSection,
       }),
     },
     ...history.flatMap((m) => {

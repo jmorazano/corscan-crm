@@ -145,12 +145,62 @@ export function safePriceReply(link?: string | null): string {
 }
 
 /**
+ * 032: el valor entero de un importe escrito («$ 450.000» → 450000,
+ * «1.234,50 ARS» → 1234). `null` si no hay dígitos (importes en palabras).
+ */
+export function amountValue(fragment: string): number | null {
+  const digits = fragment.match(/\d[\d.,]*/)?.[0];
+  if (!digits) return null;
+  // Decimales con coma (1.234,50) o con punto (1234.50): se descartan.
+  const sinDecimales = digits.replace(/[.,]\d{1,2}$/, "");
+  const n = Number(sinDecimales.replace(/[.,]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Todos los importes de una oración (no solo el primero). */
+function importesDe(oracion: string): string[] {
+  const out: string[] = [];
+  for (const { patron } of PATRONES) {
+    patron.lastIndex = 0;
+    for (let m = patron.exec(oracion); m !== null; m = patron.exec(oracion)) {
+      if (!m[0]) {
+        patron.lastIndex += 1;
+        continue;
+      }
+      out.push(m[0]);
+    }
+  }
+  return out;
+}
+
+/**
+ * 032: ¿la oración menciona SOLO importes permitidos? Los permitidos son los
+ * que devolvió una herramienta en ESTE turno (el total y la seña del resumen
+ * de una reserva, que el interesado tiene que ver para confirmar). Un
+ * importe en palabras o uno que no está en la lista no se perdona.
+ */
+function soloPermitidos(oracion: string, permitidos: ReadonlySet<number>): boolean {
+  if (permitidos.size === 0) return false;
+  const importes = importesDe(oracion);
+  if (importes.length === 0) return false;
+  return importes.every((f) => {
+    const v = amountValue(f);
+    return v !== null && permitidos.has(v);
+  });
+}
+
+/**
  * Lo que usa el pipeline antes de enviar. Devuelve `replaced` y `match` para
  * que quien llama registre el incidente.
+ *
+ * 032: `allowedAmounts` son importes que SÍ pueden salir (los del resumen de
+ * una reserva que devolvió el sistema en este turno). Una oración con solo
+ * importes permitidos se conserva; cualquier otra con importes se recorta
+ * igual que siempre.
  */
 export function stripPrices(
   text: string | null | undefined,
-  options?: { link?: string | null }
+  options?: { link?: string | null; allowedAmounts?: readonly number[] }
 ): GuardedPriceReply {
   const original = text ?? "";
   const deteccion = detectPriceMention(original);
@@ -158,9 +208,15 @@ export function stripPrices(
     return { text: original, replaced: false, match: null };
   }
 
-  const limpias = enOraciones(original).filter(
-    (oracion) => !detectPriceMention(oracion).mentions
+  const permitidos = new Set(options?.allowedAmounts ?? []);
+  const oraciones = enOraciones(original);
+  const limpias = oraciones.filter(
+    (oracion) => !detectPriceMention(oracion).mentions || soloPermitidos(oracion, permitidos)
   );
+  if (limpias.length === oraciones.length) {
+    // Todo lo que tenía importes estaba permitido: sale tal cual.
+    return { text: original, replaced: false, match: null };
+  }
   const restante = limpias.join("").replace(/\n{3,}/g, "\n\n").trim();
 
   // Un resto demasiado corto no es un mensaje: es la ruina de uno. Mejor la

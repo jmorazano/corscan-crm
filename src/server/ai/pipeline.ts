@@ -14,6 +14,7 @@ import {
   degradeAction,
   isCalendarAction,
   isListingsAction,
+  isGenericToolAction,
   isMcpAction,
   resolveStage,
   type AgentActionType,
@@ -61,10 +62,13 @@ import {
 import {
   executeMcpAction,
   loadMcpContext,
+  mcpMenuLines,
+  profileHasActions,
   renderMcpSection,
   MCP_TOOL_TEXT_ROLE,
   type McpContext,
 } from "@/server/mcp/agent-tools";
+import { executeDynamicTool } from "@/server/mcp/dynamic-tools";
 import {
   executeListingsAction,
   listingForVisit,
@@ -84,7 +88,18 @@ const MAX_TOOL_ROUNDS = 2;
  * el texto cableado de turnos ("te confirmo el turno con el equipo") a alguien
  * que estaba preguntando por una cabaña.
  */
-const MAX_TOOL_ROUNDS_TOTAL = 3;
+const MAX_TOOL_ROUNDS_TOTAL = 4;
+
+/**
+ * 032: vueltas de herramientas GENÉRICAS por turno. Un paso de una reserva
+ * puede encadenar dos o tres (iniciar → cargar el celular del chat → ver el
+ * resumen) antes de contestarle al cliente.
+ */
+const MAX_GENERIC_TOOL_ROUNDS = 3;
+
+/** 032: el modelo pide herramientas sin parar: que conteste con lo que tiene. */
+const GENERIC_BUDGET_CORRECTION =
+  "Ya no podés usar más herramientas en este turno. Respondele AHORA al cliente con lo que ya sabés (sin prometer que vas a consultar después) o usá handoff.";
 
 /**
  * Reloj duro de TODO el tramo de herramientas del turno. El servidor del
@@ -390,8 +405,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     );
   }
   const mcpSection = mcp
-    ? renderMcpSection(mcp, { hasCalendar: calendar !== null })
+    ? renderMcpSection(mcp, {
+        hasCalendar: calendar !== null,
+        contactPhone: contactRow?.phone ?? null,
+      })
     : null;
+
+  // 032: lo que escribió el cliente DESPUÉS de la última respuesta del
+  // agente (o del equipo). Es lo único que vale como conformidad para una
+  // herramienta que escribe en el sistema del negocio.
+  const lastOutboundIndex = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
+  const customerSinceLastReply = history
+    .slice(lastOutboundIndex + 1)
+    .filter((m) => m.direction === "in")
+    .map((m) => m.text ?? "")
+    .filter((t) => t.trim().length > 0);
+  // 032: importes que devolvió una herramienta genérica EN ESTE TURNO (el
+  // resumen de la reserva): los únicos que la guarda de precios deja salir.
+  const turnAmounts: number[] = [];
+  let wroteThisTurn = false;
 
   // Publicaciones de Mercado Libre (025): snapshot LOCAL — el turno nunca sale
   // a la red por esto, así que el Laboratorio queda aislado por construcción.
@@ -470,7 +502,15 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive);
       return;
     }
-    const guarded = stripBookingPromise(text, { link: lastStayLink });
+    // 032: con reservas habilitadas el agente PUEDE ofrecer y hacer la
+    // reserva; solo se vigila que no AFIRME que quedó hecha. Y si ya salió
+    // bien una escritura en la conversación, afirmarlo es la verdad.
+    const canWrite = mcp.dynamic?.canWrite ?? false;
+    const wrote = wroteThisTurn || (mcp.dynamic?.wroteInConversation ?? false);
+    const guarded =
+      canWrite && wrote
+        ? { text, replaced: false, match: null }
+        : stripBookingPromise(text, { link: lastStayLink, claimsOnly: canWrite });
     if (guarded.replaced) {
       console.warn(
         `[agente] promesa de reserva suprimida en ${conversation.id}: ${guarded.match ?? "?"}`
@@ -485,7 +525,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     // 028: la decisión puede ser de la EMPRESA (un hotel informa precios y
     // otro no), no solo del proveedor: el contexto ya la resolvió.
     if (mcp.hidePrices) {
-      const priced = stripPrices(finalText, { link: lastStayLink });
+      const priced = stripPrices(finalText, { link: lastStayLink, allowedAmounts: turnAmounts });
       if (priced.replaced) {
         console.warn(
           `[agente] importe suprimido en ${conversation.id}: ${priced.match ?? "?"}`
@@ -514,7 +554,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
         transactionalNotice: transactional?.notice ?? null,
         mcpSection,
-        mcpActionMenu: mcp?.profile.actionMenu ?? null,
+        mcpActionMenu: mcp ? mcpMenuLines(mcp) : null,
         mcpOverridesKb: mcpSection !== null,
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
         listingsSection,
@@ -580,6 +620,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   let lastStaySummary: string | null = null;
   let calendarRounds = 0;
   let mcpRounds = 0;
+  // 032: herramientas genéricas del conector.
+  let genericRounds = 0;
+  let writesThisTurn = 0;
+  let genericBudgetWarned = false;
   // 025: lo último SEGURO que se supo de las publicaciones (plantilla propia +
   // datos normalizados + enlaces de ML validados), por si el modelo se cuelga.
   let lastListingsSummary: string | null = null;
@@ -592,12 +636,14 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       const wantsCalendar = isCalendarAction(action);
       const wantsMcp = isMcpAction(action);
       const wantsListings = isListingsAction(action);
-      if (!wantsCalendar && !wantsMcp && !wantsListings) break;
+      const wantsGeneric = isGenericToolAction(action);
+      if (!wantsCalendar && !wantsMcp && !wantsListings && !wantsGeneric) break;
       // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
       // vueltas al conector, ni al revés.
       if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
+      if (wantsGeneric && genericRounds >= MAX_GENERIC_TOOL_ROUNDS) break;
       if (Date.now() >= toolDeadline) break;
 
       // 031: la nota del lead que vino con la herramienta.
@@ -631,9 +677,91 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         continue;
       }
 
+      // ---- Herramientas genéricas del conector (032) ---------------------
+      if (isGenericToolAction(action)) {
+        genericRounds++;
+        let toolText: string;
+        if (!mcp?.dynamic) {
+          toolText =
+            "[HERRAMIENTA] No hay herramientas del sistema disponibles en este momento. No inventes resultados: respondé con lo que sabés o usá handoff.";
+        } else {
+          const out = await executeDynamicTool(
+            mcp.integration,
+            mcp.dynamic,
+            { tool: action.tool, args: action.args },
+            {
+              conversationId,
+              sandbox: conversation.isTest,
+              budgetMs: Math.max(0, toolDeadline - Date.now()),
+              customerSinceLastReply,
+              writesThisTurn,
+            }
+          );
+          toolText = out.toolText;
+          turnAmounts.push(...out.amounts);
+          if (out.failure && !conversation.isTest) {
+            await recordConversationEvent({
+              organizationId,
+              conversationId,
+              kind: "ai_error",
+              reason: "tool",
+              details: { detail: friendlyToolFailure(out.failure) },
+            });
+          }
+          if (out.wrote) {
+            writesThisTurn++;
+            wroteThisTurn = true;
+            if (!conversation.isTest) {
+              const what = `${mcp.integration.label}: ${out.wrote.title ?? out.wrote.tool}`;
+              await recordConversationEvent({
+                organizationId,
+                conversationId,
+                kind: "ai_tool_write",
+                reason: out.wrote.tool,
+                details: { detail: what.slice(0, 160) },
+              });
+              await appendLeadNote(
+                organizationId,
+                conversation.contactId,
+                `El agente registró en ${what.slice(0, 160)}.`
+              );
+            }
+          }
+        }
+        // Como el resto del conector: el resultado es un DATO de afuera.
+        messages.push(
+          { role: "assistant", content: JSON.stringify(action) },
+          { role: MCP_TOOL_TEXT_ROLE, content: toolText }
+        );
+        const next = await chatJson(aiConfig, AgentAction, messages);
+        if (!next.ok) {
+          console.error(`[agente] fallo del proveedor tras herramienta genérica (raw): ${next.detail}`);
+          await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
+          return;
+        }
+        action = next.data;
+        continue;
+      }
+
       // ---- Conector MCP (016) -------------------------------------------
       if (isMcpAction(action)) {
         mcpRounds++;
+        // 032: un conector sin perfil (solo herramientas genéricas) no sabe
+        // ejecutar `search_stays`/`show_stay`: el modelo recibe el porqué y
+        // vuelve a decidir, en vez de un texto vacío.
+        if (mcp && !profileHasActions(mcp)) {
+          messages.push({
+            role: MCP_TOOL_TEXT_ROLE,
+            content: `[HERRAMIENTA] "${action.action}" no está disponible en este negocio. Usá las herramientas de la sección «HERRAMIENTAS DEL SISTEMA DE…» con use_tool.`,
+          });
+          const retry = await chatJson(aiConfig, AgentAction, messages);
+          if (!retry.ok) {
+            await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(retry));
+            return;
+          }
+          action = retry.data;
+          continue;
+        }
         // El modelo pidió una herramienta que esta empresa no tiene: degradar
         // sin inventar y sin escalar a ciegas.
         if (!mcp) {
@@ -759,7 +887,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     // vuelve a hablar cuando el cliente escribe. Con herramientas disponibles y
     // sin ninguna consulta en el turno, ese texto no sale: se guarda la nota (si
     // la había) y se le pide UNA vez que consulte ahora o conteste sin prometer.
-    const usedTools = calendarRounds + mcpRounds + listingsRounds > 0;
+    // 032: agotó las vueltas de herramientas genéricas y sigue pidiendo:
+    // UNA corrección para que conteste con lo que tiene.
+    if (isGenericToolAction(action) && !genericBudgetWarned) {
+      genericBudgetWarned = true;
+      messages.push(
+        { role: "assistant", content: JSON.stringify(action) },
+        { role: "system", content: GENERIC_BUDGET_CORRECTION }
+      );
+      const retry = await chatJson(aiConfig, AgentAction, messages);
+      if (!retry.ok) {
+        await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(retry));
+        return;
+      }
+      action = retry.data;
+      genericRounds = MAX_GENERIC_TOOL_ROUNDS;
+      continue;
+    }
+
+    const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds > 0;
     if (!promiseRetried && toolsAvailable && !usedTools && announcesLookup(conversationalText(action))) {
       promiseRetried = true;
       console.warn(`[agente] promesa de consulta sin consultar en ${conversation.id}: se le pide que consulte`);
@@ -784,7 +930,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // peor) y pasa a atención humana con aviso, para que una persona consulte.
   if (
     promiseRetried &&
-    calendarRounds + mcpRounds + listingsRounds === 0 &&
+    calendarRounds + mcpRounds + listingsRounds + genericRounds === 0 &&
     announcesLookup(conversationalText(action))
   ) {
     if (action.action === "update_lead") await saveLeadNote(action.note);
@@ -808,6 +954,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     }
     await say("Estoy consultando la disponibilidad y te confirmo en un ratito.");
     await applyHandoff(conversationId, organizationId, "modelo");
+    return;
+  }
+
+  // 032: insistió con herramientas genéricas después de la corrección.
+  if (isGenericToolAction(action)) {
+    await say("Dejame confirmarlo con el equipo y te escribo enseguida.");
+    await applyHandoff(conversationId, organizationId, "modelo", "pidió más herramientas de las que podía usar en un turno");
     return;
   }
 

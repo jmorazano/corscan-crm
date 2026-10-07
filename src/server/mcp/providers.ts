@@ -34,6 +34,8 @@ export async function callProviderTool(input: {
   args: Record<string, unknown>;
   timeoutMs: number;
   now?: Date;
+  /** 032: herramienta genérica: acepta texto plano como resultado. */
+  lenientText?: boolean;
 }): Promise<ProviderCallResult> {
   const { integration } = input;
 
@@ -70,7 +72,9 @@ export async function callProviderTool(input: {
     maxResponseBytes: integration.maxResponseBytes,
     sandbox: false,
   };
-  const result = await mcpCallTool(cfg, input.tool, input.args);
+  const result = await mcpCallTool(cfg, input.tool, input.args, undefined, {
+    lenientText: input.lenientText === true,
+  });
   return { outcome: result.outcome, httpStatus: result.httpStatus, bytes: result.bytes };
 }
 

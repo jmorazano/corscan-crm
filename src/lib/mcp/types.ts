@@ -173,7 +173,10 @@ export type McpToolUnwrap =
  * `{success:false, error:{code}}` (el servidor real usa las dos señales a la
  * vez, pero no hay garantía de que siempre sea así).
  */
-export function unwrapToolResult(result: unknown): McpToolUnwrap {
+export function unwrapToolResult(
+  result: unknown,
+  options?: { lenientText?: boolean }
+): McpToolUnwrap {
   const parsed = callToolResultSchema.safeParse(result);
   if (!parsed.success) throw new McpError("bad_payload");
   const { content, isError, structuredContent } = parsed.data;
@@ -196,7 +199,14 @@ export function unwrapToolResult(result: unknown): McpToolUnwrap {
   } catch {
     // Texto libre donde esperábamos JSON: no lo propagamos (son bytes de un
     // tercero) y lo tratamos como payload ilegible.
-    throw new McpError("bad_payload");
+    // 032: una herramienta GENÉRICA puede responder texto plano (es lo más
+    // común en MCP). Ahí sí se acepta como `{text}`: quien lo renderiza lo
+    // sanea y lo acota antes de que llegue a un prompt.
+    if (!options?.lenientText) throw new McpError("bad_payload");
+    if (isError === true) {
+      return { ok: false, code: "provider_error", details: { text } };
+    }
+    return { ok: true, data: { text } };
   }
 
   const providerError = providerErrorSchema.safeParse(payload);

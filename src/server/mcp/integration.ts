@@ -16,6 +16,17 @@ import {
   type McpSession,
   type McpTool,
 } from "@/lib/mcp";
+import { sanitizeInputSchema } from "@/lib/mcp/json-schema";
+import {
+  applyToolDecision,
+  effectiveTools,
+  toolSignature,
+  type EffectiveTool,
+  type StoredTool,
+  type ToolKind,
+  type ToolPolicy,
+  type ToolState,
+} from "@/lib/mcp/tool-policy";
 import { redactForLog } from "@/lib/redact";
 import { sanitizeForeignText } from "@/server/mcp/sanitize";
 import {
@@ -53,9 +64,18 @@ type Row = typeof schema.mcpIntegration.$inferSelect;
 export type McpRowStatus = Row["status"];
 export type McpSessionMode = Row["sessionMode"];
 
-/** Largos de persistencia del texto ajeno (data-model, FR-011 y c#22). */
-const MAX_INSTRUCTIONS_CHARS = 1500;
-const MAX_TOOL_DESCRIPTION_CHARS = 300;
+/**
+ * Largos de persistencia del texto ajeno (data-model, FR-011 y c#22).
+ *
+ * 032: subieron. Con herramientas que se usan sin deploy, las notas del
+ * servidor y las descripciones SON el manual de uso (las de Altos miden
+ * 16,5 KB y explican el flujo de la reserva, los datos obligatorios y cada
+ * error). Recortadas a 1.500 y 300 el agente operaba a ciegas. Siguen
+ * saneadas, y al prompt solo entran con el consentimiento de la empresa.
+ */
+export const MAX_INSTRUCTIONS_CHARS = 24_000;
+const MAX_TOOL_DESCRIPTION_CHARS = 4_000;
+const MAX_TOOL_TITLE_CHARS = 120;
 
 /* ============================================================
  * Vistas
@@ -63,9 +83,17 @@ const MAX_TOOL_DESCRIPTION_CHARS = 300;
 
 export type McpToolView = {
   name: string;
+  /** 032: título que publica el servidor (saneado). */
+  title: string | null;
   /** Texto del PROVEEDOR, ya saneado (c#22). La UI lo rotula como tal. */
   description: string | null;
   readOnly: boolean;
+  /** 032: consulta o escritura (de `readOnlyHint`). */
+  kind: ToolKind;
+  /** 032: perfil / activa / pendiente de aprobar / apagada. */
+  state: ToolState;
+  /** 032: cantidad de parámetros declarados (para la UI). */
+  paramCount: number;
 };
 
 /** Catálogo tal como lo ve la UI: conteo, no las 82 características. */
@@ -114,6 +142,8 @@ export type McpIntegrationView = {
   timezone: string;
   tools: McpToolView[];
   instructions: string | null;
+  /** 032: largo de las notas (la UI muestra cuánto pesan en el prompt). */
+  instructionsChars: number;
   useServerInstructions: boolean;
   agentToolsEnabled: boolean;
   catalog: McpCatalogView | null;
@@ -163,6 +193,8 @@ export type McpAdminView = {
   sharedWith: McpSharedWith[];
   /** 028: configuración no secreta del proveedor, completa (super admin). */
   providerConfig: Record<string, unknown> | null;
+  /** 032: las herramientas con su estado: el super admin también decide. */
+  tools: McpToolView[];
 };
 
 /**
@@ -193,6 +225,12 @@ export type McpIntegration = {
   catalogTtlMinutes: number;
   /** 028: configuración no secreta del proveedor (la interpreta el perfil). */
   providerConfig?: ProviderConfig;
+  /**
+   * 032: lo que publicó el servidor en el último handshake, con el estado
+   * que decidió la empresa. `calls.ts` re-evalúa la allowlist contra esto.
+   * Opcional para los llamadores viejos: ausente = ninguna genérica.
+   */
+  tools?: EffectiveTool[];
   hasCredential: boolean;
   /** Descifra en el momento del uso. `null` = habilitada sin conectar. */
   resolveCredential: () => string | null;
@@ -297,13 +335,47 @@ function providerSettingsOf(row: Row): ProviderSettingsView | null {
   };
 }
 
-function toolsOf(row: Row): McpToolView[] {
+/** Las herramientas guardadas, tolerando filas viejas o rotas. */
+function storedToolsOf(row: Row): StoredTool[] {
   const raw = row.tools;
   if (!Array.isArray(raw)) return [];
-  return raw.map((t) => ({
-    name: typeof t?.name === "string" ? t.name : "",
-    description: typeof t?.description === "string" ? t.description : null,
-    readOnly: t?.readOnly === true,
+  return raw
+    .filter((t) => t && typeof t.name === "string" && t.name.length > 0)
+    .map((t) => ({
+      name: t.name,
+      description: typeof t.description === "string" ? t.description : null,
+      readOnly: t.readOnly === true,
+      title: typeof t.title === "string" ? t.title : null,
+      inputSchema:
+        t.inputSchema && typeof t.inputSchema === "object" ? t.inputSchema : null,
+      annotations:
+        t.annotations && typeof t.annotations === "object" ? t.annotations : null,
+      ...(typeof t.signature === "string" ? { signature: t.signature } : {}),
+    }));
+}
+
+/** 032: estado efectivo de cada herramienta según el perfil y la política. */
+function effectiveToolsOf(row: Row): EffectiveTool[] {
+  const profile = getProfile(row.profile);
+  return effectiveTools(
+    storedToolsOf(row),
+    (row.toolPolicy ?? null) as ToolPolicy | null,
+    profile.allowedTools
+  );
+}
+
+function toolsOf(row: Row): McpToolView[] {
+  return effectiveToolsOf(row).map((t) => ({
+    name: t.name,
+    title: t.title ?? null,
+    description: t.description,
+    readOnly: t.readOnly,
+    kind: t.kind,
+    state: t.state,
+    paramCount:
+      t.inputSchema && typeof t.inputSchema.properties === "object" && t.inputSchema.properties
+        ? Object.keys(t.inputSchema.properties as Record<string, unknown>).length
+        : 0,
   }));
 }
 
@@ -331,6 +403,7 @@ function toIntegration(row: Row): McpIntegration {
     catalogFetchedAt: row.catalogFetchedAt,
     catalogTtlMinutes: row.catalogTtlMinutes,
     providerConfig: row.providerConfig ?? null,
+    tools: effectiveToolsOf(row),
     hasCredential: blob !== null && blob !== undefined,
     resolveCredential: () => {
       if (!blob) return null;
@@ -379,6 +452,7 @@ export function toMcpIntegrationView(row: Row): McpIntegrationView {
     timezone: row.timezone,
     tools: toolsOf(row),
     instructions: row.instructions,
+    instructionsChars: row.instructions?.length ?? 0,
     useServerInstructions: row.useServerInstructions,
     agentToolsEnabled: row.agentToolsEnabled,
     catalog: catalog
@@ -476,6 +550,7 @@ export async function getMcpAdminView(
     enabledAt: row.enabledAt.toISOString(),
     sharedWith: shared,
     providerConfig: row.providerConfig ?? null,
+    tools: toolsOf(row),
   };
 }
 
@@ -520,6 +595,9 @@ const RESET_ON_ENDPOINT_CHANGE = {
   catalog: null,
   catalogFetchedAt: null,
   tools: null,
+  // 032: otro servidor = otras herramientas. Una escritura aprobada para el
+  // anterior no puede heredarse por coincidir el nombre.
+  toolPolicy: null,
   serverName: null,
   serverVersion: null,
   protocolVersion: null,
@@ -907,13 +985,7 @@ export async function recordHandshake(
   const instructions = session.instructions
     ? sanitizeForeignText(session.instructions, MAX_INSTRUCTIONS_CHARS) || null
     : null;
-  const toolViews: McpToolView[] = tools.map((t) => ({
-    name: sanitizeForeignText(t.name, 200),
-    description: t.description
-      ? sanitizeForeignText(t.description, MAX_TOOL_DESCRIPTION_CHARS) || null
-      : null,
-    readOnly: isReadOnlyTool(t),
-  }));
+  const toolViews = tools.map(toStoredTool).filter((t): t is StoredTool => t !== null);
 
   const set: Partial<typeof schema.mcpIntegration.$inferInsert> = {
     serverName: session.serverName,
@@ -936,6 +1008,80 @@ export async function recordHandshake(
     .update(schema.mcpIntegration)
     .set(set)
     .where(scoped(schema.mcpIntegration.organizationId, organizationId));
+}
+
+/**
+ * 032: una herramienta de `tools/list` tal como se GUARDA: todo el texto
+ * ajeno saneado, el esquema reducido a lo que entendemos, las anotaciones
+ * solo booleanas y la firma calculada sobre lo guardado (si el servidor
+ * cambia algo de eso, una escritura aprobada vuelve a pendiente).
+ */
+export function toStoredTool(t: McpTool): StoredTool | null {
+  const name = sanitizeForeignText(t.name, 200);
+  if (!name || !/^[A-Za-z0-9_.\-:/]{1,128}$/.test(name)) return null;
+  const description = t.description
+    ? sanitizeForeignText(t.description, MAX_TOOL_DESCRIPTION_CHARS) || null
+    : null;
+  const title = t.title ? sanitizeForeignText(t.title, MAX_TOOL_TITLE_CHARS) || null : null;
+  const inputSchema = sanitizeInputSchema(t.inputSchema, sanitizeForeignText);
+  const annotations: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(t.annotations ?? {})) {
+    if (typeof v === "boolean") annotations[k] = v;
+  }
+  const stored: StoredTool = {
+    name,
+    title,
+    description,
+    readOnly: isReadOnlyTool(t),
+    inputSchema,
+    annotations: Object.keys(annotations).length > 0 ? annotations : null,
+  };
+  stored.signature = toolSignature(stored);
+  return stored;
+}
+
+/* ============================================================
+ * Decisión por herramienta (032)
+ * ============================================================ */
+
+export type ToolDecisionResult =
+  | { ok: true; integration: McpIntegrationView }
+  | { ok: false; code: "not_enabled" | "unknown_tool" | "profile_tool" };
+
+/**
+ * Activa o apaga UNA herramienta para el agente. Lo llama el propietario
+ * (Integraciones) o el super admin (Administración). La aprobación queda
+ * atada a la firma ACTUAL de la herramienta: si el servidor la cambia,
+ * vuelve a pendiente sola.
+ */
+export async function setToolDecision(input: {
+  organizationId: string;
+  tool: string;
+  enabled: boolean;
+  userId: string | null;
+  now?: Date;
+}): Promise<ToolDecisionResult> {
+  const row = await getRow(input.organizationId);
+  if (!row) return { ok: false, code: "not_enabled" };
+  const tool = storedToolsOf(row).find((t) => t.name === input.tool);
+  if (!tool) return { ok: false, code: "unknown_tool" };
+  if (getProfile(row.profile).allowedTools.includes(tool.name)) {
+    return { ok: false, code: "profile_tool" };
+  }
+  const policy = applyToolDecision(
+    (row.toolPolicy ?? null) as ToolPolicy | null,
+    tool,
+    input.enabled,
+    input.userId,
+    input.now ?? new Date()
+  );
+  const db = getDb();
+  await db
+    .update(schema.mcpIntegration)
+    .set({ toolPolicy: policy, updatedAt: new Date() })
+    .where(scoped(schema.mcpIntegration.organizationId, input.organizationId));
+  const view = await getMcpIntegrationView(input.organizationId);
+  return view ? { ok: true, integration: view } : { ok: false, code: "not_enabled" };
 }
 
 /* ============================================================

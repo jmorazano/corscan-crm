@@ -109,7 +109,9 @@ export function buildAgentSystemPrompt(input: {
   /**
    * 028: las líneas del menú de acciones que da el PERFIL del conector (un
    * hotel pide adultos/niños y no tiene fichas por código). `null` = las de
-   * 016 (`search_stays` con `guests` + `show_stay`).
+   * 016 (`search_stays` con `guests` + `show_stay`). 032: un arreglo (aun
+   * vacío) se usa TAL CUAL: lo arma `mcpMenuLines` con las del perfil y
+   * `use_tool`.
    */
   mcpActionMenu?: readonly string[] | null;
   /**
@@ -201,7 +203,7 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
       ...(input.mcpSection
-        ? input.mcpActionMenu && input.mcpActionMenu.length > 0
+        ? input.mcpActionMenu
           ? [...input.mcpActionMenu]
           : [
               '- {"action":"search_stays","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":4} — consultar el sistema de reservas (ver la sección de alojamientos para los filtros opcionales). Te respondo con las opciones y vos volvés a contestarle al cliente.',
@@ -227,7 +229,7 @@ export function buildAgentSystemPrompt(input: {
         : []),
       ...(hasTools
         ? [
-            '- Las consultas (search_stays, show_stay, search_listings, show_listing, check_availability) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
+            '- Las consultas (search_stays, show_stay, use_tool, search_listings, show_listing, check_availability) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
           ]
         : []),
       "Reglas duras:",

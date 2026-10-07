@@ -12,7 +12,9 @@ export type ConversationEventKind =
   | "ai_silent"
   | "ai_resumed"
   | "ai_handoff"
-  | "ai_error";
+  | "ai_error"
+  /** 032: el agente ejecutó una herramienta que ESCRIBE en el sistema del tercero. */
+  | "ai_tool_write";
 
 export type HandoffReason = "cliente" | "modelo" | "error" | "ventana" | "visita";
 
@@ -103,6 +105,10 @@ export function eventText(
         return { text: `La respuesta de la IA no salió: ${d.detail ?? "falló el envío"}.`, tone: "error" };
       }
       return { text: "La IA tuvo un error inesperado y no respondió.", tone: "error" };
+    case "ai_tool_write":
+      // `detail` lo arma el servidor con el rótulo del conector y el título
+      // de la herramienta, ya saneados (nunca texto libre del tercero).
+      return { text: `El agente registró en ${d.detail ?? "el sistema del cliente"}.`, tone: "brand" };
   }
 }
 

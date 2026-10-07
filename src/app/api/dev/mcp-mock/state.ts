@@ -50,6 +50,12 @@ export type McpMockKnobs = {
   hugeResponse: boolean;
   /** Persistente: marcadores de prompt y enlaces fuera de dominio en el texto. */
   evilText: boolean;
+  /** 032, persistente: publica las cuatro herramientas de reserva. */
+  bookingTools: boolean;
+  /** 032, persistente: publica una herramienta nueva (`list-house-rules`). */
+  extraTool: boolean;
+  /** 032, persistente: `confirm-booking` → `no_longer_available`. */
+  bookingUnavailable: boolean;
 };
 
 export type McpMockAuthScheme = "bearer" | "api_key" | "meta";
@@ -94,6 +100,9 @@ function knobsIniciales(): McpMockKnobs {
     emptyResults: false,
     hugeResponse: false,
     evilText: false,
+    bookingTools: false,
+    extraTool: false,
+    bookingUnavailable: false,
   };
 }
 

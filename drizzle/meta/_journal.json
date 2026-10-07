@@ -183,6 +183,13 @@
       "when": 1791318751960,
       "tag": "0025_agent_presence",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791401328406,
+      "tag": "0026_mcp_dynamic_tools",
+      "breakpoints": true
     }
   ]
 }

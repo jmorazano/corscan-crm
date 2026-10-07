@@ -31,9 +31,9 @@ export default async function McpIntegrationPage() {
         </p>
         <h2 className="font-semibold">{view.label}</h2>
         <p className="text-sm text-muted-foreground">
-          El agente consulta disponibilidad, precios y enlaces reales en el
-          sistema de reservas del negocio. Informa y pasa el enlace: nunca
-          confirma ni promete una reserva.
+          {view.tools.some((t) => t.kind === "write" && t.state === "active")
+            ? "El agente consulta el sistema del negocio y usa las herramientas que aprobaste, incluidas las que registran algo (siempre con la conformidad explícita del cliente)."
+            : "El agente consulta disponibilidad, precios y enlaces reales en el sistema de reservas del negocio. Informa y pasa el enlace: nunca confirma ni promete una reserva."}
         </p>
       </header>
       <div className="min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
