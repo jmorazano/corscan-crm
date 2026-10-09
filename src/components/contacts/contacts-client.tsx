@@ -40,7 +40,20 @@ import { TagEditor } from "@/components/tags/tag-editor";
 import { TagFilter } from "@/components/tags/tag-filter";
 import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
 
-export function ContactsClient() {
+/** Filtro de la lista tal como viaja en el bulk (033, `contactFilterSchema`). */
+type ContactFilterBody = {
+  q?: string;
+  archived?: boolean;
+  tags?: string[];
+  mode?: "any" | "all";
+};
+
+export function ContactsClient({
+  canBulkDelete = false,
+}: {
+  /** 033: «Eliminar» en bloque solo para el propietario. */
+  canBulkDelete?: boolean;
+}) {
   const router = useRouter();
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -58,6 +71,12 @@ export function ContactsClient() {
   const { facets } = useTagFacets("contacts", facetsRev);
   // Selección múltiple (FR-004): ids visibles tildados.
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  // 033: «todos los que coinciden» — la selección pasa a ser el filtro (todas
+  // las páginas) menos los destildados a mano.
+  const [allMatching, setAllMatching] = useState<ContactFilterBody | null>(null);
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [editing, setEditing] = useState<ContactDto | null>(null);
@@ -109,8 +128,9 @@ export function ContactsClient() {
   }, [refetch]);
 
   // Cambiar de filtros vuelve a la página 1 (no en la carga inicial, donde
-  // la página viene de la URL). Cambiar de vista o de página descarta la
-  // selección: "seleccionar todos" es siempre sobre lo visible.
+  // la página viene de la URL) y descarta TODA la selección: «todos los que
+  // coinciden» se define por el filtro. Cambiar de página descarta solo lo
+  // tildado a mano; «todos los que coinciden» sigue (abarca todas las páginas).
   const filtersKey = `${query}|${showArchived}|${tagsKey}|${tagFilter.mode}`;
   const prevFiltersKeyRef = useRef(filtersKey);
   useEffect(() => {
@@ -119,6 +139,8 @@ export function ContactsClient() {
       setParams({ page: null });
     }
     setSelected(new Set());
+    setAllMatching(null);
+    setExcluded(new Set());
     setBulkError(null);
   }, [filtersKey, setParams]);
   useEffect(() => {
@@ -147,9 +169,14 @@ export function ContactsClient() {
     );
   }
 
+  const isSelected = (id: string) =>
+    allMatching ? !excluded.has(id) : selected.has(id);
+  const selectionCount = allMatching
+    ? Math.max(0, total - excluded.size)
+    : selected.size;
   const allVisibleSelected =
-    contacts.length > 0 && contacts.every((c) => selected.has(c.id));
-  const someSelected = selected.size > 0;
+    contacts.length > 0 && contacts.every((c) => isSelected(c.id));
+  const someSelected = selectionCount > 0;
   const selectAllRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (selectAllRef.current) {
@@ -157,21 +184,63 @@ export function ContactsClient() {
     }
   }, [someSelected, allVisibleSelected]);
 
+  function toggleInSet(set: Set<string>, id: string) {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }
+
   function toggleSelected(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    if (allMatching) setExcluded((prev) => toggleInSet(prev, id));
+    else setSelected((prev) => toggleInSet(prev, id));
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    setAllMatching(null);
+    setExcluded(new Set());
+    setBulkError(null);
   }
 
   function toggleSelectAll() {
-    setSelected(allVisibleSelected ? new Set() : new Set(contacts.map((c) => c.id)));
+    if (allVisibleSelected) {
+      clearSelection();
+    } else if (allMatching) {
+      setExcluded((prev) => {
+        const next = new Set(prev);
+        for (const c of contacts) next.delete(c.id);
+        return next;
+      });
+    } else {
+      setSelected(new Set(contacts.map((c) => c.id)));
+    }
   }
 
-  // Etiquetas presentes en la selección (para "Quitar etiqueta").
+  // 033: pasa de «los de esta página» a «todos los que coinciden» con los
+  // filtros actuales (foto del filtro: es lo que viaja al servidor).
+  function selectAllMatching() {
+    setAllMatching({
+      ...(query.trim() ? { q: query.trim() } : {}),
+      ...(showArchived ? { archived: true } : {}),
+      ...(tagFilter.tags.length > 0
+        ? { tags: tagFilter.tags, mode: tagFilter.mode }
+        : {}),
+    });
+    setExcluded(new Set());
+    setSelected(new Set());
+  }
+
+  function selectionBody() {
+    return allMatching
+      ? { filter: allMatching, excludeIds: [...excluded] }
+      : { ids: [...selected] };
+  }
+
+  // Etiquetas presentes en la selección (para "Quitar etiqueta"). Con «todos
+  // los que coinciden» no están todas a la vista: se ofrece el catálogo.
   const selectedTagOptions = useMemo(() => {
+    if (allMatching) return facets;
     const counts = new Map<string, number>();
     for (const c of contacts) {
       if (!selected.has(c.id)) continue;
@@ -180,17 +249,18 @@ export function ContactsClient() {
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([tag, count]) => ({ tag, count }));
-  }, [contacts, selected]);
+  }, [allMatching, facets, contacts, selected]);
 
   // Operación en bloque (FR-004/FR-008): un solo request; ante error la
   // selección se conserva para reintentar.
   async function bulk(ops: TagOps) {
     setBulkBusy(true);
     setBulkError(null);
+    setBulkNotice(null);
     const res = await fetch("/api/contacts/bulk-tags", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], ...ops }),
+      body: JSON.stringify({ ...selectionBody(), ...ops }),
     }).catch(() => null);
     setBulkBusy(false);
     if (!res) {
@@ -206,9 +276,42 @@ export function ContactsClient() {
       );
       return;
     }
-    setSelected(new Set());
+    clearSelection();
     setFacetsRev((v) => v + 1);
     void refetch();
+  }
+
+  // 033: borrado en bloque. Devuelve un mensaje de error (el diálogo lo
+  // muestra y la selección se conserva) o null si borró.
+  async function removeSelected(): Promise<string | null> {
+    setBulkBusy(true);
+    setBulkNotice(null);
+    const res = await fetch("/api/contacts/bulk-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...selectionBody(), expectedCount: selectionCount }),
+    }).catch(() => null);
+    setBulkBusy(false);
+    if (!res) return "Sin conexión con el servidor: NO se borró ningún contacto.";
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: { code?: string; message?: string };
+      } | null;
+      // La cantidad cambió: se recarga la lista para que el diálogo muestre
+      // la nueva y la persona confirme de nuevo.
+      if (data?.error?.code === "selection_changed") void refetch();
+      return data?.error?.message ?? "No se pudieron borrar los contactos; reintentá.";
+    }
+    const data = (await res.json().catch(() => null)) as { deleted?: number } | null;
+    const deleted = data?.deleted ?? selectionCount;
+    clearSelection();
+    setBulkDeleting(false);
+    setBulkNotice(
+      deleted === 1 ? "Se borró 1 contacto." : `Se borraron ${deleted} contactos.`
+    );
+    setFacetsRev((v) => v + 1);
+    void refetch();
+    return null;
   }
 
   // Borra el contacto y sus conversaciones (solo del CRM; WhatsApp no cambia).
@@ -349,23 +452,78 @@ export function ContactsClient() {
 
       {someSelected && (
         <BulkTagsBar
-          count={selected.size}
+          count={selectionCount}
           noun="contactos"
           addOptions={facets}
           removeOptions={selectedTagOptions}
           onAdd={(tag) => bulk({ add: [tag] })}
           onRemove={(tag) => bulk({ remove: [tag] })}
-          onClear={() => {
-            setSelected(new Set());
-            setBulkError(null);
-          }}
+          onClear={clearSelection}
           busy={bulkBusy}
           error={bulkError}
           className="px-4 md:px-6"
-        />
+        >
+          {canBulkDelete && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => setBulkDeleting(true)}
+              className="flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+              Eliminar
+            </button>
+          )}
+        </BulkTagsBar>
+      )}
+
+      {/* 033: de «los de esta página» a «todos los que coinciden» (todas las páginas). */}
+      {someSelected && total > contacts.length && (allMatching || allVisibleSelected) && (
+        <div
+          data-testid="select-all-matching"
+          className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b bg-muted/40 px-4 py-2 text-center text-xs text-muted-foreground md:px-6"
+        >
+          {allMatching ? (
+            <>
+              <span>
+                {excluded.size === 0
+                  ? `Están seleccionados los ${total.toLocaleString("es-AR")} contactos que coinciden, en todas las páginas.`
+                  : `Seleccionados ${selectionCount.toLocaleString("es-AR")} de ${total.toLocaleString("es-AR")} contactos que coinciden, en todas las páginas.`}
+              </span>
+              <button
+                type="button"
+                className="font-medium text-brand-text underline-offset-2 hover:underline"
+                onClick={clearSelection}
+              >
+                Deshacer selección
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                Seleccionaste los {contacts.length} contactos de esta página.
+              </span>
+              <button
+                type="button"
+                className="font-medium text-brand-text underline-offset-2 hover:underline"
+                onClick={selectAllMatching}
+              >
+                Seleccionar los {total.toLocaleString("es-AR")} que coinciden
+              </button>
+            </>
+          )}
+        </div>
       )}
 
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 md:p-6">
+        {bulkNotice && (
+          <p
+            role="status"
+            className="mb-4 rounded-md border border-brand/40 bg-brand-tint px-3 py-2 text-sm text-brand-text"
+          >
+            {bulkNotice}
+          </p>
+        )}
         {deleteError && (
           <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {deleteError}
@@ -405,13 +563,13 @@ export function ContactsClient() {
                 key={c.id}
                 data-contact-id={c.id}
                 className={`flex items-center gap-3 rounded-lg border bg-card px-4 py-3 md:gap-4 ${
-                  selected.has(c.id) ? "border-brand/60 bg-brand-tint/40" : ""
+                  isSelected(c.id) ? "border-brand/60 bg-brand-tint/40" : ""
                 }`}
               >
                 <input
                   type="checkbox"
                   aria-label={`Seleccionar ${c.name}`}
-                  checked={selected.has(c.id)}
+                  checked={isSelected(c.id)}
                   onChange={() => toggleSelected(c.id)}
                   className="accent-primary"
                 />
@@ -638,6 +796,16 @@ export function ContactsClient() {
         />
       )}
 
+      {bulkDeleting && (
+        <BulkDeleteDialog
+          count={selectionCount}
+          allMatching={allMatching !== null}
+          deleting={bulkBusy}
+          onClose={() => setBulkDeleting(false)}
+          onConfirm={removeSelected}
+        />
+      )}
+
       {deleteTarget && (
         <DeleteContactDialog
           contact={deleteTarget}
@@ -650,6 +818,100 @@ export function ContactsClient() {
         />
       )}
     </div>
+  );
+}
+
+/** Desde cuántos contactos el borrado en bloque pide escribir la cantidad. */
+const TYPED_CONFIRM_FROM = 10;
+
+/**
+ * Confirmación del borrado en bloque (033). Irreversible: dice cuántos y qué
+ * se borra, y desde TYPED_CONFIRM_FROM pide escribir la cantidad. Si el
+ * servidor responde que la selección cambió, la cantidad nueva se muestra y
+ * hay que volver a escribirla.
+ */
+function BulkDeleteDialog({
+  count,
+  allMatching,
+  deleting,
+  onClose,
+  onConfirm,
+}: {
+  count: number;
+  allMatching: boolean;
+  deleting: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<string | null>;
+}) {
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const needsTyping = count >= TYPED_CONFIRM_FROM;
+  useEffect(() => setTyped(""), [count]);
+  const canConfirm =
+    count > 0 && !deleting && (!needsTyping || typed.trim() === String(count));
+  const label = count === 1 ? "1 contacto" : `${count.toLocaleString("es-AR")} contactos`;
+
+  async function confirm() {
+    setError(null);
+    const message = await onConfirm();
+    if (message) setError(message);
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={deleting ? () => undefined : onClose}
+      title={`Eliminar ${label}`}
+      size="sm"
+      testId="bulk-delete-contacts-dialog"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={deleting}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!canConfirm}
+            onClick={() => void confirm()}
+          >
+            {deleting ? "Borrando…" : `Borrar ${label}`}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        Se borran {label}
+        {allMatching ? " (todos los que coinciden con los filtros, en todas las páginas)" : ""}{" "}
+        con sus conversaciones y mensajes del CRM. WhatsApp no cambia. No se
+        puede deshacer.
+      </p>
+      {needsTyping && (
+        <div className="mt-3 space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="bulk-delete-count">
+            Escribí {count} para confirmar
+          </label>
+          <Input
+            id="bulk-delete-count"
+            inputMode="numeric"
+            autoComplete="off"
+            value={typed}
+            disabled={deleting}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canConfirm) void confirm();
+            }}
+          />
+        </div>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+    </Dialog>
   );
 }
 

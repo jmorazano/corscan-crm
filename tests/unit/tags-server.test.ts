@@ -108,6 +108,20 @@ describe("bulkUpdateContactTags", () => {
     expect(updateCalls[1]?.set.tags).toEqual(["nuevo"]);
   });
 
+  it("033: las filas que terminan con el mismo juego van en un solo UPDATE", async () => {
+    selectReturns = [
+      { id: "ct_1", tags: ["vip"] },
+      { id: "ct_2", tags: ["vip"] },
+      { id: "ct_3", tags: [] },
+    ];
+    const { bulkUpdateContactTags } = await import("@/server/tags");
+    const result = await bulkUpdateContactTags("org_1", ["ct_1", "ct_2", "ct_3"], {
+      add: ["cba"],
+    });
+    expect(result.updated).toBe(3);
+    expect(updateCalls.map((c) => c.set.tags)).toEqual([["vip", "cba"], ["cba"]]);
+  });
+
   it("quitar una etiqueta ausente no escribe nada (idempotente)", async () => {
     selectReturns = [{ id: "ct_1", tags: ["vip"] }];
     const { bulkUpdateContactTags } = await import("@/server/tags");

@@ -1,14 +1,12 @@
-import { desc, count, ilike, isNull, or } from "drizzle-orm";
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { scoped } from "@/lib/db/tenant";
 import { normalizeToWaId } from "@/lib/phone";
 import { parseTagMode, parseTagsParam, sanitizeTags } from "@/lib/tags";
-import { tagsWhere } from "@/server/tags";
+import { contactListWhere } from "@/server/contacts-bulk";
 import { serializeContact } from "@/server/contacts";
-import { notTrainerContact } from "@/server/trainer/conversation";
 import { parseLimit, parsePage } from "@/lib/pagination";
 
 export const dynamic = "force-dynamic";
@@ -29,21 +27,14 @@ export const GET = withAuth(async (session, req: Request) => {
   const limit = parseLimit(url.searchParams.get("limit"));
 
   // Todos los filtros van al WHERE (004): filtrar en JS después del limit
-  // devolvía una vista truncada engañosa tras un import grande.
-  const where = scoped(
-    schema.contact.organizationId,
-    session.organizationId,
-    q
-      ? or(
-          ilike(schema.contact.name, `%${q}%`),
-          ilike(schema.contact.phone, `%${q}%`)
-        )
-      : undefined,
-    includeArchived ? undefined : isNull(schema.contact.archivedAt),
-    tagsWhere(schema.contact.tags, tags, mode),
-    // 015: el contacto sintético del entrenador no es un contacto.
-    notTrainerContact()
-  );
+  // devolvía una vista truncada engañosa tras un import grande. El mismo
+  // WHERE define «todos los que coinciden» del bulk (033).
+  const where = contactListWhere(session.organizationId, {
+    q,
+    archived: includeArchived,
+    tags,
+    mode,
+  });
 
   const db = getDb();
   const [rows, totalRows] = await Promise.all([

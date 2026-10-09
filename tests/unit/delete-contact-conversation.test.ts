@@ -124,6 +124,27 @@ describe("deleteContact", () => {
     await expect(deleteContact("org_1", "ct_ajena")).resolves.toBeNull();
   });
 
+  it("033: deleteContacts borra varios en una transacción y junta los IGSID", async () => {
+    selectReturns = [{ id: "cv_a" }];
+    deleteReturns = [
+      { id: "ct_1", phone: "5493510000001" },
+      { id: "ct_ig", phone: "ig:9555001" },
+    ];
+    const { deleteContacts } = await import("@/server/contacts");
+    await expect(deleteContacts("org_1", ["ct_1", "ct_ig", "ct_1"])).resolves.toEqual({
+      deletedIds: ["ct_1", "ct_ig"],
+      conversationIds: ["cv_a"],
+    });
+    expect(deleteCalls.map((c) => c.table)).toEqual(["contact", "instagram_comment_event"]);
+    expect(JSON.stringify(deleteCalls[1]?.where)).toContain("9555001");
+  });
+
+  it("033: deleteContacts sin ids no toca la base", async () => {
+    const { deleteContacts } = await import("@/server/contacts");
+    await expect(deleteContacts("org_1", [])).resolves.toEqual({ deletedIds: [], conversationIds: [] });
+    expect(deleteCalls).toHaveLength(0);
+  });
+
   it("un contacto sin conversaciones borra igual y devuelve lista vacía", async () => {
     selectReturns = [];
     deleteReturns = [{ id: "ct_1" }];

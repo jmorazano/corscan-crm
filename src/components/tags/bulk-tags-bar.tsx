@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Minus, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ export function BulkTagsBar({
   error,
   compact = false,
   className,
+  children,
 }: {
   count: number;
   /** "contactos" | "conversaciones" — para el texto. */
@@ -34,6 +36,8 @@ export function BulkTagsBar({
   error?: string | null;
   compact?: boolean;
   className?: string;
+  /** Acciones extra sobre la selección (033: «Eliminar» en contactos). */
+  children?: ReactNode;
 }) {
   const triggerClass = (open: boolean) =>
     cn(
@@ -78,6 +82,7 @@ export function BulkTagsBar({
           </span>
         )}
       />
+      {children}
       {busy && <span className="text-[12px] text-text-3">Aplicando…</span>}
       {error && (
         <span role="alert" className="text-[12px] text-destructive">

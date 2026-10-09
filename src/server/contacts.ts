@@ -121,6 +121,21 @@ export async function deleteContact(
   organizationId: string,
   contactId: string
 ): Promise<{ conversationIds: string[] } | null> {
+  const result = await deleteContacts(organizationId, [contactId]);
+  if (result.deletedIds.length === 0) return null;
+  return { conversationIds: result.conversationIds };
+}
+
+/**
+ * Borrado de varios contactos en UNA transacción (033: borrado en bloque; el
+ * de uno solo es el caso de un id). Ids ajenos o inexistentes se ignoran.
+ */
+export async function deleteContacts(
+  organizationId: string,
+  contactIds: readonly string[]
+): Promise<{ deletedIds: string[]; conversationIds: string[] }> {
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return { deletedIds: [], conversationIds: [] };
   const db = getDb();
   // Transacción: el SELECT de conversaciones y el DELETE ven el mismo
   // estado — una conversación creada en el medio (webhook entrante) no puede
@@ -133,7 +148,7 @@ export async function deleteContact(
         scoped(
           schema.conversation.organizationId,
           organizationId,
-          eq(schema.conversation.contactId, contactId)
+          inArray(schema.conversation.contactId, ids)
         )
       );
     const deleted = await tx
@@ -142,20 +157,24 @@ export async function deleteContact(
         scoped(
           schema.contact.organizationId,
           organizationId,
-          eq(schema.contact.id, contactId)
+          inArray(schema.contact.id, ids)
         )
       )
       .returning({ id: schema.contact.id, phone: schema.contact.phone });
-    if (deleted.length === 0) return null;
-    // 030: los comentarios de Instagram que procesamos de esta persona (no
-    // tienen FK al contacto: se guardan aunque nunca escriba por privado).
+    if (deleted.length === 0) return { deletedIds: [], conversationIds: [] };
+    // 030: los comentarios de Instagram que procesamos de estas personas (no
+    // tienen FK al contacto: se guardan aunque nunca escriban por privado).
     // El ID de quien comenta puede no ser el de mensajería: se juntan los
     // `from_id` de sus eventos ya vinculados y se borra todo lo de esa persona.
-    const phone = deleted[0]?.phone ?? "";
-    const igsid = phone.startsWith("ig:") ? phone.slice(3) : null;
+    const igsids = deleted
+      .map((d) => d.phone ?? "")
+      .filter((phone) => phone.startsWith("ig:"))
+      .map((phone) => phone.slice(3));
     const conversationIds = conversations.map((c) => c.id);
     const linked = [
-      ...(igsid ? [eq(schema.instagramCommentEvent.recipientId, igsid)] : []),
+      ...(igsids.length > 0
+        ? [inArray(schema.instagramCommentEvent.recipientId, igsids)]
+        : []),
       ...(conversationIds.length > 0
         ? [inArray(schema.instagramCommentEvent.conversationId, conversationIds)]
         : []),
@@ -167,7 +186,7 @@ export async function deleteContact(
         .where(scoped(schema.instagramCommentEvent.organizationId, organizationId, or(...linked)));
       const fromIds = [
         ...new Set(
-          [igsid, ...fromRows.map((r) => r.fromId)].filter((x): x is string => typeof x === "string" && x.length > 0)
+          [...igsids, ...fromRows.map((r) => r.fromId)].filter((x): x is string => typeof x === "string" && x.length > 0)
         ),
       ];
       await tx
@@ -180,6 +199,6 @@ export async function deleteContact(
           )
         );
     }
-    return { conversationIds };
+    return { deletedIds: deleted.map((d) => d.id), conversationIds };
   });
 }

@@ -95,13 +95,28 @@ async function bulkUpdateTags(
       .map((r) => ({ id: r.id, tags: applyTagOps(r.tags, ops), before: r.tags }))
       .filter((c) => !sameTagSet(c.before, c.tags));
 
-    const now = new Date();
+    // Un UPDATE por juego de etiquetas resultante (033): las filas que
+    // terminan igual —el caso típico de «todos los que coinciden»— van juntas.
+    const byResult = new Map<string, { tags: string[]; ids: string[] }>();
     for (const change of changes) {
+      const key = JSON.stringify(change.tags);
+      const group = byResult.get(key);
+      if (group) group.ids.push(change.id);
+      else byResult.set(key, { tags: change.tags, ids: [change.id] });
+    }
+    const now = new Date();
+    for (const group of byResult.values()) {
       await tx
         .update(table)
-        .set({ tags: change.tags, updatedAt: now })
+        .set({ tags: group.tags, updatedAt: now })
         .where(
-          scoped(table.organizationId, organizationId, eq(table.id, change.id))
+          scoped(
+            table.organizationId,
+            organizationId,
+            group.ids.length === 1
+              ? eq(table.id, group.ids[0]!)
+              : inArray(table.id, group.ids)
+          )
         );
     }
 
