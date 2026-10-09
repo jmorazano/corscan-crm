@@ -22,6 +22,8 @@ import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { isOptOutMessage, onInboundSideEffects } from "@/server/inbox/side-effects";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { RECEIPT_NOTES } from "@/lib/sheets";
+import { recordReceiptFromMedia } from "@/server/sheets/receipts";
 
 /**
  * De dónde sale el binario. WhatsApp (020) da un id que se canjea por una URL
@@ -305,7 +307,30 @@ async function interpret(
     await finish(input, { state: "failed", errorCode: "vision" });
     return;
   }
-  await finish(input, { state: "ready", summary: result.text });
+  await finish(input, {
+    state: "ready",
+    summary: await withReceiptNote(input, result.text, media),
+  });
+}
+
+/**
+ * 034: si la empresa anota comprobantes y esto parece uno, se lee COMPLETO y
+ * va a la planilla. Al aviso solo se le suma el RESULTADO (frase fija): los
+ * datos bancarios jamás entran al historial que ve el agente. Nunca lanza.
+ */
+async function withReceiptNote(
+  input: { organizationId: string; conversationId: string; messageId: string; fileName?: string | null },
+  summary: string,
+  media: { data: Buffer; mimeType: string }
+): Promise<string> {
+  const outcome = await recordReceiptFromMedia({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    messageId: input.messageId,
+    summary,
+    media: { bytes: media.data, mimeType: media.mimeType, fileName: input.fileName ?? null },
+  });
+  return outcome ? `${summary} — ${RECEIPT_NOTES[outcome]}` : summary;
 }
 
 /** 027: publica el mensaje como está (con su binario), sin cambiarlo. */
@@ -384,7 +409,10 @@ async function readPdf(
     await finish(input, { state: "failed", errorCode: "document" });
     return;
   }
-  await finish(input, { state: "ready", summary: result.text });
+  await finish(input, {
+    state: "ready",
+    summary: await withReceiptNote(input, result.text, media),
+  });
 }
 
 /* ============================================================

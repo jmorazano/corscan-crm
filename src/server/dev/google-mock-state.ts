@@ -16,6 +16,14 @@ export type MockEvent = {
 
 export type MockBusy = { start: string; end: string };
 
+/** 034: planilla simulada. `granted` = la app tiene acceso por `drive.file`. */
+export type MockSpreadsheet = {
+  id: string;
+  title: string;
+  tabs: Record<string, string[][]>;
+  granted: boolean;
+};
+
 type State = {
   n: number;
   events: MockEvent[];
@@ -30,6 +38,10 @@ type State = {
   failNextApi: boolean;
   /** Emails de la "cuenta" que autoriza. */
   accountEmail: string;
+  /** 034: planillas de la "cuenta" (las creadas por la app nacen con acceso). */
+  spreadsheets: Map<string, MockSpreadsheet>;
+  /** 034: el próximo «agregar fila» devuelve 500 (la lectura ya pasó). */
+  failNextAppend: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __googleMock?: State };
@@ -44,7 +56,43 @@ function fresh(): State {
     issueInvalidRefresh: false,
     failNextApi: false,
     accountEmail: "agenda@negocio.test",
+    spreadsheets: seedSpreadsheets(),
+    failNextAppend: false,
   };
+}
+
+/**
+ * 034: dos planillas que existen en el Drive de la cuenta pero a las que la
+ * app NO tiene acceso hasta que se eligen con el selector (`drive.file`).
+ */
+function seedSpreadsheets(): Map<string, MockSpreadsheet> {
+  const list: MockSpreadsheet[] = [
+    {
+      id: "mock-sheet-precios-0001",
+      title: "Precios 2026",
+      granted: false,
+      tabs: {
+        Temporadas: [
+          ["Cabaña", "Temporada", "Precio por noche", "Capacidad"],
+          ["Arroyo", "Alta", "$ 120.000", "4"],
+          ["Arroyo", "Baja", "$ 90.000", "4"],
+          ["Bosque", "Alta", "$ 150.000", "6"],
+          ["Bosque", "Baja", "$ 110.000", "6"],
+        ],
+        Notas: [["Nota"], ["Seña del 30% para confirmar"]],
+      },
+    },
+    {
+      id: "mock-sheet-conciliacion-0002",
+      title: "Conciliación de pagos",
+      granted: false,
+      tabs: {
+        Pagos: [["Fecha", "Cliente", "Importe", "Banco", "Operación", "Observaciones"]],
+        Vacía: [],
+      },
+    },
+  ];
+  return new Map(list.map((s) => [s.id, s]));
 }
 
 export function getGoogleMockState(): State {

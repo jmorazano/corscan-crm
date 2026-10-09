@@ -39,6 +39,9 @@ const prefixes = {
   meliIntegration: "mli",
   meliListing: "mll",
   conversationEvent: "ev",
+  sheetsIntegration: "shint",
+  sheetSource: "shsrc",
+  paymentReceipt: "prc",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

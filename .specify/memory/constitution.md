@@ -1,7 +1,27 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.11.0 → 1.12.0
+Versión: 1.12.0 → 1.12.1
+
+Cambios (feature 034-google-sheets, 8-oct-2026) — PATCH:
+  - Principio II, categoría 3: se nombra a **Google Sheets** como tercera
+    integración opcional por empresa vía OAuth (misma app de Google del
+    operador que Calendar, conexión aparte, permiso mínimo `drive.file`:
+    solo las planillas que la empresa elige con el selector de Google o que
+    crea Vocero). Escribe SOLO en la planilla de comprobantes que la empresa
+    eligió; las planillas de consulta son de lectura.
+  - Aclaración de I / II-3(d) para el selector de Google (Picker): el token
+    del selector lo emite Google DIRECTO al navegador del propietario (Google
+    Identity Services); ningún token guardado por Vocero sale del servidor.
+    El client ID y la API key del selector son públicos por diseño.
+  - Los datos bancarios que se leen de un comprobante van del servidor a la
+    planilla (y cifrados, solo hasta escribir la fila); jamás al historial
+    que ve el agente ni a logs.
+  - Motivación: pedido del dueño (8-oct-2026) — anotar comprobantes para
+    conciliar y que el agente consulte información variable.
+  - Plantillas: sin cambios. CLAUDE.md: mapa del código y feature activa.
+
+Versión anterior: 1.11.0 → 1.12.0
 
 Cambios (feature 032-mcp-dynamic-tools, 7-oct-2026) — MINOR:
   - Principio II, categoría 5, condición (f): deja de ser «SOLO LECTURA con
@@ -323,7 +343,11 @@ dependencias externas en runtime es CERRADA:
      configurado, el producto funciona como CRM sin agente de IA.
   3. **Integraciones opcionales POR EMPRESA vía OAuth** (desde 1.5.0; la
      primera: Google Calendar; la segunda, desde 1.8.1: Mercado Libre, solo
-     lectura de las publicaciones vigentes de la cuenta). Condiciones NO negociables: (a) sin la
+     lectura de las publicaciones vigentes de la cuenta; la tercera, desde
+     1.12.1: Google Sheets con permiso `drive.file` —comprobantes a la
+     planilla que eligió la empresa y planillas de consulta de solo lectura;
+     el token del selector de Google lo emite Google directo al navegador,
+     nunca sale del servidor uno guardado—). Condiciones NO negociables: (a) sin la
      integración el producto funciona completo; (b) la habilita el operador de
      la instancia con credenciales de app propias inyectadas por entorno; (c)
      la conecta cada empresa con consentimiento explícito y puede
@@ -619,4 +643,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.12.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-07
+**Version**: 1.12.1 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-08

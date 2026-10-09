@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, CalendarDays, Plug } from "lucide-react";
+import { Building2, CalendarDays, Plug, Sheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,12 @@ const META: Record<
     icon: CalendarDays,
     description:
       "El agente consulta disponibilidad y agenda turnos en el calendario del negocio.",
+  },
+  google_sheets: {
+    href: "/integrations/google-sheets",
+    icon: Sheet,
+    description:
+      "El agente anota los comprobantes de transferencia en tu planilla y consulta planillas con precios, stock o cupos.",
   },
   mercadolibre: {
     href: "/integrations/mercadolibre",

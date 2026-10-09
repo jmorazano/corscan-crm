@@ -44,6 +44,14 @@ const envSchema = z.object({
     .default("https://accounts.google.com/o/oauth2/v2/auth"),
   GOOGLE_TOKEN_URL: z.string().url().default("https://oauth2.googleapis.com/token"),
   GOOGLE_API_BASE_URL: z.string().url().default("https://www.googleapis.com"),
+  // Google Sheets (034): misma app OAuth del operador, conexión aparte por
+  // empresa con permiso `drive.file`. La base de la API de Sheets es otro
+  // host (el google-mock la intercepta). La API key y el número de proyecto
+  // son del SELECTOR de Google (Picker) y son públicos por diseño: sin ellos
+  // solo se puede CREAR la planilla de comprobantes, no elegir una existente.
+  GOOGLE_SHEETS_API_BASE_URL: z.string().url().default("https://sheets.googleapis.com"),
+  GOOGLE_PICKER_API_KEY: z.string().optional(),
+  GOOGLE_CLOUD_PROJECT_NUMBER: z.string().optional(),
   // Instagram Direct (023): la app de Instagram vive DENTRO de la app de Meta
   // (Instagram API with Instagram Login) y tiene su propio ID y secreto
   // (panel → Casos de uso → Instagram → API setup with Instagram login). Es
@@ -206,6 +214,18 @@ export function isCoexistenceUiEnabled(): boolean {
 export function isGoogleIntegrationConfigured(): boolean {
   const env = getEnv();
   return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}
+
+/**
+ * 034: el selector de Google (Picker) necesita la API key de navegador y el
+ * número de proyecto, además del client id. En el mock se usa un selector
+ * simulado, así que no hacen falta.
+ */
+export function isGooglePickerConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_PICKER_API_KEY && env.GOOGLE_CLOUD_PROJECT_NUMBER
+  );
 }
 
 /**

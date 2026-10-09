@@ -52,6 +52,14 @@ vi.mock("@/server/meli/integration", () => ({
   },
 }));
 
+// 034: Google Sheets, conexión aparte de Calendar.
+vi.mock("@/server/sheets/integration", () => ({
+  getSheetsIntegrationView: (org: string) => {
+    expect(org).toBe("org_1");
+    return Promise.resolve(null);
+  },
+}));
+
 vi.mock("@/server/calendar/integration", () => ({
   getCalendarIntegrationView: (org: string) => {
     expect(org).toBe("org_1");
@@ -148,7 +156,7 @@ describe("GET /api/integrations", () => {
     const { GET } = await import("@/app/api/integrations/route");
     const res = await GET();
     const json = (await res.json()) as { integrations: { key: string }[] };
-    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar", "mercadolibre"]);
+    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar", "google_sheets", "mercadolibre"]);
   });
 
   it("016: habilitado, aparece con su etiqueta y su host — jamás la URL completa", async () => {
@@ -179,6 +187,16 @@ describe("GET /api/integrations", () => {
       available: false,
       connected: false,
       status: null,
+    });
+  });
+
+  it("034: la tarjeta de Google Sheets usa la misma app de Google que Calendar", async () => {
+    const { GET } = await import("@/app/api/integrations/route");
+    const json = (await (await GET()).json()) as { integrations: Record<string, unknown>[] };
+    expect(json.integrations.find((i) => i.key === "google_sheets")).toMatchObject({
+      key: "google_sheets",
+      available: false,
+      connected: false,
     });
   });
 

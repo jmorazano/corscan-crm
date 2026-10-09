@@ -15,6 +15,7 @@ import {
   isCalendarAction,
   isListingsAction,
   isGenericToolAction,
+  isSheetsAction,
   isMcpAction,
   resolveStage,
   type AgentActionType,
@@ -69,6 +70,7 @@ import {
   type McpContext,
 } from "@/server/mcp/agent-tools";
 import { executeDynamicTool } from "@/server/mcp/dynamic-tools";
+import { executeSearchSheet, loadSheetsContext, type SheetsContext } from "@/server/sheets/sources";
 import {
   executeListingsAction,
   listingForVisit,
@@ -445,6 +447,21 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     ? renderListingsPromptSection(listings, { calendarBookable })
     : null;
 
+  // Planillas de consulta (034): la COPIA local; las vencidas se refrescan
+  // con un timeout corto (nunca en sandbox). Un fallo no tumba el turno: el
+  // agente atiende sin planillas. Sus importes pueden salir (guarda de 021).
+  let sheets: SheetsContext | null = null;
+  try {
+    sheets = await loadSheetsContext(organizationId, { sandbox: conversation.isTest });
+  } catch (err) {
+    console.error(
+      "[agente] no se pudieron cargar las planillas:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  if (sheets) turnAmounts.push(...sheets.amounts);
+  const sheetsSearchable = Boolean(sheets?.section && sheets.searchable);
+
   /**
    * Entrega conversacional con la GUARDA DE PROMESAS (016, FR-009).
    *
@@ -558,6 +575,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         mcpOverridesKb: mcpSection !== null,
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
         listingsSection,
+        sheetsSection: sheets?.section ?? null,
+        sheetsSearchable,
+        receiptsToSheet: sheets?.receiptsEnabled ?? false,
         sharedPersonalNumber: profile.sharedPersonalNumber,
         originSection:
           conversation.kind === "instagram" ? renderOriginSection(conversation.igOrigin ?? null) : null,
@@ -610,7 +630,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     savedNotes.add(text);
     await appendLeadNote(organizationId, conversation.contactId, text);
   };
-  const toolsAvailable = mcpSection !== null || calendar !== null || listingsSection !== null;
+  const toolsAvailable =
+    mcpSection !== null || calendar !== null || listingsSection !== null || sheetsSearchable;
 
   // Loop de herramienta de la agenda (D6): el servidor ejecuta, el modelo
   // vuelve a decidir con el resultado; acotado a MAX_TOOL_ROUNDS.
@@ -628,6 +649,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // datos normalizados + enlaces de ML validados), por si el modelo se cuelga.
   let lastListingsSummary: string | null = null;
   let listingsRounds = 0;
+  // 034: búsquedas en planillas.
+  let sheetsRounds = 0;
   const toolDeadline = Date.now() + TOOL_WALL_CLOCK_MS;
   let promiseRetried = false;
 
@@ -637,17 +660,42 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       const wantsMcp = isMcpAction(action);
       const wantsListings = isListingsAction(action);
       const wantsGeneric = isGenericToolAction(action);
-      if (!wantsCalendar && !wantsMcp && !wantsListings && !wantsGeneric) break;
+      const wantsSheets = isSheetsAction(action);
+      if (!wantsCalendar && !wantsMcp && !wantsListings && !wantsGeneric && !wantsSheets) break;
       // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
       // vueltas al conector, ni al revés.
       if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsGeneric && genericRounds >= MAX_GENERIC_TOOL_ROUNDS) break;
+      if (wantsSheets && sheetsRounds >= MAX_TOOL_ROUNDS) break;
       if (Date.now() >= toolDeadline) break;
 
       // 031: la nota del lead que vino con la herramienta.
       await saveLeadNote((action as { lead_note?: string }).lead_note);
+
+      // ---- Planillas de consulta (034) ----------------------------------
+      if (isSheetsAction(action)) {
+        sheetsRounds++;
+        const out = sheets
+          ? executeSearchSheet(sheets, { sheet: action.sheet, query: action.query })
+          : {
+              toolText:
+                "[PLANILLA] No hay planillas disponibles en este momento. No inventes datos: respondé con lo que sabés o usá handoff.",
+              amounts: [],
+            };
+        turnAmounts.push(...out.amounts);
+        // Como el conector: el resultado es un DATO, entra como usuario.
+        messages.push({ role: "user", content: out.toolText });
+        const next = await chatJson(aiConfig, AgentAction, messages);
+        if (!next.ok) {
+          console.error(`[agente] fallo del proveedor tras la planilla (raw): ${next.detail}`);
+          await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
+          return;
+        }
+        action = next.data;
+        continue;
+      }
 
       // ---- Publicaciones de Mercado Libre (025) --------------------------
       if (isListingsAction(action)) {
@@ -905,7 +953,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       continue;
     }
 
-    const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds > 0;
+    const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds > 0;
     if (!promiseRetried && toolsAvailable && !usedTools && announcesLookup(conversationalText(action))) {
       promiseRetried = true;
       console.warn(`[agente] promesa de consulta sin consultar en ${conversation.id}: se le pide que consulte`);
@@ -930,7 +978,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // peor) y pasa a atención humana con aviso, para que una persona consulte.
   if (
     promiseRetried &&
-    calendarRounds + mcpRounds + listingsRounds + genericRounds === 0 &&
+    calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds === 0 &&
     announcesLookup(conversationalText(action))
   ) {
     if (action.action === "update_lead") await saveLeadNote(action.note);
@@ -961,6 +1009,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (isGenericToolAction(action)) {
     await say("Dejame confirmarlo con el equipo y te escribo enseguida.");
     await applyHandoff(conversationId, organizationId, "modelo", "pidió más herramientas de las que podía usar en un turno");
+    return;
+  }
+
+  // 034: siguió buscando en planillas después de agotar las vueltas.
+  if (isSheetsAction(action)) {
+    await say("Dejame confirmarlo con el equipo y te escribo enseguida.");
+    await applyHandoff(conversationId, organizationId, "modelo", "pidió más búsquedas en planillas de las que podía hacer en un turno");
     return;
   }
 

@@ -3,6 +3,7 @@ import { isGoogleIntegrationConfigured, isMeliConfigured } from "@/lib/env";
 import { getCalendarIntegrationView } from "@/server/calendar/integration";
 import { getMcpIntegrationView } from "@/server/mcp/integration";
 import { getMeliView } from "@/server/meli/integration";
+import { getSheetsIntegrationView } from "@/server/sheets/integration";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +12,11 @@ export const dynamic = "force-dynamic";
  * por integración soportada. Hoy: Google Calendar. Sin tokens, jamás.
  */
 export const GET = withAuth(async (session) => {
-  const [gc, mcp, meli] = await Promise.all([
+  const [gc, mcp, meli, sheets] = await Promise.all([
     getCalendarIntegrationView(session.organizationId),
     getMcpIntegrationView(session.organizationId),
     getMeliView(session.organizationId),
+    getSheetsIntegrationView(session.organizationId),
   ]);
   return Response.json({
     integrations: [
@@ -25,6 +27,15 @@ export const GET = withAuth(async (session) => {
         connected: gc !== null,
         status: gc?.status ?? null,
         accountEmail: gc?.accountEmail ?? null,
+      },
+      // 034: Google Sheets — misma app OAuth que Calendar, conexión aparte.
+      {
+        key: "google_sheets",
+        name: "Google Sheets",
+        available: isGoogleIntegrationConfigured(),
+        connected: sheets !== null,
+        status: sheets?.status ?? null,
+        accountEmail: sheets?.accountEmail ?? null,
       },
       // 025: publicaciones de Mercado Libre. Como Google Calendar, la ven
       // todas las empresas; `available` depende de la app del operador.

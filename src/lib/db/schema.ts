@@ -1557,3 +1557,124 @@ export const meliListing = pgTable(
     index("meli_listing_org_op_idx").on(t.organizationId, t.operation),
   ]
 );
+
+/* ============================================================
+ * Google Sheets por empresa (034)
+ * ============================================================ */
+
+/**
+ * Conexión de Google Sheets (034): SEPARADA de la de Calendar (005) — otra
+ * cuenta posible, otro permiso (`drive.file`: solo las planillas que la
+ * empresa eligió con el selector de Google o que creó Vocero) y desconectar
+ * una no toca la otra. Tokens cifrados como en 005.
+ */
+export const sheetsIntegration = pgTable(
+  "sheets_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountEmail: text("account_email"),
+    refreshTokenCipher: text("refresh_token_cipher").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    accessTokenCipher: text("access_token_cipher"),
+    accessTokenIv: text("access_token_iv"),
+    accessTokenTag: text("access_token_tag"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
+    /** Anotar comprobantes de transferencia en la planilla de destino. */
+    receiptsEnabled: boolean("receipts_enabled").notNull().default(false),
+    receiptsSpreadsheetId: text("receipts_spreadsheet_id"),
+    receiptsSpreadsheetName: text("receipts_spreadsheet_name"),
+    /** Pestaña de destino; los encabezados de su fila 1 son las columnas. */
+    receiptsSheetTitle: text("receipts_sheet_title"),
+    connectedBy: text("connected_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sheets_integration_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Planilla de CONSULTA del agente (034, US3): una pestaña de una planilla
+ * elegida por la empresa + para qué sirve. El agente lee la COPIA local
+ * (`rows`), que se refresca si venció; el Laboratorio jamás sale a la red.
+ * Todo el contenido es texto ajeno: DATO, nunca instrucción.
+ */
+export const sheetSource = pgTable(
+  "sheet_source",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    spreadsheetId: text("spreadsheet_id").notNull(),
+    spreadsheetName: text("spreadsheet_name").notNull(),
+    sheetTitle: text("sheet_title").notNull(),
+    /** «Para qué sirve» — lo escribe el propietario; guía al agente. */
+    description: text("description").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Copia: filas tal como se ven en la hoja (fila 1 = encabezados). */
+    rows: jsonb("rows").$type<string[][]>().notNull().default(sql`'[]'::jsonb`),
+    /** Filas de la hoja ANTES de recortar (para decir «se muestran N de M»). */
+    rowCount: integer("row_count").notNull().default(0),
+    truncated: boolean("truncated").notNull().default(false),
+    fetchedAt: timestamp("fetched_at"),
+    /** Código estable propio (`no_access`, `not_found`, `provider_error`…). */
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("sheet_source_org_sheet_uq").on(t.organizationId, t.spreadsheetId, t.sheetTitle),
+  ]
+);
+
+/**
+ * Comprobante de transferencia anotado (034, US2). La fila se RESERVA antes
+ * de escribir en Google (`message_id` único: el mismo mensaje jamás genera
+ * dos filas). Los valores van cifrados —son datos bancarios de un tercero—
+ * y solo se conservan para reintentar un fallo.
+ */
+export const paymentReceipt = pgTable(
+  "payment_receipt",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade" }),
+    contactId: text("contact_id"),
+    status: text("status", { enum: ["pending", "recorded", "duplicate", "failed"] })
+      .notNull()
+      .default("pending"),
+    /** sha256 de (n° de operación + importe): el mismo comprobante reenviado. */
+    dedupKey: text("dedup_key"),
+    spreadsheetId: text("spreadsheet_id"),
+    sheetTitle: text("sheet_title"),
+    valuesCipher: text("values_cipher"),
+    valuesIv: text("values_iv"),
+    valuesTag: text("values_tag"),
+    /** Rango que devolvió Google al agregar la fila (`Comprobantes!A7:M7`). */
+    updatedRange: text("updated_range"),
+    /** Código estable propio del último fallo. */
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("payment_receipt_message_uq").on(t.messageId),
+    index("payment_receipt_org_created_idx").on(t.organizationId, t.createdAt),
+    index("payment_receipt_org_dedup_idx").on(t.organizationId, t.dedupKey),
+  ]
+);

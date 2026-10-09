@@ -179,6 +179,16 @@ export const AgentAction = z.discriminatedUnion("action", [
     ...LEAD_NOTE_FIELD,
   }),
   /**
+   * 034: búsqueda en la COPIA de una planilla de consulta (nunca la red en
+   * el turno). Solo se ofrece cuando alguna planilla no entró completa.
+   */
+  z.object({
+    action: z.literal("search_sheet"),
+    sheet: z.string().trim().max(300).optional(),
+    query: z.string().trim().max(200).default(""),
+    ...LEAD_NOTE_FIELD,
+  }),
+  /**
    * Pedido de visita (025): TERMINAL. El servidor anota la propiedad y la
    * disponibilidad en el contacto, mueve el lead a una etapa de visita si
    * existe, manda `reply` y escala a una persona (motivo `visita`) para que
@@ -198,6 +208,13 @@ export function isListingsAction(
   action: AgentActionType
 ): action is Extract<AgentActionType, { action: "search_listings" | "show_listing" }> {
   return action.action === "search_listings" || action.action === "show_listing";
+}
+
+/** 034: búsqueda en una planilla de consulta (la despacha el pipeline). */
+export function isSheetsAction(
+  action: AgentActionType
+): action is Extract<AgentActionType, { action: "search_sheet" }> {
+  return action.action === "search_sheet";
 }
 
 /** Acciones-herramienta del conector MCP (016): las despacha el pipeline. */

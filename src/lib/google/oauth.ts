@@ -13,6 +13,25 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
 ] as const;
 
+/**
+ * 034: Google Sheets usa la MISMA app OAuth con su propia conexión y el
+ * permiso mínimo `drive.file` (solo las planillas que la empresa elige con
+ * el selector de Google o que crea Vocero: sin verificación nueva).
+ */
+export const SHEETS_SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/drive.file",
+] as const;
+
+/** Para qué se pide la autorización: define scopes y callback. */
+export type GoogleOAuthTarget = "calendar" | "sheets";
+
+const TARGETS: Record<GoogleOAuthTarget, { scopes: readonly string[]; callbackPath: string }> = {
+  calendar: { scopes: GOOGLE_SCOPES, callbackPath: "/api/integrations/google-calendar/callback" },
+  sheets: { scopes: SHEETS_SCOPES, callbackPath: "/api/integrations/google-sheets/callback" },
+};
+
 export class GoogleAuthError extends Error {
   constructor(
     public readonly code: "invalid_grant" | "provider_error" | "not_configured",
@@ -23,8 +42,8 @@ export class GoogleAuthError extends Error {
   }
 }
 
-export function redirectUri(): string {
-  return `${getEnv().APP_BASE_URL.replace(/\/$/, "")}/api/integrations/google-calendar/callback`;
+export function redirectUri(target: GoogleOAuthTarget = "calendar"): string {
+  return `${getEnv().APP_BASE_URL.replace(/\/$/, "")}${TARGETS[target].callbackPath}`;
 }
 
 /* ---------- state firmado (CSRF) ---------- */
@@ -35,16 +54,21 @@ export { signState, verifyState, type OAuthState } from "@/lib/oauth-state";
 
 /* ---------- URL de autorización ---------- */
 
-export function buildAuthUrl(state: string): string {
+export function buildAuthUrl(
+  state: string,
+  target: GoogleOAuthTarget = "calendar",
+  opts?: { loginHint?: string | null }
+): string {
   const env = getEnv();
   if (!env.GOOGLE_CLIENT_ID) {
     throw new GoogleAuthError("not_configured", "GOOGLE_CLIENT_ID ausente");
   }
   const url = new URL(env.GOOGLE_AUTH_URL);
   url.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
-  url.searchParams.set("redirect_uri", redirectUri());
+  url.searchParams.set("redirect_uri", redirectUri(target));
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
+  url.searchParams.set("scope", TARGETS[target].scopes.join(" "));
+  if (opts?.loginHint) url.searchParams.set("login_hint", opts.loginHint);
   // offline + consent: garantiza refresh_token en CADA conexión (D2).
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
@@ -115,11 +139,14 @@ async function tokenRequest(
   }
 }
 
-export async function exchangeCode(code: string): Promise<TokenSet> {
+export async function exchangeCode(
+  code: string,
+  target: GoogleOAuthTarget = "calendar"
+): Promise<TokenSet> {
   const json = await tokenRequest({
     code,
     grant_type: "authorization_code",
-    redirect_uri: redirectUri(),
+    redirect_uri: redirectUri(target),
   });
   return {
     accessToken: json.access_token!,

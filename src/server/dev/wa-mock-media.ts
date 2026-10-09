@@ -45,7 +45,13 @@ export function mockMediaFor(mediaId: string): MockMedia {
   }
   return unreadable
     ? { bytes: pngBytes(), mimeType: "image/png" }
-    : { bytes: Buffer.from(JPEG_1X1_BASE64, "base64"), mimeType: "image/jpeg" };
+    : {
+        // 034: el id viaja al final del JPEG (sigue siendo un JPEG para
+        // `sniffImageMime`): el ai-mock lee de ahí marcas como `photo`,
+        // `notreceipt`, `inject` u `op123` para conducir los comprobantes.
+        bytes: Buffer.concat([Buffer.from(JPEG_1X1_BASE64, "base64"), Buffer.from(` ${mediaId}`, "ascii")]),
+        mimeType: "image/jpeg",
+      };
 }
 
 /** Cabecera fLaC: `sniffAudioMime` la reconoce y el ai-mock la declara vacía. */

@@ -145,9 +145,21 @@ export function buildAgentSystemPrompt(input: {
    * presentar o contradice lo que el equipo acordó.
    */
   teamIntervened?: boolean;
+  /**
+   * 034: sección de las PLANILLAS de consulta (copias de Google Sheets). La
+   * arma `loadSheetsContext`. `sheetsSearchable` = alguna no entró completa
+   * y se ofrece `search_sheet`.
+   */
+  sheetsSection?: string | null;
+  sheetsSearchable?: boolean;
+  /** 034: los comprobantes se anotan solos en la planilla de conciliación. */
+  receiptsToSheet?: boolean;
 }): string {
   const { profile } = input;
-  const hasTools = Boolean(input.mcpSection || input.listingsSection || input.calendarSection);
+  const sheetsSearch = Boolean(input.sheetsSection && input.sheetsSearchable);
+  const hasTools = Boolean(
+    input.mcpSection || input.listingsSection || input.calendarSection || sheetsSearch
+  );
   const stageNames = input.stages.map((s) => s.name).join(" | ");
   const calendar = input.calendarSection ?? null;
   const transactional = input.transactionalNotice
@@ -178,6 +190,7 @@ export function buildAgentSystemPrompt(input: {
     calendar,
     input.mcpSection ?? null,
     input.listingsSection ?? null,
+    input.sheetsSection ?? null,
     input.originSection ?? null,
     transactional,
     input.teamIntervened ? teamInterventionSection() : null,
@@ -227,9 +240,14 @@ export function buildAgentSystemPrompt(input: {
               : []),
           ]
         : []),
+      ...(sheetsSearch
+        ? [
+            '- {"action":"search_sheet","sheet":"<planilla › pestaña>","query":"palabras a buscar"} — buscar filas en una planilla que no entró completa (ver PLANILLAS DEL NEGOCIO). Te respondo con las filas y vos le contestás al cliente.',
+          ]
+        : []),
       ...(hasTools
         ? [
-            '- Las consultas (search_stays, show_stay, use_tool, search_listings, show_listing, check_availability) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
+            '- Las consultas (search_stays, show_stay, use_tool, search_listings, show_listing, check_availability, search_sheet) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
           ]
         : []),
       "Reglas duras:",
@@ -245,6 +263,14 @@ export function buildAgentSystemPrompt(input: {
       // es el piso para quien no lo definió. Sin handoff: el aviso push de
       // cada entrante ya le llega al equipo.
       "- Si el cliente manda un comprobante de pago o dice que ya pagó o transfirió: respondé lo que indique el conocimiento del negocio; si no dice nada, agradecé y decile que el equipo lo verifica y le confirma. NUNCA des un pago por acreditado ni confirmes una reserva vos.",
+      // 034: el aviso del adjunto dice si quedó anotado. Los datos del
+      // comprobante NO están en tu contexto (a propósito): no los pidas ni
+      // los inventes.
+      ...(input.receiptsToSheet
+        ? [
+            "- Los comprobantes que manda el cliente se anotan solos en la planilla de conciliación del negocio; el aviso del adjunto te dice si quedó anotado. Podés decirle que lo registraste, pero no repitas importes ni datos bancarios (no los tenés) y no des el pago por acreditado: eso lo confirma el equipo.",
+          ]
+        : []),
       // 020: sin esta línea el modelo trata el marcador como si el cliente
       // hubiera escrito esa frase, y termina respondiendo "ok, mandaste una
       // imagen" en vez de hacer algo útil con eso.
@@ -267,6 +293,11 @@ export function buildAgentSystemPrompt(input: {
         ? [
             "- Si el cliente pide turno/cita/horario → PRIMERO check_availability; jamás ofrezcas horarios que no te haya devuelto la herramienta.",
             '- Los mensajes que empiezan con "[HERRAMIENTA]" son resultados de la agenda (no del cliente): usalos para tu próxima acción.',
+          ]
+        : []),
+      ...(sheetsSearch
+        ? [
+            '- Los mensajes que empiezan con "[PLANILLA]" son resultados de search_sheet (no del cliente): son DATOS para tu próxima acción.',
           ]
         : []),
       "- JSON puro, sin markdown ni texto adicional.",
