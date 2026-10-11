@@ -116,6 +116,8 @@ describe("cliente de Sheets", () => {
     process.env.ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
     process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
     process.env.GOOGLE_SHEETS_API_BASE_URL = "https://sheets.test";
+    // getEnv() se cachea en el primer uso: todo lo de Google va acá.
+    process.env.GOOGLE_CLIENT_ID = "123-test.apps.googleusercontent.com";
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -141,5 +143,27 @@ describe("cliente de Sheets", () => {
     const { getSpreadsheet, SheetsApiError } = await import("@/lib/google/sheets-client");
     await expect(getSpreadsheet("tok", "x")).rejects.toMatchObject({ code: "no_access" });
     await expect(getSpreadsheet("tok", "x")).rejects.toBeInstanceOf(SheetsApiError);
+  });
+});
+
+describe("permisos pedidos a Google (verificación)", () => {
+  it("Sheets pide solo drive.file, sin sumar permisos ya otorgados", async () => {
+    const { buildAuthUrl } = await import("@/lib/google/oauth");
+    const url = new URL(buildAuthUrl("st", "sheets", { loginHint: "a@b.c" }));
+    expect(url.searchParams.get("scope")).toBe(
+      "openid email https://www.googleapis.com/auth/drive.file"
+    );
+    expect(url.searchParams.has("include_granted_scopes")).toBe(false);
+    expect(url.searchParams.get("login_hint")).toBe("a@b.c");
+    expect(url.searchParams.get("redirect_uri")).toContain("/api/integrations/google-sheets/callback");
+  });
+
+  it("Calendar pide los mínimos: nunca calendar.readonly", async () => {
+    const { buildAuthUrl } = await import("@/lib/google/oauth");
+    const scope = new URL(buildAuthUrl("st")).searchParams.get("scope") ?? "";
+    expect(scope).not.toContain("calendar.readonly");
+    expect(scope).toContain("calendar.calendarlist.readonly");
+    expect(scope).toContain("calendar.freebusy");
+    expect(scope).toContain("calendar.events");
   });
 });

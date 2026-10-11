@@ -6,10 +6,19 @@ import { getEnv } from "@/lib/env";
  * son tres endpoints REST. Nada de acá loguea tokens.
  */
 
+/**
+ * Permisos MÍNIMOS de Calendar (verificación de Google, 11-oct-2026): la
+ * lista de calendarios, el libre/ocupado (sin ver eventos) y crear/borrar
+ * los turnos. Antes era `calendar.readonly`, que deja leer TODOS los eventos
+ * y Vocero nunca lo necesitó. `calendar.events` y no `calendar.events.owned`:
+ * la lista ofrece también calendarios compartidos con permiso de escritura.
+ * Los tokens viejos (más amplios) siguen sirviendo: nadie tiene que reconectar.
+ */
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/calendar.freebusy",
   "https://www.googleapis.com/auth/calendar.events",
 ] as const;
 
@@ -72,7 +81,10 @@ export function buildAuthUrl(
   // offline + consent: garantiza refresh_token en CADA conexión (D2).
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
-  url.searchParams.set("include_granted_scopes", "true");
+  // Sin `include_granted_scopes`: con él Google sumaba al pedido los permisos
+  // que esa cuenta ya había dado (los de Calendar al conectar Sheets) y la
+  // pantalla mostraba el aviso de «app no verificada» de los permisos
+  // sensibles. Cada conexión pide solo lo suyo.
   url.searchParams.set("state", state);
   return url.toString();
 }

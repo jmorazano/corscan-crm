@@ -43,10 +43,15 @@ consola nueva aparece como "Google Auth Platform" → **Descripción general**
 5. **Permisos (scopes)** → **Agregar o quitar permisos**. Marcá exactamente:
    - `openid`
    - `.../auth/userinfo.email` (email)
-   - `https://www.googleapis.com/auth/calendar.readonly`
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
+   - `https://www.googleapis.com/auth/calendar.freebusy`
    - `https://www.googleapis.com/auth/calendar.events`
-   Los dos de calendario son "sensibles" (no "restringidos"): no exigen la
-   auditoría de seguridad de terceros. Guardá.
+   - `https://www.googleapis.com/auth/drive.file` (Google Sheets, 034)
+   Son los mínimos que usa Vocero (desde el 11-oct-2026 ya NO se pide
+   `calendar.readonly`, que deja leer todos los eventos: si está en la
+   lista, quitalo). Los de calendario son "sensibles" (no "restringidos"):
+   no exigen la auditoría de seguridad de terceros. Guardá. Para quitar el
+   aviso de "app no verificada", ver [google-verificacion.md](google-verificacion.md).
 6. **Publicar la app** (Audiencia → **Publicar la app** / "In production").
    ⚠️ Esto es IMPORTANTE aunque no pidas verificación: mientras la app
    esté en estado **"Testing"**, (a) solo los "usuarios de prueba" que
