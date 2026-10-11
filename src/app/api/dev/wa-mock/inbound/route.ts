@@ -22,6 +22,12 @@ const schema = z.object({
   filename: z.string().optional(),
   waMessageId: z.string().optional(),
   timestamp: z.number().optional(),
+  /**
+   * 035: simula el clic en un anuncio Click-to-WhatsApp. Va CRUDO al
+   * payload (cualquier forma, también una malformada): el que valida es la
+   * ingesta, igual que con el webhook real.
+   */
+  referral: z.unknown().optional(),
 });
 
 export async function POST(req: Request) {

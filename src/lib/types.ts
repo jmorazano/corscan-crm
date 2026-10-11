@@ -1,5 +1,6 @@
 /** DTOs que viajan por la API interna (lado cliente). */
-import type { IgOrigin, MessageDetails } from "@/lib/instagram/types";
+import type { MessageDetails } from "@/lib/instagram/types";
+import type { ConversationOriginDto } from "@/lib/conversation-origin";
 
 export type ConversationDto = {
   id: string;
@@ -30,8 +31,11 @@ export type ConversationDto = {
   windowRemainingMs: number;
   preview: string | null;
   tags: string[];
-  /** 030: de dónde llegó la conversación de Instagram. */
-  igOrigin: IgOrigin | null;
+  /**
+   * 030: de dónde llegó la conversación de Instagram. 035: también el
+   * anuncio Click-to-WhatsApp (`channel: "whatsapp"`, `sourceUrl`…).
+   */
+  igOrigin: ConversationOriginDto | null;
 };
 
 /** 014: origen externo de un saliente («Enviado por API · <clave>»). */

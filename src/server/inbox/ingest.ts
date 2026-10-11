@@ -17,6 +17,8 @@ import {
   onInboundSideEffects,
 } from "@/server/inbox/side-effects";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { parseWhatsAppReferral, type WhatsAppReferral } from "@/lib/whatsapp-ad-origin";
+import { applyWhatsAppAdOrigin } from "@/server/inbox/ad-origin";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -148,6 +150,9 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       mediaMime: attachment?.mime_type ?? null,
       mediaFileName: attachment?.filename ?? null,
       timestamp: msg.timestamp,
+      // 035: llegó tocando un anuncio Click-to-WhatsApp. Ilegible → null y el
+      // mensaje entra igual.
+      referral: msg.referral === undefined ? null : parseWhatsAppReferral(msg.referral),
     });
   }
 }
@@ -170,6 +175,8 @@ export async function ingestInboundMessage(input: {
   /** 026: nombre original de un documento. */
   mediaFileName?: string | null;
   timestamp: string;
+  /** 035: el anuncio Click-to-WhatsApp que trajo a la persona (ya validado). */
+  referral?: WhatsAppReferral | null;
 }): Promise<void> {
   const { organizationId } = input;
 
@@ -182,6 +189,23 @@ export async function ingestInboundMessage(input: {
     organizationId,
     contact.id
   );
+
+  // 035: origen + etiqueta ANTES del mensaje, como Instagram (030): así el
+  // turno del agente que dispara este mensaje ya ve de qué anuncio llegó.
+  // Un fallo acá jamás bloquea la ingesta.
+  if (input.referral) {
+    await applyWhatsAppAdOrigin({
+      organizationId,
+      conversation,
+      referral: input.referral,
+      at: toDate(input.timestamp),
+    }).catch((err) =>
+      console.warn(
+        "[webhook] no se pudo registrar el origen del anuncio:",
+        err instanceof Error ? err.message : err
+      )
+    );
+  }
 
   await ingestInboundCore({
     organizationId,

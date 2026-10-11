@@ -54,6 +54,12 @@ export type WebhookMessage = {
   sticker?: WebhookMedia;
   /** Historial del celular (017): estado de entrega del mensaje original. */
   history_context?: { status?: string; from_me?: boolean };
+  /**
+   * 035: solo en el mensaje que llega tocando un anuncio Click-to-WhatsApp.
+   * Crudo a propósito: es texto de un tercero y lo valida
+   * `parseWhatsAppReferral` (Zod) antes de usarlo.
+   */
+  referral?: unknown;
 };
 
 export type WebhookMedia = {

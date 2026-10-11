@@ -49,6 +49,8 @@ export function buildInboundPayload(input: {
   filename?: string;
   waMessageId?: string;
   timestamp?: number;
+  /** 035: `referral` de un anuncio Click-to-WhatsApp, tal cual lo manda Meta. */
+  referral?: unknown;
 }) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
@@ -58,6 +60,7 @@ export function buildInboundPayload(input: {
     type,
   };
   if (type === "text") message.text = { body: input.text ?? "hola" };
+  if (input.referral !== undefined) message.referral = input.referral;
   // 020: el sobre del adjunto va en la clave del tipo, igual que el real.
   if (MEDIA_KEYS.has(type)) {
     message[type] = {

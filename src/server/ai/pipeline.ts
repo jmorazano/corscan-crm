@@ -579,8 +579,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         sheetsSearchable,
         receiptsToSheet: sheets?.receiptsEnabled ?? false,
         sharedPersonalNumber: profile.sharedPersonalNumber,
-        originSection:
-          conversation.kind === "instagram" ? renderOriginSection(conversation.igOrigin ?? null) : null,
+        // 030: Instagram · 035: también el anuncio Click-to-WhatsApp. El
+        // canal de la conversación decide el encabezado (el Entrenador no
+        // llega acá: tiene su propio turno).
+        originSection: renderOriginSection(
+          conversation.igOrigin ?? null,
+          conversation.kind === "instagram" ? "instagram" : "whatsapp"
+        ),
         teamIntervened,
       }),
     },

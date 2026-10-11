@@ -27,6 +27,19 @@ function resumeLabel(
   return `vuelve a responder si el cliente escribe desde las ${time}${sameDay ? "" : " de mañana"}`;
 }
 
+/**
+ * 035: enlace del anuncio solo si es https (la ingesta ya lo filtró; esto es
+ * el cinturón del lado de la UI: nada de `javascript:` en un href).
+ */
+function adLink(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
   modelo: "El agente decidió escalar",
@@ -213,6 +226,7 @@ export function ContactPanel({
   }
 
   const currentIndex = stages.findIndex((s) => s.id === currentStageId);
+  const originLink = adLink(conversation.igOrigin?.sourceUrl);
 
   return (
     <div className="flex h-full flex-col">
@@ -273,6 +287,21 @@ export function ContactPanel({
                   <dt className="shrink-0 text-text-3">Origen:</dt>
                   <dd className="min-w-0 break-words text-text-2" data-testid="contact-origin">
                     {conversation.igOrigin.label}
+                    {/* 035: el anuncio Click-to-WhatsApp, si Meta mandó su enlace. */}
+                    {originLink && (
+                      <>
+                        {" · "}
+                        <a
+                          href={originLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="whitespace-nowrap text-brand-text underline-offset-2 hover:underline"
+                          data-testid="contact-origin-link"
+                        >
+                          Ver anuncio
+                        </a>
+                      </>
+                    )}
                   </dd>
                 </div>
               )}

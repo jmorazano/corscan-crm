@@ -346,6 +346,11 @@ export function aiMockCompletion(messages: InMessage[]): string {
   const igTurn = fromClient ? dispatchInstagram(messages, system, text) : null;
   if (igTurn) return igTurn;
 
+  // 035: el mismo «¿de dónde vengo?» en WhatsApp — el E2E prueba así que el
+  // turno recibió la sección ORIGEN del anuncio Click-to-WhatsApp.
+  const waOriginTurn = fromClient ? dispatchWhatsAppOrigin(system, text) : null;
+  if (waOriginTurn) return waOriginTurn;
+
   // Conector MCP (016): VA ANTES QUE LA AGENDA a propósito. El regex de
   // `mentionsCalendar` incluye "disponibilidad" y "reservar", así que una
   // empresa con agenda Y conector le ofrecería un turno de 30 minutos a
@@ -445,6 +450,24 @@ function dispatchInstagram(messages: InMessage[], system: string, text: string):
     });
   }
   return null;
+}
+
+/**
+ * 035: «¿de dónde vengo?» en una conversación de WhatsApp → lo que dice la
+ * sección ORIGEN (título del anuncio entre «»). Sin sección → «No sé de
+ * dónde llegaste.» (el caso de una conversación que no vino de un anuncio).
+ */
+function dispatchWhatsAppOrigin(system: string, text: string): string | null {
+  if (!/de d[oó]nde vengo/.test(text)) return null;
+  if (!system.includes("atendés el WhatsApp")) return null;
+  if (!system.includes("ORIGEN DE LA CONVERSACIÓN (WhatsApp)")) {
+    return JSON.stringify({ action: "reply", text: "No sé de dónde llegaste." });
+  }
+  const title = /- Título del anuncio: «([^»\n]+)»/.exec(system)?.[1];
+  return JSON.stringify({
+    action: "reply",
+    text: title ? `Llegaste por el anuncio «${title}».` : "Llegaste por un anuncio de Facebook o Instagram.",
+  });
 }
 
 /**

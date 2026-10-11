@@ -1,28 +1,18 @@
 /**
  * Tipos compartidos de la feature 030 (Instagram que vende). Viven fuera del
  * schema porque los usan la base (`jsonb.$type`), el servidor y la UI.
- * Sin imports: el schema los importa como tipos y drizzle-kit los carga.
+ * Sin imports de runtime: el schema los importa como tipos y drizzle-kit los
+ * carga (el `import type` de abajo se borra al compilar).
  */
+import type { ConversationOrigin, ConversationOriginKind } from "../conversation-origin";
 
-export type IgOriginKind = "link" | "ad" | "comment" | "story_reply" | "story_mention";
-
-/** De dónde llegó una conversación de Instagram (`conversation.ig_origin`). */
-export type IgOrigin = {
-  kind: IgOriginKind;
-  /** Lo que ve el equipo: «Link: Flyer cabañas», «Anuncio: …». */
-  label: string;
-  /** link: el slug · ad: el ad_id · comment: el comment_id. */
-  ref?: string | null;
-  linkId?: string | null;
-  /** Instrucción que ESCRIBIÓ EL DUEÑO para ese link (es configuración). */
-  instruction?: string | null;
-  /**
-   * Texto de un tercero (título del anuncio, comentario, epígrafe de la
-   * publicación): llega al agente como DATO, nunca como instrucción.
-   */
-  detail?: string | null;
-  at: string;
-};
+/**
+ * De dónde llegó una conversación (`conversation.ig_origin`). 035 generalizó
+ * el tipo a `ConversationOrigin` (también lo usa el anuncio Click-to-WhatsApp);
+ * estos nombres quedan como alias para el código de Instagram.
+ */
+export type IgOriginKind = ConversationOriginKind;
+export type IgOrigin = ConversationOrigin;
 
 export type IgButton = { title: string; url: string };
 

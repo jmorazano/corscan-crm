@@ -14,9 +14,9 @@ import { sql } from "drizzle-orm";
 import type {
   IgMediaPreview,
   IgMenuItem,
-  IgOrigin,
   MessageDetails,
 } from "../instagram/types";
+import type { ConversationOrigin } from "../conversation-origin";
 import type { ConversationEventDetails } from "../conversation-events";
 
 /** bytea de Postgres (drizzle no lo trae de fábrica). Driver postgres.js:
@@ -291,9 +291,12 @@ export const conversation = pgTable(
     /**
      * 030: de dónde llegó la conversación de Instagram (el último origen
      * conocido): link con origen, anuncio, comentario o historia. El agente
-     * lo recibe como contexto. NULL = sin origen conocido (o WhatsApp).
+     * lo recibe como contexto. NULL = sin origen conocido.
+     * 035: también el anuncio Click-to-WhatsApp de una conversación de
+     * WhatsApp (`channel: "whatsapp"`). La columna conserva el nombre de 030
+     * (renombrarla pedía una migración sin beneficio); el tipo es el genérico.
      */
-    igOrigin: jsonb("ig_origin").$type<IgOrigin>(),
+    igOrigin: jsonb("ig_origin").$type<ConversationOrigin>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

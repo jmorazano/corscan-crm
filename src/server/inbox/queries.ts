@@ -4,7 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import { sanitizeTags, type TagMode } from "@/lib/tags";
 import { tagsWhere } from "@/server/tags";
-import type { IgOrigin } from "@/lib/instagram/types";
+import { originForClient, type ConversationOriginDto } from "@/lib/conversation-origin";
 import {
   DEFAULT_PAGE_SIZE,
   encodeCursor,
@@ -41,8 +41,11 @@ export type ConversationDto = {
   preview: string | null;
   /** Etiquetas de triage de la conversación (006). */
   tags: string[];
-  /** 030: de dónde llegó la conversación de Instagram. */
-  igOrigin: IgOrigin | null;
+  /**
+   * 030: de dónde llegó la conversación de Instagram. 035: también el
+   * anuncio Click-to-WhatsApp. Sin el identificador del clic (es del servidor).
+   */
+  igOrigin: ConversationOriginDto | null;
 };
 
 export type ListConversationsOptions = {
@@ -319,7 +322,7 @@ export function serializeConversation(
     windowRemainingMs: windowRemainingMs(c.lastInboundAt),
     preview,
     tags: c.tags ?? [],
-    igOrigin: c.igOrigin ?? null,
+    igOrigin: c.igOrigin ? originForClient(c.igOrigin) : null,
   };
 }
 
