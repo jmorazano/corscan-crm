@@ -31,7 +31,7 @@ describe("eventText", () => {
       hhmm
     );
     expect(text).toBe(
-      "La IA no respondió: alguien del equipo está atendiendo. Vuelve a responder si el cliente escribe desde las 10:42."
+      "La IA no respondió: alguien del equipo está atendiendo. A las 10:42 retoma sola si el cliente quedó esperando respuesta."
     );
     expect(tone).toBe("neutral");
   });

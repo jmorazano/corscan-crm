@@ -50,6 +50,11 @@ export type MessageDetails = {
   template?: { title: string | null; buttons: string[] };
   /** Llegó como `standby`: otra app maneja el hilo. */
   standby?: boolean;
+  /**
+   * 036: mensaje del equipo detectado como DIFUSIÓN (mismo texto a varios
+   * chats): no cuenta como «alguien atendiendo».
+   */
+  broadcast?: boolean;
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */

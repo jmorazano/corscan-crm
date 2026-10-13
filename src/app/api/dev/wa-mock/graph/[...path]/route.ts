@@ -182,10 +182,11 @@ export async function POST(req: Request, ctx: Params) {
   // POST {phoneNumberId}/messages → registra en el outbox
   if (path.length === 2 && path[1] === "messages") {
     const state = getWaMockState();
-    if (state.failNextSend) {
+    if (state.failNextSend || state.failSends > 0) {
       // Knob 014: Meta caída una vez (se auto-apaga) — el envío NO se
-      // registra en el outbox, como un 500 real.
-      state.failNextSend = false;
+      // registra en el outbox, como un 500 real. 036: `failSends` = N veces.
+      if (state.failNextSend) state.failNextSend = false;
+      else state.failSends -= 1;
       return Response.json(
         {
           error: {

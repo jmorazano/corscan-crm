@@ -15,6 +15,10 @@
  *   Si nadie escribe, sigue esperando (el aviso push ya salió).
  *
  * Compartido por el turno del agente (servidor) y el panel de la bandeja.
+ *
+ * 036: al vencer la ventana del equipo el agente RETOMA solo si el cliente
+ * quedó esperando una respuesta (`pendingAfterTeam`), y una difusión del
+ * equipo (mismo texto a varios chats) no lo calla (`isBroadcast`).
  */
 
 export const TEAM_SILENCE_DEFAULT_MS = 10 * 60_000;
@@ -94,6 +98,57 @@ export function agentPresence(input: PresenceInput): Presence {
 
   if (teamActive) return { silent: true, reason: "team_active", until: teamUntil };
   return { silent: false, resumed: null };
+}
+
+/**
+ * 036: ¿el último mensaje del cliente llegó MIENTRAS el equipo atendía (y
+ * nadie se lo contestó)? Es lo que convierte un turno normal en una RETOMA:
+ * al vencer la ventana el agente responde solo si el cliente quedó esperando.
+ * Un mensaje posterior a la ventana es una charla nueva, no una retoma.
+ */
+export function pendingAfterTeam(input: {
+  lastTeamAt: Date | null;
+  windowMs: number;
+  lastInboundAt: Date;
+}): boolean {
+  if (!input.lastTeamAt) return false;
+  const inbound = input.lastInboundAt.getTime();
+  const team = input.lastTeamAt.getTime();
+  return inbound > team && inbound < team + input.windowMs;
+}
+
+/**
+ * 036 (decisión del dueño, 13-oct-2026): una DIFUSIÓN del equipo — el mismo
+ * texto a varios chats a la vez, a gente que no venía escribiendo — no es
+ * «alguien atendiendo»: el agente atiende las respuestas. El caso que la
+ * motivó: «Se me libero este 👇» + enlace a ~8 contactos desde el celular
+ * calló al agente en los 8 justo cuando le preguntaban el precio.
+ *
+ * Un texto repetido que RESPONDE a alguien que estaba escribiendo («Ya se
+ * reservó, disculpas» a dos interesados) sigue siendo atender.
+ */
+export const BROADCAST_MIN_CONVERSATIONS = 3;
+/** Ventana (a cada lado del mensaje) para contar los chats con el mismo texto. */
+export const BROADCAST_SPAN_MS = 30 * 60_000;
+/** Si el cliente escribió en esta ventana previa, el mensaje del equipo le responde. */
+export const PROACTIVE_GAP_MS = 60 * 60_000;
+
+/** Texto comparable de una difusión; null = sin texto (no se evalúa). */
+export function broadcastKey(text: string | null | undefined): string | null {
+  const t = text?.trim();
+  return t ? t : null;
+}
+
+export function isBroadcast(input: {
+  text: string | null | undefined;
+  /** ¿El cliente escribió en `PROACTIVE_GAP_MS` antes de este mensaje? */
+  customerWroteBefore: boolean;
+  /** Conversaciones DISTINTAS (incluida esta) con el mismo texto del equipo en ±`BROADCAST_SPAN_MS`. */
+  sameTextConversations: number;
+}): boolean {
+  if (!broadcastKey(input.text)) return false;
+  if (input.customerWroteBefore) return false;
+  return input.sameTextConversations >= BROADCAST_MIN_CONVERSATIONS;
 }
 
 /**

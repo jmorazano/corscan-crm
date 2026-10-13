@@ -59,6 +59,22 @@ function teamInterventionSection(): string {
   ].join("\n");
 }
 
+export const TEAM_RESUME_MARKER = "RETOMA TRAS EL EQUIPO";
+
+/**
+ * 036: el agente retoma una conversación que venía atendiendo el equipo. El
+ * caso del «gracias» suelto ya lo cortó el pipeline antes de llegar acá; esto
+ * cubre lo que no es tan obvio («dale, lo hablo con mi pareja», «perfecto,
+ * cualquier cosa te escribo»).
+ */
+export function teamResumeSection(minutesWaiting: number): string {
+  return [
+    `${TEAM_RESUME_MARKER}: una persona del equipo venía atendiendo esta conversación y dejó de responder. El último mensaje del cliente quedó sin respuesta hace ${minutesWaiting} min y ahora retomás vos.`,
+    '- Respondé SOLO si el cliente quedó esperando una respuesta: hizo una pregunta, pidió algo o espera un dato que nadie le dio. Si su último mensaje cierra la charla, agradece, confirma o dice que lo piensa/avisa → {"action":"none","reason":"..."}.',
+    "- Si respondés: no te presentes ni saludes como si fuera el primer mensaje, no repitas lo que el equipo ya le dijo y contestá directo lo pendiente. Podés disculparte en pocas palabras por la demora.",
+  ].join("\n");
+}
+
 /**
  * Sección del NÚMERO PERSONAL (025, US4): el WhatsApp del negocio es también
  * el celular del dueño. A los conocidos del celular el pipeline ni siquiera
@@ -152,6 +168,12 @@ export function buildAgentSystemPrompt(input: {
    */
   teamIntervened?: boolean;
   /**
+   * 036: RETOMA — el cliente escribió mientras el equipo atendía, nadie le
+   * contestó y venció la ventana del equipo. Se responde solo si quedó
+   * esperando algo.
+   */
+  teamResume?: { minutesWaiting: number } | null;
+  /**
    * 034: sección de las PLANILLAS de consulta (copias de Google Sheets). La
    * arma `loadSheetsContext`. `sheetsSearchable` = alguna no entró completa
    * y se ofrece `search_sheet`.
@@ -200,6 +222,7 @@ export function buildAgentSystemPrompt(input: {
     input.originSection ?? null,
     transactional,
     input.teamIntervened ? teamInterventionSection() : null,
+    input.teamResume ? teamResumeSection(input.teamResume.minutesWaiting) : null,
     input.sharedPersonalNumber ? personalNumberSection() : null,
     privacyRules(),
     [

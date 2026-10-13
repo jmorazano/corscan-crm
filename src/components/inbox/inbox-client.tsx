@@ -84,9 +84,12 @@ export function InboxClient() {
   // 031: líneas del hilo (quién prendió/apagó la IA, por qué no respondió…).
   const [threadEvents, setThreadEvents] = useState<ConversationEventDto[]>([]);
   // 031: último mensaje del equipo en el hilo abierto (el panel dice cuándo vuelve la IA).
+  // 036: una difusión detectada no cuenta como «alguien atendiendo».
   const lastTeamAt = useMemo(() => {
     let last: string | null = null;
-    for (const m of messages) if (m.team && (!last || m.createdAt > last)) last = m.createdAt;
+    for (const m of messages) {
+      if (m.team && !m.details?.broadcast && (!last || m.createdAt > last)) last = m.createdAt;
+    }
     return last;
   }, [messages]);
   const [panelOpen, setPanelOpen] = useState(true);

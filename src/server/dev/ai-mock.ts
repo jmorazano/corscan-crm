@@ -1,4 +1,4 @@
-import { JUDGE_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
+import { JUDGE_MARKER, TEAM_RESUME_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
 import {
   LISTINGS_MARKER,
@@ -338,6 +338,19 @@ export function aiMockCompletion(messages: InMessage[]): string {
     !/\b(necesito|quiero|quisiera|puedo|podr[ií]a|c[oó]mo|cu[aá]ndo|d[oó]nde|problema|ayuda|no (puedo|encuentro|me)|cambiar|cancelar)\b/.test(text)
   ) {
     return JSON.stringify({ action: "none" });
+  }
+
+  // 036: retoma tras el equipo — un modelo sensato calla ante «lo pienso y te
+  // aviso» y, si no, contesta lo pendiente sin presentarse. El E2E prueba así
+  // que el turno recibió la sección de retoma.
+  if (fromClient && system.includes(TEAM_RESUME_MARKER)) {
+    if (/\b(lo (pienso|hablo|charlo|veo)|te aviso|cualquier cosa)\b/.test(text)) {
+      return JSON.stringify({ action: "none", reason: "el cliente dijo que lo piensa y avisa" });
+    }
+    return JSON.stringify({
+      action: "reply",
+      text: `Perdón la demora. Retomo tu consulta: ${lastUser.slice(0, 80)}`,
+    });
   }
 
   // 030: extras de Instagram y contexto de origen/comentario (E2E). Antes que

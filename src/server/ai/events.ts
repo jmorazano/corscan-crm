@@ -1,8 +1,15 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
+import { serializeMessage } from "@/server/inbox/ingest";
+import {
+  BROADCAST_SPAN_MS,
+  PROACTIVE_GAP_MS,
+  broadcastKey,
+  isBroadcast,
+} from "@/lib/agent-presence";
 import {
   shouldSkipSilence,
   type ConversationEventDetails,
@@ -164,17 +171,36 @@ export async function listConversationEvents(
   return rows.map(serializeEvent);
 }
 
+/** Condición «lo escribió una persona del equipo» (misma regla que `isTeamMessage`). */
+function teamAuthored() {
+  return and(
+    eq(schema.message.direction, "out"),
+    eq(schema.message.aiGenerated, false),
+    or(inArray(schema.message.source, ["phone", "history"]), isNotNull(schema.message.sentByUserId))
+  );
+}
+
+/** Mensajes del equipo que se miran hacia atrás buscando uno que no sea difusión. */
+const TEAM_CANDIDATES = 10;
+
 /**
- * Último mensaje del EQUIPO (misma regla que `isTeamMessage`): desde el CRM
- * con autor, o desde el celular / la app. Una consulta por turno sobre el
- * índice (org, conversación, fecha).
+ * Último mensaje del EQUIPO que cuenta como «alguien atendiendo» (031):
+ * desde el CRM con autor, o desde el celular / la app.
+ *
+ * 036: las DIFUSIONES no cuentan (mismo texto a varios chats a gente que no
+ * venía escribiendo — `isBroadcast`). Se recorren los últimos mensajes del
+ * equipo hasta el primero que no lo sea; los detectados quedan marcados
+ * (`details.broadcast`) para no volver a evaluarlos y para que el panel de
+ * la bandeja tampoco los cuente. Lo común (el equipo respondiéndole a
+ * alguien que escribió) cuesta una consulta extra.
  */
 export async function lastTeamMessageAt(
   organizationId: string,
   conversationId: string
 ): Promise<Date | null> {
-  const rows = await getDb()
-    .select({ createdAt: schema.message.createdAt })
+  const db = getDb();
+  const rows = await db
+    .select()
     .from(schema.message)
     .where(
       and(
@@ -183,12 +209,112 @@ export async function lastTeamMessageAt(
           organizationId,
           eq(schema.message.conversationId, conversationId)
         ),
-        eq(schema.message.direction, "out"),
-        eq(schema.message.aiGenerated, false),
-        or(inArray(schema.message.source, ["phone", "history"]), isNotNull(schema.message.sentByUserId))
+        teamAuthored()
       )
     )
     .orderBy(desc(schema.message.createdAt))
+    .limit(TEAM_CANDIDATES);
+
+  const detected: (typeof rows)[number][] = [];
+  let result: Date | null = null;
+  for (const row of rows) {
+    if (row.details?.broadcast) continue;
+    let broadcast = false;
+    try {
+      broadcast = await isTeamBroadcast(organizationId, conversationId, row);
+    } catch (err) {
+      // Ante la duda, el mensaje cuenta (comportamiento de 031).
+      console.error("[agente] no se pudo evaluar la difusión:", err instanceof Error ? err.message : err);
+    }
+    if (!broadcast) {
+      result = row.createdAt;
+      break;
+    }
+    detected.push(row);
+  }
+  if (detected.length > 0) await markBroadcast(organizationId, conversationId, detected);
+  return result;
+}
+
+async function isTeamBroadcast(
+  organizationId: string,
+  conversationId: string,
+  row: { text: string | null; createdAt: Date }
+): Promise<boolean> {
+  const key = broadcastKey(row.text);
+  if (!key) return false;
+  const db = getDb();
+  const at = row.createdAt.getTime();
+  const [wrote] = await db
+    .select({ id: schema.message.id })
+    .from(schema.message)
+    .where(
+      scoped(
+        schema.message.organizationId,
+        organizationId,
+        eq(schema.message.conversationId, conversationId),
+        eq(schema.message.direction, "in"),
+        lt(schema.message.createdAt, row.createdAt),
+        gte(schema.message.createdAt, new Date(at - PROACTIVE_GAP_MS))
+      )
+    )
     .limit(1);
-  return rows[0]?.createdAt ?? null;
+  if (wrote) return false;
+  const [counted] = await db
+    .select({ n: sql<number>`count(distinct ${schema.message.conversationId})::int` })
+    .from(schema.message)
+    .where(
+      and(
+        scoped(
+          schema.message.organizationId,
+          organizationId,
+          eq(schema.message.text, row.text ?? ""),
+          gte(schema.message.createdAt, new Date(at - BROADCAST_SPAN_MS)),
+          lte(schema.message.createdAt, new Date(at + BROADCAST_SPAN_MS))
+        ),
+        teamAuthored()
+      )
+    );
+  return isBroadcast({
+    text: row.text,
+    customerWroteBefore: false,
+    sameTextConversations: Number(counted?.n ?? 0),
+  });
+}
+
+async function markBroadcast(
+  organizationId: string,
+  conversationId: string,
+  rows: (typeof schema.message.$inferSelect)[]
+): Promise<void> {
+  try {
+    await getDb()
+      .update(schema.message)
+      .set({
+        details: sql`coalesce(${schema.message.details}, '{}'::jsonb) || '{"broadcast":true}'::jsonb`,
+      })
+      .where(
+        scoped(
+          schema.message.organizationId,
+          organizationId,
+          inArray(
+            schema.message.id,
+            rows.map((r) => r.id)
+          )
+        )
+      );
+    for (const row of rows) {
+      // Solo texto: el DTO de un adjunto lleva su media, que acá no está.
+      if (row.type !== "text") continue;
+      publish(organizationId, {
+        type: "message.updated",
+        data: {
+          conversationId,
+          message: serializeMessage({ ...row, details: { ...(row.details ?? {}), broadcast: true } }),
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[agente] no se pudo marcar la difusión:", err instanceof Error ? err.message : err);
+  }
 }

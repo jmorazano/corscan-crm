@@ -35,6 +35,16 @@ export class MetaApiError extends Error {
   }
 }
 
+/**
+ * 036: tope de tiempo de cada llamada a Graph. Sin él, una conexión colgada
+ * dejaba el turno del agente esperando el default de undici (5 min) con la
+ * conversación trabada. Un timeout es «Meta no disponible» (status 0): el
+ * envío del agente lo reintenta.
+ */
+export const GRAPH_TIMEOUT_MS = 20_000;
+/** Las subidas de medios (multipart) pueden tardar más. */
+export const GRAPH_UPLOAD_TIMEOUT_MS = 120_000;
+
 export async function graphRequest<T>(
   path: string,
   opts: {
@@ -44,13 +54,19 @@ export async function graphRequest<T>(
     /** 026: multipart (subida de medios). Excluye `body`; el `fetch` pone
      * el boundary del Content-Type. */
     form?: FormData;
+    /** 036: override del tope (ms). */
+    timeoutMs?: number;
   }
 ): Promise<T> {
   const env = getEnv();
   const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${path}`;
+  const signal = AbortSignal.timeout(
+    opts.timeoutMs ?? (opts.form ? GRAPH_UPLOAD_TIMEOUT_MS : GRAPH_TIMEOUT_MS)
+  );
   let res: Response;
   try {
     res = await fetch(url, {
+      signal,
       method: opts.method ?? "GET",
       headers: {
         Authorization: `Bearer ${opts.token}`,
@@ -71,7 +87,16 @@ export async function graphRequest<T>(
     });
   }
 
-  const text = await res.text();
+  // 036: el cuerpo también puede quedar colgado (el mismo `signal` lo corta).
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (cause) {
+    throw new MetaApiError("La API de Meta no terminó de responder", {
+      status: 0,
+      details: cause,
+    });
+  }
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;

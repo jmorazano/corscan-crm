@@ -48,6 +48,8 @@ type WaMockState = {
   failUploads: boolean;
   /** Knob 014: el próximo `POST …/messages` falla con 500 (Meta caída). */
   failNextSend: boolean;
+  /** Knob 036: los próximos N `POST …/messages` fallan con 500 (Meta caída un rato). */
+  failSends: number;
   /** 017: solicitudes `smb_app_data` recibidas (sync_type + fecha). */
   syncRequests: { phoneNumberId: string; syncType: string; at: string }[];
   /** Knob 017: el próximo sync de historial devuelve «rechazado» (2593109). */
@@ -72,6 +74,7 @@ export function getWaMockState(): WaMockState {
       counter: 0,
       failUploads: false,
       failNextSend: false,
+      failSends: 0,
       syncRequests: [],
       historyDeclined: false,
       mediaDownloadFails: false,
@@ -92,6 +95,9 @@ export function getWaMockState(): WaMockState {
   }
   if (globalForMock.__waMockState.failNextSend === undefined) {
     globalForMock.__waMockState.failNextSend = false;
+  }
+  if (globalForMock.__waMockState.failSends === undefined) {
+    globalForMock.__waMockState.failSends = 0;
   }
   if (globalForMock.__waMockState.mediaDownloadFails === undefined) {
     globalForMock.__waMockState.mediaDownloadFails = false;
@@ -119,6 +125,7 @@ export function resetWaMockState(): void {
     counter,
     failUploads: false,
     failNextSend: false,
+    failSends: 0,
     syncRequests: [],
     historyDeclined: false,
     mediaDownloadFails: false,

@@ -79,7 +79,8 @@ export function eventText(
   const d = ev.details ?? {};
   const who = ev.actorName?.trim() || "Alguien del equipo";
   const back = d.until
-    ? ` Vuelve a responder si el cliente escribe desde las ${formatTime(d.until)}.`
+    ? // 036: al vencer retoma sola si el cliente quedó esperando respuesta.
+      ` A las ${formatTime(d.until)} retoma sola si el cliente quedó esperando respuesta.`
     : "";
   switch (ev.kind) {
     case "ai_toggled":

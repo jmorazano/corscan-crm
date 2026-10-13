@@ -24,7 +24,8 @@ function resumeLabel(
   if (hint.kind === "next_message") return "vuelve a responder cuando el cliente escriba";
   const time = hint.at.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
   const sameDay = hint.at.toDateString() === new Date().toDateString();
-  return `vuelve a responder si el cliente escribe desde las ${time}${sameDay ? "" : " de mañana"}`;
+  // 036: al vencer retoma sola si el cliente quedó esperando respuesta.
+  return `retoma a las ${time}${sameDay ? "" : " de mañana"} si el cliente quedó esperando`;
 }
 
 /**

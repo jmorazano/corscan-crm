@@ -19,5 +19,9 @@ export async function register(): Promise<void> {
     // Instagram habilitado no hay filas y el barrido no hace nada.
     const { startInstagramTokenTicker } = await import("./server/instagram/integration");
     startInstagramTokenTicker();
+    // 036: las retomas del agente al vencer la ventana del equipo viven en
+    // memoria; un reinicio las reprograma.
+    const { rescheduleTeamResumes } = await import("./server/ai/pipeline");
+    await rescheduleTeamResumes();
   }
 }

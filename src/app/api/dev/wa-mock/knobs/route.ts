@@ -14,6 +14,8 @@ const bodySchema = z.object({
   failUploads: z.boolean().optional(),
   /** 014: el próximo envío a Graph falla con 500 (503 de cara a la API). */
   failNextSend: z.boolean().optional(),
+  /** 036: los próximos N envíos a Graph fallan con 500 (reintentos del agente). */
+  failSends: z.number().int().min(0).max(20).optional(),
   /** 017: el próximo sync de historial llega rechazado. */
   historyDeclined: z.boolean().optional(),
   /** 020: la próxima descarga de un adjunto falla con 404. */
@@ -38,6 +40,9 @@ export async function POST(req: Request) {
   if (body.data.failNextSend !== undefined) {
     state.failNextSend = body.data.failNextSend;
   }
+  if (body.data.failSends !== undefined) {
+    state.failSends = body.data.failSends;
+  }
   if (body.data.historyDeclined !== undefined) {
     state.historyDeclined = body.data.historyDeclined;
   }
@@ -53,6 +58,7 @@ export async function POST(req: Request) {
   return Response.json({
     failUploads: state.failUploads,
     failNextSend: state.failNextSend,
+    failSends: state.failSends,
     historyDeclined: state.historyDeclined,
     mediaDownloadFails: state.mediaDownloadFails,
     mediaTooLarge: state.mediaTooLarge,

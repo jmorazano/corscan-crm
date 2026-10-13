@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, gt } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
@@ -42,7 +42,13 @@ import {
   recordConversationEvent,
   recordSilence,
 } from "@/server/ai/events";
-import { agentPresence, isTeamMessage, resolveTeamSilenceMs } from "@/lib/agent-presence";
+import {
+  agentPresence,
+  isTeamMessage,
+  pendingAfterTeam,
+  resolveTeamSilenceMs,
+} from "@/lib/agent-presence";
+import { withSendRetry } from "@/lib/send-retry";
 import {
   clipReason,
   friendlyProviderError,
@@ -196,6 +202,81 @@ async function executeTurn(conversationId: string): Promise<void> {
 }
 
 /**
+ * 036: RETOMA al vencer la ventana del equipo. Cuando el agente calla porque
+ * alguien del equipo está atendiendo, queda un timer para el momento en que
+ * vence la ventana: ahí corre un turno normal, que decide con los datos de
+ * ese momento (si el equipo ya contestó no pasa nada; si lo pendiente es un
+ * «gracias» tampoco; si el cliente quedó esperando, responde). Un timer por
+ * conversación: reprogramar reemplaza al anterior.
+ */
+const RESUME_MARGIN_MS = 2_000;
+
+const globalForResume = globalThis as unknown as {
+  __agentResume?: Map<string, ReturnType<typeof setTimeout>>;
+};
+
+function resumeMap(): Map<string, ReturnType<typeof setTimeout>> {
+  if (!globalForResume.__agentResume) globalForResume.__agentResume = new Map();
+  return globalForResume.__agentResume;
+}
+
+export function scheduleResumeCheck(conversationId: string, at: Date): void {
+  const map = resumeMap();
+  const previous = map.get(conversationId);
+  if (previous) clearTimeout(previous);
+  const delay = Math.max(0, at.getTime() - Date.now()) + RESUME_MARGIN_MS;
+  const timer = setTimeout(() => {
+    map.delete(conversationId);
+    // Con un turno en curso o esperando el debounce, ese turno ya mira todo.
+    if (coalesceMap().has(conversationId)) return;
+    scheduleAgentTurn(conversationId, 0);
+  }, delay);
+  // No retiene el proceso (tests, apagado ordenado).
+  timer.unref?.();
+  map.set(conversationId, timer);
+}
+
+/** Ventana máxima hacia atrás para reprogramar retomas al arrancar. */
+const RESUME_BOOT_LOOKBACK_MS = 24 * 60 * 60_000;
+/** Una ventana que venció hace más que esto ya no se retoma tras un reinicio. */
+const RESUME_BOOT_STALE_MS = 30 * 60_000;
+
+/**
+ * 036 (AC2.5): los timers viven en memoria; un deploy los pierde. Al
+ * arrancar se reprograman las conversaciones cuyo ÚLTIMO evento es «el
+ * equipo está atendiendo» y cuya ventana vence pronto o venció hace poco.
+ */
+export async function rescheduleTeamResumes(): Promise<number> {
+  try {
+    const since = new Date(Date.now() - RESUME_BOOT_LOOKBACK_MS);
+    const rows = await getDb()
+      .selectDistinctOn([schema.conversationEvent.conversationId], {
+        conversationId: schema.conversationEvent.conversationId,
+        kind: schema.conversationEvent.kind,
+        reason: schema.conversationEvent.reason,
+        details: schema.conversationEvent.details,
+      })
+      .from(schema.conversationEvent)
+      .where(gt(schema.conversationEvent.createdAt, since))
+      .orderBy(schema.conversationEvent.conversationId, desc(schema.conversationEvent.createdAt));
+    let count = 0;
+    const now = Date.now();
+    for (const row of rows) {
+      if (row.kind !== "ai_silent" || row.reason !== "team_active" || !row.details?.until) continue;
+      const until = new Date(row.details.until);
+      if (Number.isNaN(until.getTime()) || until.getTime() < now - RESUME_BOOT_STALE_MS) continue;
+      scheduleResumeCheck(row.conversationId, until);
+      count++;
+    }
+    if (count > 0) console.log(`[boot] ${count} retoma(s) del agente reprogramada(s)`);
+    return count;
+  } catch (err) {
+    console.error("[boot] no se pudieron reprogramar las retomas:", err instanceof Error ? err.message : err);
+    return 0;
+  }
+}
+
+/**
  * 031: un turno que reventó por algo inesperado deja la línea en el hilo
  * (antes solo quedaba en el log y el cliente se quedaba sin respuesta sin
  * que nadie en el CRM lo supiera).
@@ -302,15 +383,22 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // que una persona escriba y, vencida la ventana desde ahí, la IA retoma.
   // Reemplaza el corte viejo «handoff o IA apagada → return».
   const windowMs = resolveTeamSilenceMs(profile.teamSilenceMs);
+  // 036: las difusiones del equipo (mismo texto a varios chats) no cuentan.
+  const lastTeamAt = conversation.isTest ? null : await lastTeamMessageAt(organizationId, conversationId);
   const presence = agentPresence({
     aiEnabled: conversation.aiEnabled,
     handoffAt: conversation.handoffAt,
-    lastTeamAt: conversation.isTest ? null : await lastTeamMessageAt(organizationId, conversationId),
+    lastTeamAt,
     now: new Date(),
     windowMs,
   });
   const windowMinutes = Math.round(windowMs / 60_000);
   if (presence.silent) {
+    // 036: al vencer la ventana del equipo, otro turno decide si el cliente
+    // quedó esperando una respuesta.
+    if (presence.reason === "team_active" && presence.until) {
+      scheduleResumeCheck(conversationId, presence.until);
+    }
     await silence(presence.reason, {
       ...(presence.until ? { until: presence.until.toISOString() } : {}),
       minutes: windowMinutes,
@@ -341,6 +429,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (transactional?.allAcknowledgments) {
     await silence("acknowledgment");
     return;
+  }
+
+  // 036: RETOMA — el cliente escribió mientras el equipo atendía y nadie le
+  // contestó. Se responde solo si quedó esperando algo.
+  const resuming =
+    !conversation.isTest &&
+    pendingAfterTeam({ lastTeamAt, windowMs, lastInboundAt: lastInbound.createdAt });
+  if (resuming) {
+    if (!isWindowOpen(conversation.lastInboundAt)) {
+      // El equipo ya estaba ahí: no se deriva por la ventana de 24 h.
+      return;
+    }
+    const pending = pendingCustomerMessages(history);
+    if (pending.length > 0 && pending.every((m) => m.type === "text" && isPlainAcknowledgment(m.text))) {
+      await silence("no_reply_needed", {
+        detail: "el cliente solo agradeció o confirmó lo que le dijo el equipo; no quedó esperando respuesta.",
+      });
+      return;
+    }
   }
 
   // 031: vuelve. Si venía de una atención humana ya atendida por el equipo,
@@ -587,6 +694,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           conversation.kind === "instagram" ? "instagram" : "whatsapp"
         ),
         teamIntervened,
+        teamResume: resuming
+          ? { minutesWaiting: Math.max(1, Math.round((Date.now() - lastInbound.createdAt.getTime()) / 60_000)) }
+          : null,
       }),
     },
     // 020: un entrante sin texto (una foto, un audio que no se pudo
@@ -1195,6 +1305,15 @@ async function resumeIfSilenced(
 }
 
 /**
+ * 036, PURA: lo que escribió el cliente DESPUÉS del último mensaje del negocio
+ * (agente o equipo), en orden.
+ */
+export function pendingCustomerMessages<T extends { direction: string }>(history: readonly T[]): T[] {
+  const lastOut = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
+  return history.slice(lastOut + 1).filter((m) => m.direction === "in");
+}
+
+/**
  * 025 (US4), PURA: ¿el agente se calla con este contacto? Solo si la empresa
  * declaró que el WhatsApp es también el número personal del dueño Y el
  * contacto es conocido del celular. Sin contacto (Laboratorio) nunca.
@@ -1461,13 +1580,23 @@ async function deliverReply(
     return;
   }
   try {
-    await sendText({
-      conversationId: conversation.id,
-      organizationId: conversation.organizationId,
-      text,
-      aiGenerated: true,
-      interactive,
-    });
+    // 036: un 5xx, un corte de red o un timeout de Meta se reintentan antes
+    // de rendirse (antes el cliente se quedaba sin respuesta).
+    await withSendRetry(
+      () =>
+        sendText({
+          conversationId: conversation.id,
+          organizationId: conversation.organizationId,
+          text,
+          aiGenerated: true,
+          interactive,
+        }),
+      {
+        codeOf: (err) => (err instanceof SendError ? err.code : null),
+        onRetry: (attempt, code) =>
+          console.warn(`[agente] reintento ${attempt} del envío en ${conversation.id}: ${code}`),
+      }
+    );
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
