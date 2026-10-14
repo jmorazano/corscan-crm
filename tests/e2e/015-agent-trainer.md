@@ -40,8 +40,11 @@ pane (escritorio 1280 px y móvil 375 px); los pasos de API se ejecutan con
    clientes responde (outbox del mock con `type text` a 5493515550199) con
    el KB actualizado; el hilo del entrenador NO recibe nada.
 8. **Proveedor caído**: `PUT /api/settings/ai` con token `mock-invalid` →
-   escribir → «No pude procesar eso ahora: el proveedor de IA no respondió.
-   Probá de nuevo en un momento.», `handoffAt` sigue `null`; restaurar el
+   escribir → «No pude procesar eso: el proveedor de IA rechazó el token.
+   Revisalo en Ajustes → Inteligencia artificial.» (desde el 14-oct-2026 el
+   texto depende del fallo: 401/403 token, 402 crédito, 404 modelo, red o
+   5xx «no respondió», y JSON que no cumple el contrato «No logré convertir
+   eso en un cambio concreto…»), `handoffAt` sigue `null`; restaurar el
    token.
 9. **Badge**: con el hilo cerrado, la respuesta del agente sube
    `unreadMessages` 29 → 30 y `trainer.unreadCount = 1`; abrir el hilo →
@@ -72,6 +75,33 @@ Todo ✅ tal como está descrito arriba (valores observados en cada paso).
 Unit tests nuevos: `trainer-visibility` (7), `trainer-actions` (9),
 `trainer-prompt` (5), `kb-service` (4), `ai-mock-trainer` (6),
 `trainer-changes` (6), `agent-skips-trainer` (1), `send-sandbox` (+1).
+
+## Resultado (14-oct-2026) — salida suelta `profile_append`
+
+Incidente en producción (13 y 14-oct, «Ari»): el modelo devolvió
+`{"action":"profile_append","field":"escalationRules","text":…}` (sin el
+sobre `apply`, una vez dentro de un fence ```json); el normalizador se
+llevaba `text` como `reply` y los tres intentos caían con `changes.0.text
+Required` → «proveedor no respondió». Conducido con el mensaje EXACTO del
+dueño por `POST …/messages` contra el ai-mock (que ahora reproduce esa
+salida en la rama «atención humana»/`escal`):
+
+- ✅ Respuesta «Listo, guardé: Reglas de escalado: se agregó «Si el cliente
+  no quiere agendar la demo, no insistamos, en …».»; `profile.escalationRules`
+  termina con la regla completa; `GET /api/trainer/changes` la lista y el
+  panel la muestra con «Deshacer» (revert → 200).
+- ✅ Token `mock-prose` (el proveedor responde prosa sin JSON) → «No logré
+  convertir eso en un cambio concreto. ¿Me lo decís de otra forma, en una
+  o dos frases? Si son varias cosas, mandámelas de a una.»; log
+  `[entrenador] salida inválida del modelo: sin JSON extraíble (raw=…)`.
+- ✅ Token `mock-invalid` → «No pude procesar eso: el proveedor de IA
+  rechazó el token. Revisalo en Ajustes → Inteligencia artificial.»; log
+  `[entrenador] fallo del proveedor (HTTP 401): …`.
+- Unit: `trainer-actions` +4 (payload real de producción, `text` con
+  `reply` aparte, regla larga hasta `PROFILE_APPEND_MAX`, lista pelada),
+  `trainer-visibility` +2 (`trainerFailureReply`), `ai-mock-trainer`
+  extrae con `extractJson` como el adaptador. Gate: tsc, eslint, build y
+  1702 unit verdes.
 
 Pendiente de verificación humana: nada intrínseco; el modelo real
 (OpenRouter) reemplaza al mock con el mismo contrato JSON, con extracción

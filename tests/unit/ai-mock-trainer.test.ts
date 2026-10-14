@@ -2,17 +2,21 @@ import { describe, expect, it } from "vitest";
 import { aiMockCompletion } from "@/server/dev/ai-mock";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
 import { TrainerAction } from "@/server/ai/trainer-actions";
-import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
+import { extractJson, TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
 import { trainerImageContext } from "@/lib/trainer-image";
 import { MOCK_IMAGE_SUMMARY, MOCK_TRAINER_IMAGE_READING } from "@/server/dev/ai-mock";
 
-/** 015: el ai-mock devuelve acciones del entrenador válidas y deterministas. */
+/**
+ * 015: el ai-mock devuelve acciones del entrenador válidas y deterministas.
+ * Se extrae como lo hace el adaptador (fences incluidos) y se valida con el
+ * mismo esquema (normalizador incluido) que usa el turno real.
+ */
 function turn(system: string, user: string) {
   const raw = aiMockCompletion([
     { role: "system", content: system },
     { role: "user", content: user },
   ]);
-  const parsed = TrainerAction.parse(JSON.parse(raw));
+  const parsed = TrainerAction.parse(extractJson(raw));
   return parsed;
 }
 

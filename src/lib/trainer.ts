@@ -75,6 +75,41 @@ export function composerMode(
   return conversation.windowOpen ? "text" : "template";
 }
 
+export const PROVIDER_DOWN_REPLY =
+  "No pude procesar eso ahora: el proveedor de IA no respondió. Probá de nuevo en un momento.";
+export const INVALID_OUTPUT_REPLY =
+  "No logré convertir eso en un cambio concreto. ¿Me lo decís de otra forma, en una o dos frases? Si son varias cosas, mandámelas de a una.";
+export const NO_CREDIT_REPLY =
+  "No pude procesar eso: la cuenta del proveedor de IA no tiene crédito. Cargá saldo en OpenRouter y volvé a escribirme.";
+export const BAD_TOKEN_REPLY =
+  "No pude procesar eso: el proveedor de IA rechazó el token. Revisalo en Ajustes → Inteligencia artificial.";
+export const BAD_MODEL_REPLY =
+  "No pude procesar eso: el proveedor de IA no encontró el modelo configurado. Revisalo en Ajustes → Inteligencia artificial.";
+
+/**
+ * Qué le dice el agente al dueño cuando el turno no pudo completarse (puro).
+ * Antes todo era «el proveedor no respondió», también cuando el proveedor SÍ
+ * respondió pero con un JSON que no cumplía el contrato: el dueño reintentaba
+ * a ciegas y nadie sabía que el problema era de forma, no de red.
+ */
+export function trainerFailureReply(failure: {
+  error: "provider_error" | "invalid_output";
+  status?: number;
+}): string {
+  if (failure.error === "invalid_output") return INVALID_OUTPUT_REPLY;
+  switch (failure.status) {
+    case 402:
+      return NO_CREDIT_REPLY;
+    case 401:
+    case 403:
+      return BAD_TOKEN_REPLY;
+    case 404:
+      return BAD_MODEL_REPLY;
+    default:
+      return PROVIDER_DOWN_REPLY;
+  }
+}
+
 /** Título de la fila fija y del header del hilo del entrenador. */
 export function trainerTitle(agentName: string): string {
   return `Entrená a ${agentName}`;

@@ -14,6 +14,7 @@ import { buildTrainerSystemPrompt } from "@/server/ai/trainer-prompts";
 import { getMcpIntegration } from "@/server/mcp/integration";
 import { renderConnectorForTrainer } from "@/server/mcp/dynamic-tools";
 import { trainerImageContext } from "@/lib/trainer-image";
+import { trainerFailureReply } from "@/lib/trainer";
 import { applyTrainerChanges, type ApplyOutcome } from "@/server/trainer/changes";
 
 /**
@@ -30,9 +31,6 @@ import { applyTrainerChanges, type ApplyOutcome } from "@/server/trainer/changes
 const HISTORY_LIMIT = 30;
 const TURN_TIMEOUT_MS = 45_000;
 const TURN_MAX_TOKENS = 2048;
-
-export const PROVIDER_DOWN_REPLY =
-  "No pude procesar eso ahora: el proveedor de IA no respondió. Probá de nuevo en un momento.";
 
 export class TrainerError extends Error {
   constructor(
@@ -289,9 +287,12 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
   });
 
   if (!result.ok) {
-    if (result.error === "not_configured") return;
-    console.error(`[entrenador] fallo del proveedor: ${result.detail}`);
-    await persistAgentReply(conversation, PROVIDER_DOWN_REPLY, null);
+    const { error, status } = result;
+    if (error === "not_configured") return;
+    console.error(
+      `[entrenador] ${error === "invalid_output" ? "salida inválida del modelo" : "fallo del proveedor"}${status ? ` (HTTP ${status})` : ""}: ${result.detail}`
+    );
+    await persistAgentReply(conversation, trainerFailureReply({ error, status }), null);
     covered().set(conversationId, lastOwner.createdAt.getTime());
     return;
   }

@@ -1,11 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  BAD_MODEL_REPLY,
+  BAD_TOKEN_REPLY,
   composerMode,
+  INVALID_OUTPUT_REPLY,
+  NO_CREDIT_REPLY,
+  PROVIDER_DOWN_REPLY,
   TRAINER_CONTACT_PHONE,
+  trainerFailureReply,
   trainerTitle,
   trainerVisible,
 } from "@/lib/trainer";
 import { normalizeToWaId } from "@/lib/phone";
+
+/** La respuesta al dueño cuando el turno no se completa dice la verdad del fallo. */
+describe("trainerFailureReply", () => {
+  it("JSON que no cumple el contrato → pide reformular, NO culpa al proveedor", () => {
+    expect(trainerFailureReply({ error: "invalid_output" })).toBe(INVALID_OUTPUT_REPLY);
+    expect(INVALID_OUTPUT_REPLY).not.toMatch(/proveedor/);
+  });
+  it("402 crédito · 401/403 token · 404 modelo · resto «no respondió»", () => {
+    expect(trainerFailureReply({ error: "provider_error", status: 402 })).toBe(NO_CREDIT_REPLY);
+    expect(trainerFailureReply({ error: "provider_error", status: 401 })).toBe(BAD_TOKEN_REPLY);
+    expect(trainerFailureReply({ error: "provider_error", status: 403 })).toBe(BAD_TOKEN_REPLY);
+    expect(trainerFailureReply({ error: "provider_error", status: 404 })).toBe(BAD_MODEL_REPLY);
+    expect(trainerFailureReply({ error: "provider_error", status: 503 })).toBe(PROVIDER_DOWN_REPLY);
+    expect(trainerFailureReply({ error: "provider_error" })).toBe(PROVIDER_DOWN_REPLY);
+  });
+});
 
 /** 015 (D2/D3): reglas puras de la fila fija del entrenador. */
 describe("trainerVisible", () => {

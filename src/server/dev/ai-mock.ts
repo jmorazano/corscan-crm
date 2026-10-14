@@ -555,12 +555,17 @@ function dispatchTrainer(system: string, lastUser: string): string {
       reply: "Anotado: no uso más emojis.",
     });
   }
-  if (text.includes("escal")) {
-    return JSON.stringify({
-      action: "apply",
-      changes: [{ op: "profile_append", field: "escalationRules", text: lastUser.trim() }],
-      reply: "Listo, agregué esa regla de escalado.",
+  if (text.includes("escal") || text.includes("atención humana")) {
+    // Reproduce la salida REAL del modelo en producción (13/14-oct-2026): el
+    // cambio suelto con `action` = op, sin el sobre `apply`, dentro de un
+    // fence markdown. El adaptador lo extrae y el normalizador lo envuelve;
+    // si eso se rompe, el E2E del Entrenador cae a «proveedor no respondió».
+    const flat = JSON.stringify({
+      action: "profile_append",
+      field: "escalationRules",
+      text: lastUser.trim(),
     });
+    return "```json\n" + flat + "\n```";
   }
   if (text.includes("llamate")) {
     const name = lastUser.trim().split(/\s+/).pop() ?? "Asistente";

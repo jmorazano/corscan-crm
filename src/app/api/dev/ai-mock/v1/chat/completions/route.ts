@@ -29,7 +29,12 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     messages?: Parameters<typeof aiMockCompletion>[0];
   };
-  const content = aiMockCompletion(body.messages ?? []);
+  // `-prose` = el proveedor responde pero en prosa, sin JSON (el modelo
+  // «charla» en vez de devolver la acción): los tres intentos del adaptador
+  // fallan y el turno tiene que decirlo como lo que es, no como una caída.
+  const content = bearer.endsWith("-prose")
+    ? "Claro, lo tengo en cuenta: no insisto con la demo y paso la conversación a una persona."
+    : aiMockCompletion(body.messages ?? []);
   return Response.json({
     id: "aimock",
     choices: [{ index: 0, message: { role: "assistant", content } }],

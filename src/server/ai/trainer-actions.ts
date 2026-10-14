@@ -21,6 +21,7 @@ export const APPENDABLE_FIELDS = ["tone", "instructions", "escalationRules"] as 
 export type AppendableField = (typeof APPENDABLE_FIELDS)[number];
 
 export const MAX_CHANGES_PER_TURN = 10;
+export const PROFILE_APPEND_MAX = 2000;
 
 const kbId = z.string().trim().regex(/^kb_[0-9a-z]+$/);
 
@@ -48,7 +49,12 @@ export const TrainerChange = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("profile_append"),
     field: z.enum(APPENDABLE_FIELDS),
-    text: z.string().trim().min(1).max(1000),
+    /**
+     * Una regla suele ser una o dos frases, pero el modelo a veces reescribe
+     * la instrucción completa del dueño (en producción, ~500 caracteres).
+     * El tope real lo pone el campo del perfil al aplicar.
+     */
+    text: z.string().trim().min(1).max(PROFILE_APPEND_MAX),
   }),
 ]);
 export type TrainerChangeType = z.infer<typeof TrainerChange>;
@@ -59,22 +65,37 @@ const OPS = ["kb_add", "kb_update", "kb_delete", "profile_set", "profile_append"
  * Normaliza salidas "casi correctas" del modelo ANTES de validar (puro):
  * - `{"action":"kb_add",…}` o `{"op":"kb_add",…}` (el cambio suelto, sin el
  *   sobre `apply`) → `{"action":"apply","changes":[…]}`.
+ * - `[{"op":…}, …]` (la lista de cambios pelada) → `apply` con esa lista.
  * - `{"changes":[…]}` sin `action` → `apply`.
  * - `reply`/`text` intercambiados en `reply` y `apply`.
  * En producción el modelo devolvió el primer caso tres veces seguidas y el
  * turno degradaba a «proveedor no respondió» por un detalle de forma.
+ *
+ * OJO con `text` en el cambio suelto: en `profile_append` ES el contenido
+ * de la regla (obligatorio), no la respuesta al dueño. Sacarlo del cambio
+ * para usarlo como `reply` dejaba `changes.0.text Required` y el turno
+ * volvía a caer tres veces seguidas (13 y 14-oct-2026, «Ari»).
  */
 export function normalizeTrainerOutput(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return raw;
+  if (Array.isArray(raw)) {
+    return raw.length > 0 && raw.every((c) => c && typeof c === "object" && "op" in c)
+      ? { action: "apply", changes: raw }
+      : raw;
+  }
   const o = raw as Record<string, unknown>;
   const isOp = (v: unknown): v is (typeof OPS)[number] =>
     typeof v === "string" && (OPS as readonly string[]).includes(v);
   if (isOp(o.op) || isOp(o.action)) {
     const op = isOp(o.op) ? o.op : (o.action as (typeof OPS)[number]);
-    const { action: _action, op: _op, reply, text, ...rest } = o;
+    const { action: _action, op: _op, reply, ...rest } = o;
     void _action;
     void _op;
-    const message = typeof reply === "string" ? reply : typeof text === "string" ? text : undefined;
+    let message = typeof reply === "string" ? reply : undefined;
+    if (op !== "profile_append" && message === undefined && typeof rest.text === "string") {
+      message = rest.text;
+      delete rest.text;
+    }
     return { action: "apply", changes: [{ ...rest, op }], ...(message ? { reply: message } : {}) };
   }
   if (Array.isArray(o.changes) && o.action !== "apply") {

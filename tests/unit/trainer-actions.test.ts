@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendToField,
   MAX_CHANGES_PER_TURN,
+  PROFILE_APPEND_MAX,
   TrainerAction,
 } from "@/server/ai/trainer-actions";
 
@@ -92,6 +93,55 @@ describe("normalizeTrainerOutput (tolerancia a salidas casi correctas)", () => {
     expect(TrainerAction.parse({ action: "reply", reply: "hola" })).toEqual({ action: "reply", text: "hola" });
     const a = TrainerAction.parse({ action: "apply", text: "ok", changes: [{ op: "kb_delete", id: "kb_x1" }] });
     expect(a.action === "apply" && a.reply).toBe("ok");
+  });
+  it("profile_append suelto conserva `text` como contenido de la regla (producción 13-oct-2026)", () => {
+    // Lo que devolvió el modelo tres veces seguidas: sin sobre `apply`, con
+    // `action` = op. Antes el normalizador se llevaba `text` como `reply` y
+    // el esquema fallaba con `changes.0.text Required`.
+    const rule =
+      "Si el cliente no quiere agendar la demo, pedile un nombre de negocio ficticio para configurar la cuenta de prueba, y pasa la conversación a atención humana para crear el acceso.";
+    const r = TrainerAction.parse({ action: "profile_append", field: "escalationRules", text: rule });
+    expect(r).toEqual({
+      action: "apply",
+      changes: [{ op: "profile_append", field: "escalationRules", text: rule }],
+    });
+  });
+  it("profile_append suelto con reply aparte → reply es la respuesta, text la regla", () => {
+    const r = TrainerAction.parse({
+      op: "profile_append",
+      field: "tone",
+      text: "No usar emojis.",
+      reply: "Anotado.",
+    });
+    expect(r).toEqual({
+      action: "apply",
+      changes: [{ op: "profile_append", field: "tone", text: "No usar emojis." }],
+      reply: "Anotado.",
+    });
+  });
+  it("una regla larga (reescritura de la instrucción del dueño) entra hasta PROFILE_APPEND_MAX", () => {
+    const long = "x".repeat(1500);
+    expect(
+      TrainerAction.safeParse({ action: "profile_append", field: "instructions", text: long }).success
+    ).toBe(true);
+    expect(
+      TrainerAction.safeParse({
+        action: "profile_append",
+        field: "instructions",
+        text: "x".repeat(PROFILE_APPEND_MAX + 1),
+      }).success
+    ).toBe(false);
+  });
+  it("lista de cambios pelada → apply", () => {
+    const r = TrainerAction.parse([
+      { op: "kb_delete", id: "kb_x1" },
+      { op: "profile_append", field: "tone", text: "Breve." },
+    ]);
+    expect(r.action).toBe("apply");
+    if (r.action !== "apply") return;
+    expect(r.changes).toHaveLength(2);
+    expect(TrainerAction.safeParse([]).success).toBe(false);
+    expect(TrainerAction.safeParse([{ foo: 1 }]).success).toBe(false);
   });
   it("basura sigue siendo inválida", () => {
     expect(TrainerAction.safeParse({ action: "banana" }).success).toBe(false);
