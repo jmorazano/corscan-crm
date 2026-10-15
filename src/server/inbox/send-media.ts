@@ -496,10 +496,11 @@ export async function transcribeOutboundAudio(input: {
     if (!config) return;
     await db.update(schema.message).set({ mediaState: "pending" }).where(where);
     await publishUpdated(input.organizationId, input.conversationId, input.messageId);
-    const result = await transcribeAudio(config, {
-      bytes: input.bytes,
-      format: audioFormatForMime(input.mime as VoiceMime),
-    });
+    const result = await transcribeAudio(
+      config,
+      { bytes: input.bytes, format: audioFormatForMime(input.mime as VoiceMime) },
+      { speaker: "team" }
+    );
     await db
       .update(schema.message)
       .set(result.ok ? { text: result.text, mediaState: "ready" } : { mediaState: "ready" })

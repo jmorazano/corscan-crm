@@ -144,10 +144,11 @@ export async function transcribeVoiceNote(input: {
 
   let result;
   try {
-    result = await transcribeAudio(config, {
-      bytes: media.data,
-      format: audioFormatForMime(media.mimeType as VoiceMime),
-    });
+    result = await transcribeAudio(
+      config,
+      { bytes: media.data, format: audioFormatForMime(media.mimeType as VoiceMime) },
+      { speaker: "owner" }
+    );
   } catch (err) {
     console.error("[entrenador] transcripción falló:", err instanceof Error ? err.message : err);
     await finish({ mediaState: "failed", error: TRANSCRIPTION_ERRORS.provider });

@@ -287,11 +287,20 @@ async function interpret(
   }
 
   if (input.plan.type === "audio") {
-    const result = await transcribeAudio(config, {
-      bytes: media.data,
-      format: audioFormatForMime(media.mimeType as Parameters<typeof audioFormatForMime>[0]),
-    });
+    const result = await transcribeAudio(
+      config,
+      {
+        bytes: media.data,
+        format: audioFormatForMime(media.mimeType as Parameters<typeof audioFormatForMime>[0]),
+      },
+      { speaker: "customer" }
+    );
     if (!result.ok) {
+      // Sin esta línea, el incidente de oct-2026 (el modelo decía «no hay
+      // voz» ante audios claros) no dejó ningún rastro en los logs.
+      console.warn(
+        `[medios] transcripción ${result.error} de ${input.messageId} (${media.mimeType}, ${media.data.byteLength} B): ${result.detail}`
+      );
       await finish(input, { state: "failed", errorCode: "transcription" });
       return;
     }

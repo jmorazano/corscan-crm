@@ -3,6 +3,8 @@ import {
   DEFAULT_PRE_SKIP,
   muxOggOpus,
   oggCrc,
+  oggOpusStats,
+  opusHead,
   opusPacketSamples,
   parseOgg,
 } from "@/lib/ogg-opus";
@@ -93,5 +95,46 @@ describe("muxOggOpus", () => {
   it("3 minutos a 16 kb/s quedan debajo de los 512 KB del ▶ de WhatsApp", () => {
     const threeMin = Array.from({ length: 9000 }, () => packet20ms(40)); // 16 kb/s × 20 ms
     expect(muxOggOpus(threeMin).length).toBeLessThan(512 * 1024);
+  });
+});
+
+describe("oggOpusStats (nota de voz recibida)", () => {
+  it("duración sin el pre-skip, paquetes de audio y de silencio", () => {
+    const packets = [
+      ...Array.from({ length: 40 }, () => packet20ms()),
+      ...Array.from({ length: 10 }, () => Uint8Array.from([0xf8, 0xff, 0xfe])),
+    ];
+    const stats = oggOpusStats(muxOggOpus(packets, { inputSampleRate: 16000 }));
+    expect(stats).toEqual({ durationMs: 1000, packets: 50, silentPackets: 10 });
+  });
+
+  it("tolera un paquete que cruza de página (WhatsApp lo hace) y usa el último granulepos", () => {
+    // Página con un solo segmento de lacing, sin CRC (no se valida).
+    const page = (segments: number[], body: Uint8Array, granule: bigint) => {
+      const head = new Uint8Array(27 + segments.length);
+      head.set([0x4f, 0x67, 0x67, 0x53]);
+      new DataView(head.buffer).setBigUint64(6, granule, true);
+      head[26] = segments.length;
+      head.set(segments, 27);
+      return Uint8Array.from([...head, ...body]);
+    };
+    const head = opusHead({ channels: 1, preSkip: 312, inputSampleRate: 16000 });
+    const tags = new TextEncoder().encode("OpusTags........");
+    const big = new Uint8Array(300).fill(7); // 255 en la página 3 + 45 en la 4
+    const bytes = Uint8Array.from([
+      ...page([head.length], head, 0n),
+      ...page([tags.length], tags, 0n),
+      ...page([255], big.subarray(0, 255), 0xffffffffffffffffn), // ningún paquete termina acá
+      ...page([45, 2], Uint8Array.from([...big.subarray(255), 0xf8, 0xff]), BigInt(312 + 48_000 * 2)),
+    ]);
+    expect(oggOpusStats(bytes)).toEqual({ durationMs: 2000, packets: 2, silentPackets: 1 });
+  });
+
+  it("lo que no es OGG/Opus → null (quien lo usa sigue sin duración)", () => {
+    expect(oggOpusStats(new TextEncoder().encode("RIFF....WAVEfmt "))).toBeNull();
+    expect(oggOpusStats(new Uint8Array())).toBeNull();
+    const vorbis = muxOggOpus([packet20ms()]);
+    vorbis.set(new TextEncoder().encode("NotOpusH"), 28); // pisa la firma de OpusHead
+    expect(oggOpusStats(vorbis)).toBeNull();
   });
 });

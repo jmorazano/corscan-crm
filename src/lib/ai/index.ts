@@ -1,5 +1,14 @@
 import type { z } from "zod";
 import { getEnv } from "@/lib/env";
+import { oggOpusStats } from "@/lib/ogg-opus";
+import {
+  collapseRepetitions,
+  isDegenerateTranscription,
+  isEmptyTranscription,
+  isPlausibleTranscription,
+  isSilentRecording,
+  TRANSCRIPTION_EMPTY_SENTINEL,
+} from "@/lib/transcription";
 
 /**
  * Adaptador LLM OpenRouter-compatible — ÚNICA frontera con el proveedor de IA
@@ -232,24 +241,78 @@ export type TranscribeResult =
       detail: string;
     };
 
-const TRANSCRIBE_MAX_ATTEMPTS = 2;
+/**
+ * Tres intentos en total, compartidos entre fallos del proveedor (red,
+ * timeout, 5xx, 429), un «no hay voz» que se pide de nuevo una vez, un bucle
+ * de repetición y un texto más largo de lo que dura el audio.
+ */
+const TRANSCRIBE_MAX_ATTEMPTS = 3;
+/** Dos «no hay voz» ya son una respuesta: el audio no tiene habla. */
+const TRANSCRIBE_MAX_EMPTY_ANSWERS = 2;
 export const TRANSCRIPTION_TIMEOUT_MS = 90_000;
 export const DEFAULT_MAX_TOKENS_TRANSCRIPTION = 2048;
 /** Tope de la transcripción (mismo que el texto libre del composer). */
 const TRANSCRIPTION_MAX_CHARS = 4096;
-const EMPTY_SENTINEL = "[SIN_CONTENIDO]";
+const EMPTY_SENTINEL = TRANSCRIPTION_EMPTY_SENTINEL;
+
+/** Quién grabó la nota: cambia solo la primera oración del prompt. */
+export type VoiceNoteSpeaker = "customer" | "team" | "owner";
+
+const SPEAKER_CONTEXT: Record<VoiceNoteSpeaker, string> = {
+  customer: "Transcribís una nota de voz que un cliente le mandó a un negocio por WhatsApp o Instagram",
+  team: "Transcribís una nota de voz que alguien del equipo de un negocio le mandó a un cliente por WhatsApp o Instagram",
+  owner: "Transcribís una nota de voz que el dueño o la dueña de un negocio le manda a su asistente",
+};
 
 /**
- * Transcripción de una nota de voz (015, D9) por el MISMO proveedor
- * OpenRouter-compatible con un modelo multimodal (`input_audio` base64).
- * Salida en texto plano (no JSON). Reintenta solo ante red/timeout/5xx/429;
- * un 4xx que hable de audio/modalidad → `unsupported_audio` (el modelo
- * configurado no acepta audio). El base64 jamás llega a `detail` ni a logs.
+ * Mensajes de la transcripción. El sentinel queda SOLO para un audio en el
+ * que no habla nadie: con «si no se entiende, devolvé el sentinel» Gemini
+ * se rendía ante voces claras con ruido de fondo (incidente de oct-2026).
+ * El audio va ANTES de la consigna, como recomienda Google para multimodal.
+ */
+export function transcriptionMessages(
+  audio: { base64: string; format: AudioFormat },
+  speaker: VoiceNoteSpeaker
+): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        `${SPEAKER_CONTEXT[speaker]} (en español rioplatense por lo general; si habla en otro idioma, transcribí en ese idioma).`,
+        "Devolvé ÚNICAMENTE la transcripción literal de lo que se dice, sin comillas, sin comentarios, sin marcas de tiempo ni etiquetas de hablante.",
+        "Aunque haya ruido de fondo, mala calidad o el audio sea muy corto, transcribí todo lo que se entienda, aunque sea una sola palabra, y marcá con […] lo que no se entienda.",
+        `Devolvé exactamente ${EMPTY_SENTINEL} SOLO si en el audio no habla nadie (silencio, ruido o música sin voz). NUNCA inventes ni completes frases que no se escuchan.`,
+      ].join(" "),
+    },
+    {
+      role: "user",
+      content: [
+        { type: "input_audio", input_audio: { data: audio.base64, format: audio.format } },
+        { type: "text", text: "Transcribí este audio." },
+      ],
+    },
+  ];
+}
+
+/**
+ * Transcripción de una nota de voz (015, D9; 020 las de los clientes) por el
+ * MISMO proveedor OpenRouter-compatible con un modelo multimodal
+ * (`input_audio` base64). Salida en texto plano (no JSON).
+ *
+ * Robustez (incidente de oct-2026, reglas en `@/lib/transcription`):
+ * - la temperatura queda en la del proveedor: con 0, Gemini caía en bucles;
+ * - un OGG que es silencio digital no se manda (el modelo inventaría una
+ *   consulta) y un texto más largo de lo que dura el audio se descarta;
+ * - un «no hay voz» se pide una vez más antes de aceptarlo;
+ * - un bucle se reintenta y, si no sale nada mejor, se devuelve recortado;
+ * - red/timeout/5xx/429 se reintentan; un 4xx que hable de audio/modalidad
+ *   → `unsupported_audio` (el modelo configurado no acepta audio).
+ * El base64 jamás llega a `detail` ni a logs.
  */
 export async function transcribeAudio(
   config: AiConfig,
   audio: { bytes: Buffer | Uint8Array; format: AudioFormat },
-  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+  opts?: { model?: string; timeoutMs?: number; maxTokens?: number; speaker?: VoiceNoteSpeaker }
 ): Promise<TranscribeResult> {
   if (!config.token.trim()) {
     return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
@@ -258,28 +321,21 @@ export async function transcribeAudio(
   if (!model) {
     return { ok: false, error: "not_configured", detail: "Sin modelo de transcripción" };
   }
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: [
-        "Sos un transcriptor de notas de voz cortas que el dueño de un negocio le manda a su asistente (español rioplatense por defecto).",
-        "Devolvé ÚNICAMENTE la transcripción literal de lo que se dice, sin comillas, sin comentarios, sin marcas de tiempo ni etiquetas de hablante.",
-        `Si el audio está en silencio, es ruido, es demasiado corto o no se entiende, devolvé exactamente ${EMPTY_SENTINEL}. NUNCA inventes ni completes frases que no se escuchan.`,
-      ].join(" "),
-    },
-    {
-      role: "user",
-      content: [
-        { type: "text", text: "Transcribí este audio." },
-        {
-          type: "input_audio",
-          input_audio: { data: Buffer.from(audio.bytes).toString("base64"), format: audio.format },
-        },
-      ],
-    },
-  ];
+  const stats = audio.format === "ogg" ? oggOpusStats(audio.bytes) : null;
+  if (stats && isSilentRecording(stats)) {
+    return { ok: false, error: "empty", detail: "la grabación es silencio (no se mandó al modelo)" };
+  }
+  const durationMs = stats?.durationMs ?? null;
+  const messages = transcriptionMessages(
+    { base64: Buffer.from(audio.bytes).toString("base64"), format: audio.format },
+    opts?.speaker ?? "customer"
+  );
 
   let lastDetail = "";
+  let emptyAnswers = 0;
+  let implausible = 0;
+  /** Un bucle recortado: se usa solo si ningún intento da algo mejor. */
+  let loopFallback: string | null = null;
   for (let attempt = 1; attempt <= TRANSCRIBE_MAX_ATTEMPTS; attempt++) {
     try {
       const raw = await callProvider(
@@ -287,12 +343,24 @@ export async function transcribeAudio(
         model,
         messages,
         opts?.maxTokens ?? DEFAULT_MAX_TOKENS_TRANSCRIPTION,
-        opts?.timeoutMs ?? TRANSCRIPTION_TIMEOUT_MS,
-        { temperature: 0 }
+        opts?.timeoutMs ?? TRANSCRIPTION_TIMEOUT_MS
       );
       const text = cleanTranscription(raw);
-      if (!text || /^\[?\s*sin[_ ]contenido\s*\]?$/i.test(text)) {
-        return { ok: false, error: "empty", detail: "audio sin habla reconocible" };
+      if (isEmptyTranscription(text)) {
+        emptyAnswers++;
+        if (emptyAnswers >= TRANSCRIBE_MAX_EMPTY_ANSWERS) break;
+        continue;
+      }
+      const loop = isDegenerateTranscription(text);
+      const candidate = loop ? collapseRepetitions(text) : text;
+      if (!isPlausibleTranscription(candidate, durationMs)) {
+        implausible++;
+        continue;
+      }
+      if (loop) {
+        lastDetail = "la transcripción se repetía en bucle";
+        if (!loopFallback || candidate.length > loopFallback.length) loopFallback = candidate;
+        continue;
       }
       return { ok: true, text: text.slice(0, TRANSCRIPTION_MAX_CHARS) };
     } catch (err) {
@@ -311,6 +379,14 @@ export async function transcribeAudio(
       }
       if (attempt < TRANSCRIBE_MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS * attempt);
     }
+  }
+  if (loopFallback) return { ok: true, text: loopFallback.slice(0, TRANSCRIPTION_MAX_CHARS) };
+  if (emptyAnswers > 0 || implausible > 0) {
+    const why = [
+      emptyAnswers > 0 ? `${emptyAnswers} sin voz` : null,
+      implausible > 0 ? `${implausible} más largas de lo que dura el audio` : null,
+    ].filter(Boolean);
+    return { ok: false, error: "empty", detail: `audio sin habla reconocible (respuestas: ${why.join(", ")})` };
   }
   return { ok: false, error: "provider_error", detail: lastDetail };
 }

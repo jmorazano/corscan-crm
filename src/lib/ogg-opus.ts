@@ -246,3 +246,74 @@ export function parseOgg(bytes: Uint8Array): OggPage[] {
   }
   return pages;
 }
+
+/* ============================================================
+ * Lectura de una nota de voz recibida: duración y silencio
+ * ============================================================ */
+
+/** Hasta este tamaño un paquete Opus es silencio (DTX o cuadro vacío). */
+const SILENT_PACKET_MAX_BYTES = 3;
+
+export type OggOpusStats = {
+  /** Duración real según el último granulepos, sin el pre-skip. */
+  durationMs: number;
+  /** Paquetes de audio (sin OpusHead ni OpusTags). */
+  packets: number;
+  /** De esos, los que son silencio. */
+  silentPackets: number;
+};
+
+/**
+ * Duración y paquetes de silencio de un OGG/Opus como los que manda
+ * WhatsApp (a diferencia de `parseOgg`, tolera paquetes que cruzan
+ * páginas). `null` si no es OGG/Opus o está tan roto que no se puede leer:
+ * quien lo usa sigue sin esos datos.
+ */
+export function oggOpusStats(bytes: Uint8Array): OggOpusStats | null {
+  let off = 0;
+  let granule = -1n;
+  let preSkip: number | null = null;
+  let index = 0;
+  let packets = 0;
+  let silentPackets = 0;
+  let pending = 0;
+  while (off + 27 <= bytes.length) {
+    if (String.fromCharCode(...bytes.subarray(off, off + 4)) !== "OggS") break;
+    const nseg = bytes[off + 26]!;
+    const segStart = off + 27;
+    if (segStart + nseg > bytes.length) break;
+    let body = segStart + nseg;
+    let pageGranule = 0n;
+    for (let i = 7; i >= 0; i--) pageGranule = (pageGranule << 8n) | BigInt(bytes[off + 6 + i]!);
+    // -1 (todos los bits en 1) = ningún paquete termina en esta página.
+    if (pageGranule !== 0xffffffffffffffffn) granule = pageGranule;
+    for (let s = 0; s < nseg; s++) {
+      const seg = bytes[segStart + s]!;
+      pending += seg;
+      body += seg;
+      if (seg === 255) continue; // el paquete sigue (quizás en la página siguiente)
+      if (index === 0) {
+        // OpusHead va siempre solo en la primera página (RFC 7845 §3): su
+        // inicio se calcula sin cruzar páginas. Del resto solo importa el largo.
+        const head = body - pending;
+        if (pending >= 19 && String.fromCharCode(...bytes.subarray(head, head + 8)) === "OpusHead") {
+          preSkip = bytes[head + 10]! | (bytes[head + 11]! << 8);
+        }
+      } else if (index > 1) {
+        packets++;
+        if (pending <= SILENT_PACKET_MAX_BYTES) silentPackets++;
+      }
+      index++;
+      pending = 0;
+    }
+    if (body > bytes.length) break;
+    off = body;
+  }
+  if (preSkip === null || granule < 0n) return null;
+  const samples = Number(granule) - preSkip;
+  return {
+    durationMs: Math.max(0, Math.round((samples * 1000) / OPUS_GRANULE_RATE)),
+    packets,
+    silentPackets,
+  };
+}
