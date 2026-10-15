@@ -466,7 +466,10 @@ function renderSection(input: SectionInput): string | null {
     // Corrección #49: el AND/OR estaba solo en comentarios del código, que
     // el modelo no lee.
     '- facilities = las pide TODAS juntas (AND). facilities_any = le alcanza con UNA de la lista (OR). Una palabra del cliente suele corresponder a varias entradas del catálogo ("cochera", "asador", "pileta"): en ese caso van todas juntas en facilities_any, porque exigirlas todas a la vez no devolvería ninguna propiedad.',
-    "- bedrooms y bathrooms son el MÍNIMO requerido: pedir 2 también devuelve las de 3 o más."
+    "- bedrooms y bathrooms son el MÍNIMO requerido: pedir 2 también devuelve las de 3 o más.",
+    // 14-oct-2026: «somos de 10 a 12» terminó en «¿10, 11 o 12?», y «7 u 8»
+    // en «¿7 o 8?» → «Si si» → silencio. Cada repregunta es un cliente menos.
+    "- Si te dan un RANGO de personas («de 10 a 12», «8 o 10»), no pidas el número exacto: consultá con la MENOR (cada opción dice hasta cuántos entran) y decí cuáles sirven para más. Si con la menor no hay, con más tampoco."
   );
 
   lines.push(
@@ -915,6 +918,21 @@ function isLabPayload(root: Record<string, unknown>): boolean {
   return root._lab === true;
 }
 
+/**
+ * Con tipo, localidad o características, «no hay» es «no hay CON ESO»: la
+ * frase de respaldo para el cliente no puede afirmar que no hay nada.
+ */
+function hasSearchFilters(action: SearchStaysAction): boolean {
+  return Boolean(
+    action.property_type?.trim() ||
+      action.city?.trim() ||
+      action.bedrooms ||
+      action.bathrooms ||
+      (action.facilities?.length ?? 0) > 0 ||
+      (action.facilities_any?.length ?? 0) > 0
+  );
+}
+
 function renderSearch(
   action: SearchStaysAction,
   root: Record<string, unknown>,
@@ -962,10 +980,21 @@ function renderSearch(
         `Quedaron ${excludedCount} opciones afuera por estadía mínima${excludedNights !== null ? ` (piden ${excludedNights} noches)` : ""}: ofrecele al cliente estirar la estadía.`
       );
     }
+    // 14-oct-2026: el texto anterior terminaba en «volvé a consultar», y el
+    // modelo lo leía como una orden: buscó para 6, para 8, quiso para 10, se
+    // quedó sin consultas y el cliente recibió «te confirmo en un ratito».
     lines.push(
-      "Ofrecele correr las fechas, bajar la cantidad de personas o sacar algún requisito, y volvé a consultar con los datos nuevos. No inventes alternativas."
+      "Decíselo al cliente en ESTA respuesta, sin prometer que vas a seguir buscando, y ofrecele correr las fechas, dividir el grupo en dos alojamientos o sacar algún requisito. Volvé a consultar recién cuando te dé los datos nuevos.",
+      ...(guests !== null
+        ? [`Para MÁS de ${guests} personas en estas mismas fechas tampoco hay: no lo consultes.`]
+        : []),
+      "No inventes alternativas."
     );
-    return { toolText: lines.join("\n"), clientSummary: null };
+    return {
+      toolText: lines.join("\n"),
+      clientSummary: null,
+      noAvailability: { checkIn, checkOut, guests, filtered: hasSearchFilters(action) },
+    };
   }
 
   const header =

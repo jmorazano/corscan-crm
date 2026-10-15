@@ -13,6 +13,8 @@
  * archivo nuevo y cero cambios en el pipeline.
  */
 
+import type { NoAvailabilitySearch } from "@/lib/no-availability";
+
 /**
  * 022: hosts extra permitidos para los enlaces de ESTA empresa. Los aporta
  * el runtime desde `integration.endpointHost`; el perfil los une a los
@@ -204,6 +206,13 @@ export type RenderResult = {
    * Un rechazo del proveedor (`tool_error`) no cuenta: es material del modelo.
    */
   failure?: McpTransportErrorCode;
+  /**
+   * La búsqueda SÍ llegó y volvió vacía: no hay lugar para esas fechas y
+   * personas. Es una respuesta, no un fallo: si el modelo se cuelga o agota
+   * las consultas, el pipeline se lo dice al cliente (`noAvailabilityReply`)
+   * en vez de prometer «te confirmo en un ratito» y derivar.
+   */
+  noAvailability?: NoAvailabilitySearch;
 };
 
 /** Códigos de fallo del transporte/guardrails (§F.6), NO del proveedor. */

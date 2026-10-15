@@ -470,8 +470,8 @@ export async function executeShowStay(
 function appendNotes(rendered: RenderResult, notes: string[] | undefined): RenderResult {
   if (!notes || notes.length === 0) return rendered;
   return {
+    ...rendered,
     toolText: `${rendered.toolText}\n${notes.join("\n")}`,
-    clientSummary: rendered.clientSummary,
   };
 }
 

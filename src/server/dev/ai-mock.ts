@@ -319,6 +319,49 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ action: "reply", text: "Para esas fechas te cuento lo que tenemos: escribime qué tipo de lugar buscás." });
   }
 
+  // Perillas del incidente del 14-oct-2026 (Altos de Calamuchita). Miran
+  // TODO lo que escribió el cliente: dentro del tramo de herramientas el
+  // último mensaje de usuario es el resultado, no el cliente.
+  const clientSaid = messages
+    .filter((m) => m.role === "user")
+    .map((m) => textOf(m.content))
+    .filter((t) => !t.startsWith("[HERRAMIENTA]"))
+    .join("\n");
+  // «[E2E_SIN_NOTA]» → `update_lead` con nombre y respuesta pero SIN nota
+  // (el modelo real lo hizo tres veces seguidas).
+  if (fromClient && clientSaid.includes("[E2E_SIN_NOTA]")) {
+    return JSON.stringify({
+      action: "update_lead",
+      contact_name: "Alejandra",
+      reply: "Perfecto, Alejandra. ¿Qué fecha de salida tenés pensada?",
+    });
+  }
+  // «[E2E_SIN_LUGAR]» → el modelo real buscó para 6 y para 8 —vacías— y
+  // quiso una más. Acá pide 11, 12, 13… (el mock entra hasta 10) mientras
+  // no lo corrijan; corregido, contesta que no hay lugar.
+  // «[E2E_SIN_LUGAR_TERCO]» → sigue pidiendo aunque lo corrijan.
+  if (clientSaid.includes("[E2E_SIN_LUGAR") && system.includes(MCP_MARKER)) {
+    const corrected = messages.some(
+      (m) => m.role === "system" && textOf(m.content).includes("Ya no podés hacer más consultas al sistema de reservas")
+    );
+    if (!corrected || clientSaid.includes("TERCO")) {
+      const [checkIn, checkOut] = [...clientSaid.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]);
+      const searched = messages.filter(
+        (m) => m.role === "user" && textOf(m.content).startsWith("[HERRAMIENTA]")
+      ).length;
+      return JSON.stringify({
+        action: "search_stays",
+        check_in: checkIn,
+        check_out: checkOut,
+        guests: 11 + searched,
+      });
+    }
+    return JSON.stringify({
+      action: "reply",
+      text: "Para esas fechas no me quedó lugar para 11, 12 ni 13 personas. ¿Querés que probemos otras fechas o dividir el grupo en dos casas?",
+    });
+  }
+
   // 025 (US4): número personal del dueño — un mensaje personal no se contesta.
   if (fromClient && system.includes(PERSONAL_NUMBER_MARKER) && isPersonalMessage(text)) {
     return JSON.stringify({ action: "none" });

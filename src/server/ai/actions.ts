@@ -52,9 +52,15 @@ export const AgentAction = z.discriminatedUnion("action", [
     ...CONTACT_DATA_FIELDS,
     ...INTERACTIVE_FIELDS,
   }),
+  /**
+   * `note` es OPCIONAL a propósito: en producción (14-oct-2026, Altos) el
+   * modelo mandó un `update_lead` con `contact_name` y una respuesta perfecta
+   * pero sin nota, tres veces seguidas, y el turno terminó en «no se pudo
+   * leer» + atención humana. Sin nota es una respuesta como cualquier otra.
+   */
   z.object({
     action: z.literal("update_lead"),
-    note: z.string().min(1),
+    note: z.string().optional(),
     reply: z.string().optional(),
     contact_name: z.string().trim().optional(),
     ...CONTACT_DATA_FIELDS,

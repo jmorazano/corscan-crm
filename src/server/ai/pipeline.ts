@@ -77,6 +77,7 @@ import {
 } from "@/server/mcp/agent-tools";
 import { executeDynamicTool } from "@/server/mcp/dynamic-tools";
 import { executeSearchSheet, loadSheetsContext, type SheetsContext } from "@/server/sheets/sources";
+import { noAvailabilityReply, type NoAvailabilitySearch } from "@/lib/no-availability";
 import {
   executeListingsAction,
   listingForVisit,
@@ -104,6 +105,18 @@ const MAX_TOOL_ROUNDS_TOTAL = 4;
  * resumen) antes de contestarle al cliente.
  */
 const MAX_GENERIC_TOOL_ROUNDS = 3;
+
+/**
+ * Vueltas del CONECTOR (search_stays/show_stay) por turno. Eran 2 (las de la
+ * agenda): «8, 10 o 6 personas» o «dividir el grupo en dos casas» necesitan
+ * una búsqueda más, y al tercer pedido el cliente recibía «te confirmo en un
+ * ratito» + atención humana (14-oct-2026). El reloj del tramo sigue igual.
+ */
+const MAX_MCP_TOOL_ROUNDS = 3;
+
+/** Agotó las consultas al sistema de reservas: que conteste con lo que sabe. */
+const MCP_BUDGET_CORRECTION =
+  "Ya no podés hacer más consultas al sistema de reservas en este turno. Respondele AHORA al cliente con lo que ya sabés: si las búsquedas no encontraron lugar, decíselo y ofrecele otras fechas o dividir el grupo. No prometas que vas a seguir buscando ni le digas que le confirmás después.";
 
 /** 032: el modelo pide herramientas sin parar: que conteste con lo que tiene. */
 const GENERIC_BUDGET_CORRECTION =
@@ -756,6 +769,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   let lastStaySummary: string | null = null;
   let calendarRounds = 0;
   let mcpRounds = 0;
+  // Búsquedas del conector que volvieron VACÍAS: «no hay lugar» es una
+  // respuesta, y es lo que se le dice al cliente si el modelo se cuelga.
+  const emptySearches: NoAvailabilitySearch[] = [];
+  let mcpBudgetWarned = false;
   // 032: herramientas genéricas del conector.
   let genericRounds = 0;
   let writesThisTurn = 0;
@@ -780,7 +797,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
       // vueltas al conector, ni al revés.
       if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
-      if (wantsMcp && mcpRounds >= MAX_TOOL_ROUNDS) break;
+      if (wantsMcp && mcpRounds >= MAX_MCP_TOOL_ROUNDS) break;
       if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsGeneric && genericRounds >= MAX_GENERIC_TOOL_ROUNDS) break;
       if (wantsSheets && sheetsRounds >= MAX_TOOL_ROUNDS) break;
@@ -955,14 +972,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           // evita que el pipeline conozca la forma de la respuesta del PMS.
           lastStayLink = out.clientSummary.match(/https:\/\/\S+/)?.[0] ?? lastStayLink;
         }
+        if (out.noAvailability) emptySearches.push(out.noAvailability);
         // Corrección #7: el resultado entra como turno de USUARIO, no de
         // sistema — es un DATO que llegó de afuera, no una regla nuestra.
         messages.push({ role: MCP_TOOL_TEXT_ROLE, content: out.toolText });
         const next = await chatJson(aiConfig, AgentAction, messages);
         if (!next.ok) {
           console.error(`[agente] fallo del proveedor tras conector (raw): ${next.detail}`);
-          if (lastStaySummary) {
-            await say(lastStaySummary);
+          const known = lastStaySummary ?? noAvailabilityReply(emptySearches);
+          if (known) {
+            await say(known);
             return;
           }
           await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
@@ -1068,6 +1087,30 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       continue;
     }
 
+    // Lo mismo con el conector: antes de degradar, UNA corrección para que le
+    // conteste al cliente con lo que ya sabe (casi siempre: «no hay lugar»).
+    if (isMcpAction(action) && !mcpBudgetWarned && Date.now() < toolDeadline) {
+      mcpBudgetWarned = true;
+      console.warn(`[agente] consultas del conector agotadas en ${conversation.id}: se le pide que conteste`);
+      messages.push(
+        { role: "assistant", content: JSON.stringify(action) },
+        { role: "system", content: MCP_BUDGET_CORRECTION }
+      );
+      const retry = await chatJson(aiConfig, AgentAction, messages);
+      if (!retry.ok) {
+        console.error(`[agente] fallo del proveedor tras agotar el conector (raw): ${retry.detail}`);
+        const known = lastStaySummary ?? noAvailabilityReply(emptySearches);
+        if (known) {
+          await say(known);
+          return;
+        }
+        await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(retry));
+        return;
+      }
+      action = retry.data;
+      continue;
+    }
+
     const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds > 0;
     if (!promiseRetried && toolsAvailable && !usedTools && announcesLookup(conversationalText(action))) {
       promiseRetried = true;
@@ -1113,6 +1156,14 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (isMcpAction(action)) {
     if (lastStaySummary) {
       await say(lastStaySummary);
+      return;
+    }
+    // 14-oct-2026: las búsquedas YA dijeron que no hay lugar. Prometer «te
+    // confirmo en un ratito» y derivar dejaba al cliente esperando una
+    // respuesta que el sistema ya tenía.
+    const none = noAvailabilityReply(emptySearches);
+    if (none) {
+      await say(none);
       return;
     }
     await say("Estoy consultando la disponibilidad y te confirmo en un ratito.");

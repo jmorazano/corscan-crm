@@ -577,6 +577,51 @@ describe("altos.render de check-availability (research §8)", () => {
     expect(empty.toolText).toContain("No inventes alternativas");
     expect(empty.clientSummary).toBeNull();
   });
+
+  // Incidente 14-oct-2026: «volvé a consultar» hacía que el modelo buscara
+  // para 6, 8 y 10 hasta agotar las consultas.
+  it("sin resultados: decírselo YA, no buscar con más personas, y deja la búsqueda vacía registrada", () => {
+    const empty = altos.render(
+      search({ guests: 8 }),
+      { success: true, query: { check_in: "2026-11-21", check_out: "2026-11-23", nights: 2, guests: 8 }, available_count: 0, properties: [] },
+      CATALOG
+    );
+    expect(empty.toolText).toContain("Decíselo al cliente en ESTA respuesta");
+    expect(empty.toolText).toContain("Para MÁS de 8 personas en estas mismas fechas tampoco hay");
+    expect(empty.toolText).not.toContain("volvé a consultar con los datos nuevos");
+    expect(empty.noAvailability).toEqual({
+      checkIn: "2026-11-21",
+      checkOut: "2026-11-23",
+      guests: 8,
+      filtered: false,
+    });
+  });
+
+  it("sin resultados con tipo de alojamiento: la búsqueda vacía queda marcada como filtrada", () => {
+    const empty = altos.render(
+      search({ guests: 6, property_type: "Casa" }),
+      { success: true, query: { check_in: "2026-11-21", check_out: "2026-11-23", nights: 2, guests: 6 }, available_count: 0, properties: [] },
+      CATALOG
+    );
+    expect(empty.noAvailability?.filtered).toBe(true);
+  });
+
+  it("con resultados NO marca búsqueda vacía", () => {
+    const out = altos.render(search(), availability.json, CATALOG);
+    expect(out.noAvailability).toBeUndefined();
+  });
+
+  it("la sección enseña a buscar con la cantidad MENOR de un rango en vez de pedir el número exacto", () => {
+    const text = altos.renderSection({
+      catalog: CATALOG,
+      now: NOW,
+      status: "connected",
+      agentToolsEnabled: true,
+      timezone: "America/Argentina/Cordoba",
+    }) as string;
+    expect(text).toContain("no pidas el número exacto");
+    expect(text).toContain("consultá con la MENOR");
+  });
 });
 
 /* ============================================================
