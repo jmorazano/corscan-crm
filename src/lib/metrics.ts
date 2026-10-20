@@ -139,27 +139,46 @@ export function metricsWindow(range: MetricsRange, timeZone: string, now: Date):
   return { unit, keys, start, end, previousStart: new Date(start.getTime() - elapsed) };
 }
 
-export type SeriesPoint = { key: string; whatsapp: number; instagram: number };
+export type SeriesPoint = {
+  key: string;
+  whatsapp: number;
+  instagram: number;
+  /**
+   * Recibidos del historial de WhatsApp IMPORTADO del celular
+   * (`source='history'`, 017) en esa barra: el volumen que manejaba el
+   * teléfono antes de conectar el CRM. Se dibuja aparte («Pasado») y NO suma
+   * a `whatsapp`. El de Instagram (023) no entra: Meta solo da los 20
+   * últimos mensajes por conversación y el volumen sería engañoso.
+   */
+  past: number;
+};
 
 /**
  * Serie completa del histograma: una barra por clave, en 0 donde no hubo
  * mensajes (la BD solo devuelve las barras con datos). Filas con claves
- * fuera de la ventana o canales desconocidos se ignoran.
+ * fuera de la ventana o canales desconocidos se ignoran; las del historial
+ * importado (`past`) van a su propia cuenta.
  */
 export function fillSeries(
   keys: readonly string[],
-  rows: ReadonlyArray<{ bucket: string; channel: string; count: number }>
+  rows: ReadonlyArray<{ bucket: string; channel: string; count: number; past?: boolean }>
 ): SeriesPoint[] {
   const byKey = new Map<string, SeriesPoint>(
-    keys.map((key) => [key, { key, whatsapp: 0, instagram: 0 }])
+    keys.map((key) => [key, { key, whatsapp: 0, instagram: 0, past: 0 }])
   );
   for (const row of rows) {
     const point = byKey.get(row.bucket);
     if (!point) continue;
-    if (row.channel === "whatsapp") point.whatsapp += row.count;
-    else if (row.channel === "instagram") point.instagram += row.count;
+    if (row.channel !== "whatsapp" && row.channel !== "instagram") continue;
+    if (row.past) point.past += row.count;
+    else point[row.channel] += row.count;
   }
   return keys.map((key) => byKey.get(key)!);
+}
+
+/** Total de recibidos del historial importado en la serie. */
+export function pastTotal(series: ReadonlyArray<SeriesPoint>): number {
+  return series.reduce((sum, p) => sum + p.past, 0);
 }
 
 /** Lo que devuelve `GET /api/metrics` (contrato de la UI). */
@@ -167,7 +186,19 @@ export type MetricsOverview = {
   range: MetricsRange;
   timeZone: string;
   unit: BucketUnit;
-  received: { total: number; whatsapp: number; instagram: number; previous: number };
+  received: {
+    total: number;
+    whatsapp: number;
+    instagram: number;
+    previous: number;
+    /**
+     * Recibidos del historial de WhatsApp importado del período (los
+     * mismos de `series[].past`). Van APARTE: no suman a `total` ni entran en la
+     * comparación (conectar el CRM se vería como una suba o una caída que
+     * no existió).
+     */
+    past: number;
+  };
   agentSent: {
     total: number;
     previous: number;

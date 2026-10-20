@@ -11,7 +11,7 @@ API con `fetch` desde la propia página (misma cookie).
 Lo sembrado (rango diario): conversación WhatsApp A con un grupo de 2
 entrantes respondido por el agente a los 120 s del primero, un entrante
 respondido por una PERSONA, un saliente del agente FALLIDO seguido del
-bueno a los 90 s, y 2 mensajes del historial importado; conversación
+bueno a los 90 s, e historial importado (ver US3); conversación
 Instagram B respondida por el agente a los 40 s + una reacción con emoji;
 una conversación del Laboratorio y la del Entrenador; y hace 40 días un
 entrante respondido por el agente a los 60 s (período anterior).
@@ -67,5 +67,28 @@ entrante respondido por el agente a los 60 s (período anterior).
     `GET /api/metrics` → 403 `forbidden`; `/metrics` → redirige a
     `/inbox`; el sidebar muestra solo Bandeja, Pipeline, Contactos y
     Campañas. ✅
+
+### US3 — El pasado del celular (ampliación, 20-oct-2026)
+
+El seed suma historial importado de WhatsApp (`source='history'`): 1
+entrante hace 5 días, 6 hace 20 días (+ una reacción, que no cuenta), 2 el
+mismo día que el grupo de hace 3 días (día de la conexión), un saliente;
+y 2 entrantes del historial de Instagram (no cuentan nunca).
+
+11. **API**: `received {total 5, whatsapp 4, instagram 1, previous 1,
+    past 9}` — tarjeta, comparación y `responseTime` IDÉNTICOS a US1; las
+    barras traen `past` 6 / 1 / 2 en los días de hace 20, 5 y 3 días (este
+    último con `whatsapp 3`). Semanal: «Sin datos de las 12 semanas
+    anteriores» (el pasado no cuenta como período anterior). ✅
+12. **Página**: tarjeta «Mensajes recibidos 5 · +400 %» + «Además 9 del
+    pasado, importados del celular»; leyenda «Pasado (celular) · WhatsApp
+    · Instagram»; barra gris de 6 en el 30/9; barra del 17/10 apilada gris
+    2 abajo + verde 3 arriba; nota «Pasado: mensajes de WhatsApp que
+    llegaron al celular antes de conectar el CRM…». ✅
+13. **Tooltip y tabla**: 17/10 → «0 Instagram · 3 WhatsApp · 2 Pasado
+    (celular) · 5 Total»; 30/9 → «6 Pasado (celular) · 6 Total»; la tabla
+    suma la columna «Pasado». Un día sin pasado no muestra esa línea. ✅
+14. **Móvil 375 px**: sin scroll horizontal, la leyenda baja de línea y
+    «Ver tabla» no se parte. ✅
 
 Limpieza: `node tests/e2e/fixtures/seed-metrics.mjs --cleanup`.

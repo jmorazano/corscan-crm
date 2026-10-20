@@ -19,7 +19,7 @@ import {
   type MetricsOverview,
   type MetricsRange,
 } from "@/lib/metrics";
-import { CHANNEL_SERIES, StackedBars } from "./stacked-bars";
+import { CHANNEL_SERIES, PAST_SERIES, StackedBars } from "./stacked-bars";
 
 /**
  * Métricas del propietario (024): un selector de período arriba de todo
@@ -261,6 +261,19 @@ function ReceivedCard({ data, previousLabel }: { data: MetricsOverview; previous
           </span>
         ))}
       </div>
+      {r.past > 0 && (
+        <div className="mt-1.5 inline-flex items-center gap-1.5 text-text-3" data-testid="metrics-received-past">
+          <span
+            aria-hidden
+            className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
+            style={{ background: PAST_SERIES.color }}
+          />
+          <span>
+            Además <span className="font-semibold text-text-2">{formatCount(r.past)}</span> del
+            pasado, importados del celular
+          </span>
+        </div>
+      )}
     </StatCard>
   );
 }

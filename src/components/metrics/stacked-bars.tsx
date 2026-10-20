@@ -20,6 +20,11 @@ import {
  * mismos del ícono de la Bandeja), validados para daltonismo; como el verde
  * queda por debajo de 3:1 sobre blanco, la vista de tabla acompaña siempre.
  *
+ * «Pasado»: los recibidos del historial de WhatsApp importado del celular
+ * (017) van en la BASE en un gris neutro, con su fecha original. Son
+ * referencia del volumen que manejaba el teléfono: no suman a las tarjetas.
+ * La leyenda, la columna de la tabla y la nota solo aparecen si hay.
+ *
  * Interacción: cada barra es su propio blanco (toda la franja, no solo el
  * trazo); el tooltip lista ambos canales y el total. Con el foco en el
  * gráfico, ←/→ recorren las barras (mismo tooltip que con el puntero).
@@ -30,7 +35,20 @@ export const CHANNEL_SERIES = {
   instagram: { label: "Instagram", color: "#d62976" },
 } as const;
 
-const STACK: ReadonlyArray<keyof typeof CHANNEL_SERIES> = ["whatsapp", "instagram"];
+export const PAST_SERIES = { label: "Pasado (celular)", color: "var(--text-4)" } as const;
+
+type StackKey = "past" | keyof typeof CHANNEL_SERIES;
+
+const SERIES: Record<StackKey, { label: string; color: string }> = {
+  past: PAST_SERIES,
+  ...CHANNEL_SERIES,
+};
+
+const STACK: ReadonlyArray<StackKey> = ["past", "whatsapp", "instagram"];
+
+function barTotal(p: SeriesPoint): number {
+  return p.past + p.whatsapp + p.instagram;
+}
 
 const HEIGHT = 240;
 const PAD = { top: 12, right: 8, bottom: 26, left: 40 };
@@ -86,8 +104,10 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
   useEffect(() => setActive(null), [series.length, unit]);
 
   const n = series.length;
-  const totals = series.map((p) => p.whatsapp + p.instagram);
+  const totals = series.map(barTotal);
   const max = Math.max(0, ...totals);
+  const hasPast = series.some((p) => p.past > 0);
+  const legend = STACK.filter((k) => k !== "past" || hasPast);
   const ticks = niceTicks(max);
   const yMax = ticks[ticks.length - 1] ?? 1;
   const plotW = Math.max(0, width - PAD.left - PAD.right);
@@ -119,16 +139,16 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h3 className="text-sm font-semibold">Mensajes recibidos {UNIT_TITLE[unit]}</h3>
-        <div className="flex items-center gap-4">
-          <ul className="flex items-center gap-3 text-xs text-text-2" aria-label="Canales">
-            {STACK.map((ch) => (
-              <li key={ch} className="inline-flex items-center gap-1.5">
+        <div className="flex items-start gap-4">
+          <ul className="flex flex-wrap items-center gap-3 text-xs text-text-2" aria-label="Series">
+            {legend.map((k) => (
+              <li key={k} className="inline-flex items-center gap-1.5" data-testid={`metrics-legend-${k}`}>
                 <span
                   aria-hidden
                   className="inline-block h-2.5 w-2.5 rounded-[3px]"
-                  style={{ background: CHANNEL_SERIES[ch].color }}
+                  style={{ background: SERIES[k].color }}
                 />
-                {CHANNEL_SERIES[ch].label}
+                {SERIES[k].label}
               </li>
             ))}
           </ul>
@@ -138,7 +158,7 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
             aria-pressed={showTable}
             data-testid="metrics-table-toggle"
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+              "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs font-medium transition-colors",
               showTable ? "bg-brand-tint text-brand-text" : "text-text-2 hover:bg-accent"
             )}
           >
@@ -149,7 +169,7 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
       </div>
 
       {showTable ? (
-        <DataTable series={series} unit={unit} />
+        <DataTable series={series} unit={unit} hasPast={hasPast} />
       ) : (
         <div
           ref={wrapRef}
@@ -157,7 +177,7 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
           style={{ height: HEIGHT }}
           tabIndex={0}
           role="group"
-          aria-label={`Mensajes recibidos ${UNIT_TITLE[unit]}, apilados por canal. Usá las flechas para recorrer las barras.`}
+          aria-label={`Mensajes recibidos ${UNIT_TITLE[unit]}, apilados por canal${hasPast ? ", con el pasado importado del celular en la base" : ""}. Usá las flechas para recorrer las barras.`}
           onKeyDown={onKeyDown}
           onPointerLeave={() => setActive(null)}
           onBlur={() => setActive(null)}
@@ -208,7 +228,8 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
                     <path
                       key={ch}
                       d={isTop ? topRoundedBar(x, y, barW, h) : `M${x},${y + h} V${y} H${x + barW} V${y + h} Z`}
-                      fill={CHANNEL_SERIES[ch].color}
+                      fill={SERIES[ch].color}
+                      data-testid={`metrics-segment-${ch}`}
                     />
                   );
                   top = y;
@@ -288,6 +309,15 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
           )}
         </div>
       )}
+
+      {hasPast && (
+        <p className="text-xs text-text-3" data-testid="metrics-past-note">
+          <span className="font-medium text-text-2">Pasado:</span> mensajes de WhatsApp que llegaron
+          al celular antes de conectar el CRM, importados del historial con su fecha original. Son
+          una referencia del volumen que venías manejando: no suman a las tarjetas ni a las
+          comparaciones.
+        </p>
+      )}
     </div>
   );
 }
@@ -315,7 +345,8 @@ function Tooltip({
     right + TIP_W <= containerWidth
       ? right
       : Math.max(0, centerX - halfBand - 6 - TIP_W);
-  const total = point.whatsapp + point.instagram;
+  const total = barTotal(point);
+  const lines = [...STACK].reverse().filter((k) => k !== "past" || point.past > 0);
   return (
     <div
       role="status"
@@ -329,15 +360,15 @@ function Tooltip({
         {isCurrent ? " (en curso)" : ""}
       </div>
       <ul className="flex flex-col gap-1">
-        {[...STACK].reverse().map((ch) => (
-          <li key={ch} className="flex items-center gap-2">
+        {lines.map((k) => (
+          <li key={k} className="flex items-center gap-2">
             <span
               aria-hidden
               className="inline-block h-[2px] w-3 rounded-full"
-              style={{ background: CHANNEL_SERIES[ch].color }}
+              style={{ background: SERIES[k].color }}
             />
-            <span className="font-semibold tabular-nums text-foreground">{formatCount(point[ch])}</span>
-            <span className="text-text-2">{CHANNEL_SERIES[ch].label}</span>
+            <span className="font-semibold tabular-nums text-foreground">{formatCount(point[k])}</span>
+            <span className="text-text-2">{SERIES[k].label}</span>
           </li>
         ))}
         <li className="mt-0.5 flex items-center gap-2 border-t pt-1.5">
@@ -350,7 +381,15 @@ function Tooltip({
   );
 }
 
-function DataTable({ series, unit }: { series: SeriesPoint[]; unit: BucketUnit }) {
+function DataTable({
+  series,
+  unit,
+  hasPast,
+}: {
+  series: SeriesPoint[];
+  unit: BucketUnit;
+  hasPast: boolean;
+}) {
   const rows = [...series].reverse();
   return (
     <div className="max-h-[320px] overflow-auto rounded-sm border" data-testid="metrics-table">
@@ -360,6 +399,7 @@ function DataTable({ series, unit }: { series: SeriesPoint[]; unit: BucketUnit }
             <th className="px-3 py-2 font-medium">{unit === "day" ? "Día" : unit === "week" ? "Semana" : "Mes"}</th>
             <th className="px-3 py-2 text-right font-medium">WhatsApp</th>
             <th className="px-3 py-2 text-right font-medium">Instagram</th>
+            {hasPast && <th className="px-3 py-2 text-right font-medium">Pasado</th>}
             <th className="px-3 py-2 text-right font-medium">Total</th>
           </tr>
         </thead>
@@ -372,7 +412,10 @@ function DataTable({ series, unit }: { series: SeriesPoint[]; unit: BucketUnit }
               </td>
               <td className="px-3 py-1.5 text-right">{formatCount(p.whatsapp)}</td>
               <td className="px-3 py-1.5 text-right">{formatCount(p.instagram)}</td>
-              <td className="px-3 py-1.5 text-right font-medium">{formatCount(p.whatsapp + p.instagram)}</td>
+              {hasPast && (
+                <td className="px-3 py-1.5 text-right text-text-3">{formatCount(p.past)}</td>
+              )}
+              <td className="px-3 py-1.5 text-right font-medium">{formatCount(barTotal(p))}</td>
             </tr>
           ))}
         </tbody>

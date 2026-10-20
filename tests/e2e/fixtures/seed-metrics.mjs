@@ -63,8 +63,8 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   const LAB = await conv('whatsapp', true, '5493510000009');
   const TR = await conv('trainer', true, 'trainer');
 
-  const series = {}; // key → {whatsapp, instagram}
-  const bump = (t, ch) => { const k = localKey(t); series[k] ??= { whatsapp: 0, instagram: 0 }; series[k][ch]++; };
+  const series = {}; // key → {whatsapp, instagram, past}
+  const bump = (t, ch) => { const k = localKey(t); series[k] ??= { whatsapp: 0, instagram: 0, past: 0 }; series[k][ch]++; };
 
   // A: grupo de 2 entrantes → agente a los 2 min del PRIMERO (120 s).
   const t0 = now - 3 * DAY;
@@ -79,9 +79,20 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   await msg(A, 'in', t1); bump(t1, 'whatsapp');
   await msg(A, 'out', t1 + 30_000, { ai: true, status: 'failed' });
   await msg(A, 'out', t1 + 90_000, { ai: true });
-  // A: historial importado → no cuenta.
-  await msg(A, 'in', now - 5 * DAY, { source: 'history' });
+  // A: historial importado de WhatsApp → no cuenta en las tarjetas; los
+  // RECIBIDOS van al histograma como «pasado» (los salientes, no).
+  await msg(A, 'in', now - 5 * DAY, { source: 'history' }); bump(now - 5 * DAY, 'past');
   await msg(A, 'out', now - 5 * DAY + MIN, { source: 'history' });
+  const th = now - 20 * DAY;
+  for (let i = 0; i < 6; i++) { await msg(A, 'in', th + i * MIN, { source: 'history' }); bump(th + i * MIN, 'past'); }
+  await msg(A, 'in', th + 10 * MIN, { source: 'history', type: 'reaction', text: '👍' }); // reacción: no
+  // Día de la conexión: historial y mensajes en vivo en la MISMA barra
+  // (el pasado va apilado en la base). Antes del primer entrante en vivo,
+  // así no cambia el tiempo de respuesta.
+  for (let i = 1; i <= 2; i++) { await msg(A, 'in', t0 - i * MIN, { source: 'history' }); bump(t0 - i * MIN, 'past'); }
+  // B: historial de Instagram (parcial, 20 por conversación) → nunca cuenta.
+  await msg(B, 'in', now - 6 * DAY, { source: 'history' });
+  await msg(B, 'in', now - 6 * DAY + MIN, { source: 'history' });
   // B (Instagram): agente a los 40 s; la reacción no es un mensaje.
   const t2 = now - 1 * DAY;
   await msg(B, 'in', t2); bump(t2, 'instagram');
@@ -95,7 +106,7 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   await msg(A, 'in', tp); await msg(A, 'out', tp + 60_000, { ai: true });
 
   const expected = {
-    received: { total: 5, whatsapp: 4, instagram: 1, previous: 1 },
+    received: { total: 5, whatsapp: 4, instagram: 1, previous: 1, past: 9 },
     agentSent: { total: 3, previous: 1, allSent: 4 },
     responseTime: { medianMs: 90_000, avgMs: (120_000 + 90_000 + 40_000) / 3, count: 3, previousMedianMs: 60_000 },
     series,

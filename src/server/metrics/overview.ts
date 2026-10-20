@@ -6,6 +6,7 @@ import {
   fillSeries,
   metricsWindow,
   type MetricsOverview,
+  pastTotal,
   type MetricsRange,
 } from "@/lib/metrics";
 import { getEnv } from "@/lib/env";
@@ -18,9 +19,12 @@ import { resolveReplyDelayMs } from "@/lib/agent-timing";
  *
  * - Solo conversaciones REALES de WhatsApp o Instagram: el Laboratorio y el
  *   Entrenador son `is_test` y el Entrenador además es `kind='trainer'`.
- * - Nunca el historial importado (`source='history'`, 017/023): es una
- *   copia parcial del pasado que inflaría la barra del día de la importación
- *   o de fechas viejas según el caso.
+ * - El historial importado (`source='history'`, 017/023) nunca entra en
+ *   las tarjetas ni en las comparaciones: es una copia del pasado y
+ *   conectar el CRM se vería como una suba o una caída que no existió. Los
+ *   RECIBIDOS del historial de WhatsApp sí van al histograma, aparte
+ *   (`past`, «Pasado»), con su fecha original: el volumen que manejaba el
+ *   teléfono. El de Instagram no (son 20 mensajes por conversación).
  * - Recibidos sin las reacciones con emoji de Instagram (`type='reaction'`).
  * - Salientes sin los fallidos: el cliente no los recibió.
  *
@@ -36,15 +40,26 @@ function ts(d: Date): SQL {
   return sql`${d.toISOString()}::timestamp`;
 }
 
-/** Filtro común: mensajes de conversaciones reales de la empresa. */
-function realMessages(organizationId: string, from: Date, to: Date): SQL {
+/**
+ * Filtro común: mensajes de conversaciones reales de la empresa. Con
+ * `withWhatsAppHistory` también deja pasar el historial importado de
+ * WhatsApp (solo lo usa la serie, que lo cuenta aparte con `IS_PAST`).
+ */
+function realMessages(
+  organizationId: string,
+  from: Date,
+  to: Date,
+  opts: { withWhatsAppHistory?: boolean } = {}
+): SQL {
   return scoped(
     m.organizationId,
     organizationId,
     sql`${c.organizationId} = ${m.organizationId}`,
     sql`${c.isTest} = false`,
     sql`${c.kind} in ('whatsapp', 'instagram')`,
-    sql`${m.source} <> 'history'`,
+    opts.withWhatsAppHistory
+      ? sql`(${m.source} <> 'history' or ${c.kind} = 'whatsapp')`
+      : sql`${m.source} <> 'history'`,
     sql`${m.createdAt} >= ${ts(from)}`,
     sql`${m.createdAt} < ${ts(to)}`
   );
@@ -53,6 +68,7 @@ function realMessages(organizationId: string, from: Date, to: Date): SQL {
 const IS_RECEIVED = sql`(${m.direction} = 'in' and ${m.type} <> 'reaction')`;
 const IS_SENT = sql`(${m.direction} = 'out' and ${m.status} <> 'failed')`;
 const IS_AGENT = sql`(${IS_SENT} and ${m.aiGenerated} = true)`;
+const IS_PAST = sql`(${m.source} = 'history')`;
 
 /**
  * Cuánto le lleva al cliente desde que la conversación queda esperando
@@ -178,11 +194,12 @@ async function overviewIn(
       select
         to_char(date_trunc(${w.unit}, (${m.createdAt} at time zone 'UTC') at time zone ${timeZone}), 'YYYY-MM-DD') as bucket,
         ${c.kind} as channel,
+        ${IS_PAST} as past,
         count(*) as count
       from ${m}
       inner join ${c} on ${c.id} = ${m.conversationId}
-      where ${realMessages(organizationId, w.start, w.end)} and ${IS_RECEIVED}
-      group by 1, 2
+      where ${realMessages(organizationId, w.start, w.end, { withWhatsAppHistory: true })} and ${IS_RECEIVED}
+      group by 1, 2, 3
     `),
     responseTimes(organizationId, w.previousStart, w.start, w.end),
     replyDelayMsFor(organizationId),
@@ -197,6 +214,7 @@ async function overviewIn(
       bucket: String(r.bucket),
       channel: String(r.channel),
       count: Number(r.count),
+      past: r.past === true || r.past === "t" || r.past === "true",
     }))
   );
 
@@ -209,6 +227,7 @@ async function overviewIn(
       whatsapp,
       instagram,
       previous: Number(t?.receivedPrevious ?? 0),
+      past: pastTotal(series),
     },
     agentSent: {
       total: Number(t?.agent ?? 0),

@@ -4,7 +4,8 @@ import type { SQL } from "drizzle-orm";
 /**
  * `getMetricsOverview` (024) con una BD stub que renderiza el SQL real:
  * toda consulta va scoped a la empresa y deja afuera el Laboratorio, el
- * Entrenador y el historial importado; los números de Postgres (texto) se
+ * Entrenador y el historial importado (salvo la serie, que cuenta el de
+ * WhatsApp aparte como «pasado»); los números de Postgres (texto) se
  * convierten; la serie se rellena; y una zona que Postgres no conoce se
  * reintenta con la de Buenos Aires.
  */
@@ -71,9 +72,11 @@ vi.mock("@/lib/db", async (importOriginal) => {
         ]);
       }
       return Promise.resolve([
-        { bucket: "2026-09-26", channel: "whatsapp", count: "4" },
-        { bucket: "2026-09-26", channel: "instagram", count: "2" },
-        { bucket: "2026-09-20", channel: "whatsapp", count: "3" },
+        { bucket: "2026-09-26", channel: "whatsapp", past: false, count: "4" },
+        { bucket: "2026-09-26", channel: "instagram", past: false, count: "2" },
+        { bucket: "2026-09-20", channel: "whatsapp", past: false, count: "3" },
+        { bucket: "2026-09-20", channel: "whatsapp", past: true, count: "25" },
+        { bucket: "2026-09-01", channel: "whatsapp", past: true, count: "30" },
       ]);
     },
   };
@@ -93,7 +96,8 @@ beforeEach(() => {
 describe("getMetricsOverview", () => {
   it("convierte los números y rellena la serie", async () => {
     const o = await getMetricsOverview("org_a", "day", "America/Argentina/Buenos_Aires", NOW);
-    expect(o.received).toEqual({ total: 10, whatsapp: 7, instagram: 3, previous: 5 });
+    // El pasado importado va aparte: no toca total ni comparación.
+    expect(o.received).toEqual({ total: 10, whatsapp: 7, instagram: 3, previous: 5, past: 55 });
     expect(o.agentSent).toEqual({ total: 6, previous: 4, allSent: 8 });
     expect(o.responseTime).toEqual({
       medianMs: 24000,
@@ -103,12 +107,13 @@ describe("getMetricsOverview", () => {
       replyDelayMs: 20_000,
     });
     expect(o.series).toHaveLength(30);
-    expect(o.series[29]).toEqual({ key: "2026-09-26", whatsapp: 4, instagram: 2 });
-    expect(o.series[23]).toEqual({ key: "2026-09-20", whatsapp: 3, instagram: 0 });
-    expect(o.series[0]).toEqual({ key: "2026-08-28", whatsapp: 0, instagram: 0 });
+    expect(o.series[29]).toEqual({ key: "2026-09-26", whatsapp: 4, instagram: 2, past: 0 });
+    expect(o.series[23]).toEqual({ key: "2026-09-20", whatsapp: 3, instagram: 0, past: 25 });
+    expect(o.series[4]).toEqual({ key: "2026-09-01", whatsapp: 0, instagram: 0, past: 30 });
+    expect(o.series[0]).toEqual({ key: "2026-08-28", whatsapp: 0, instagram: 0, past: 0 });
   });
 
-  it("toda consulta va scoped a la empresa y deja afuera sandbox e historial", async () => {
+  it("toda consulta va scoped a la empresa y deja afuera sandbox e historial (la serie: salvo el de WhatsApp)", async () => {
     await getMetricsOverview("org_a", "week", "America/Argentina/Buenos_Aires", NOW);
     const messageQueries = state.queries.filter((q) => q.sql.includes('"message"'));
     expect(messageQueries).toHaveLength(3); // totales, serie, tiempos de respuesta
@@ -119,7 +124,17 @@ describe("getMetricsOverview", () => {
       expect(q.sql).toContain('"conversation"."organization_id" = "message"."organization_id"');
       expect(q.sql).toContain('"conversation"."is_test" = false');
       expect(q.sql).toContain("\"conversation\".\"kind\" in ('whatsapp', 'instagram')");
-      expect(q.sql).toContain("\"message\".\"source\" <> 'history'");
+      if (q.sql.includes("date_trunc")) {
+        // La serie: el historial de WhatsApp entra marcado como pasado;
+        // el de Instagram (parcial) sigue afuera.
+        expect(q.sql).toContain(
+          "(\"message\".\"source\" <> 'history' or \"conversation\".\"kind\" = 'whatsapp')"
+        );
+        expect(q.sql).toContain("(\"message\".\"source\" = 'history') as past");
+      } else {
+        expect(q.sql).toContain("\"message\".\"source\" <> 'history'");
+        expect(q.sql).not.toContain("\"message\".\"source\" = 'history'");
+      }
     }
     const profile = state.queries.find((q) => q.sql.includes('"agent_profile"'));
     expect(profile?.params).toEqual(["org_a"]);

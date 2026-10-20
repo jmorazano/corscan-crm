@@ -39,6 +39,21 @@ segundo canal: `conversation.kind`). Sin migración, sin dependencias nuevas
   el Entrenador (`is_test`), el historial importado del celular o de
   Instagram (`source='history'`, es una copia parcial del pasado) ni las
   reacciones con emoji de Instagram (`type='reaction'`, no son mensajes).
+- **El pasado del celular (ampliación, 20-oct-2026)**: pedido del dueño
+  («cuando se sincronizan los últimos 60 días de WhatsApp no me muestra
+  las métricas para atrás… al menos de mensajes recibidos… que se muestren
+  en otro color como "pasado"»). Los RECIBIDOS del historial de WhatsApp
+  importado del celular (017) van al histograma como una serie aparte,
+  «Pasado (celular)», en gris neutro y en la BASE de la barra, con su fecha
+  original. NO suman al total de la tarjeta ni entran en la comparación
+  contra el período anterior (conectar el CRM se vería como una suba o una
+  caída que no existió): la tarjeta solo agrega «Además N del pasado,
+  importados del celular». El historial de Instagram (023) NO entra: Meta
+  solo da los 20 últimos mensajes por conversación y el volumen engañaría
+  (y al dueño le importa el de WhatsApp). Los salientes del historial, el
+  tiempo de respuesta y los enviados por el agente no cambian. Sin
+  migración: lee las filas `source='history'` que ya existen, así que una
+  empresa que sincronizó ANTES de este cambio lo ve sin volver a importar.
 - **Qué es un mensaje enviado por el agente**: saliente con
   `ai_generated=true` en una conversación real, que no falló
   (`status <> 'failed'`: si Meta lo rechazó, el cliente no lo recibió).
@@ -101,6 +116,11 @@ comparación contra el período anterior.
 - Una respuesta de una persona entre medio corta el grupo: la siguiente
   respuesta del agente mide desde el siguiente mensaje del cliente.
 - Un saliente fallido no cuenta como respuesta.
+- Día de la conexión: historial y mensajes en vivo en la misma barra → el
+  pasado abajo (gris), los canales arriba; el tooltip lista los tres y el
+  total de la barra.
+- Sin historial importado en el período → ni leyenda, ni columna, ni nota
+  del pasado (la vista queda como antes).
 
 ## Requirements *(mandatory)*
 
@@ -118,13 +138,18 @@ comparación contra el período anterior.
   mediana (bajar es bueno).
 - **FR-006**: Histograma a todo el ancho, barras apiladas WhatsApp (base) e
   Instagram, con leyenda, tooltip por barra (puntero y teclado), eje Y con
-  valores redondos y una vista de tabla con los mismos datos.
+  valores redondos y una vista de tabla con los mismos datos. Si hay
+  historial de WhatsApp importado en el período, una serie «Pasado
+  (celular)» en la base, con su leyenda, columna en la tabla y una nota que
+  explica que no suma a las tarjetas.
 - **FR-007**: Funciona en móvil (1 columna de tarjetas, histograma legible
   a 375 px sin scroll horizontal de la página).
 
 ## Success Criteria
 
 - **SC-001**: Con datos sembrados conocidos, las tarjetas y las barras dan
-  exactamente los números esperados (test de integración + E2E).
+  exactamente los números esperados (test de integración + E2E), incluido
+  el pasado importado (que no altera tarjetas, comparación ni tiempo de
+  respuesta).
 - **SC-002**: Un miembro no puede ver ni pedir las métricas por ninguna de
   las tres capas.

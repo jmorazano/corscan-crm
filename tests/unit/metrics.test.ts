@@ -11,6 +11,7 @@ import {
   metricsWindow,
   niceTicks,
   parseMetricsQuery,
+  pastTotal,
   periodLabel,
 } from "@/lib/metrics";
 
@@ -113,10 +114,25 @@ describe("fillSeries", () => {
       { bucket: "2026-09-25", channel: "trainer", count: 7 }, // canal desconocido
     ]);
     expect(series).toEqual([
-      { key: "2026-09-24", whatsapp: 3, instagram: 0 },
-      { key: "2026-09-25", whatsapp: 0, instagram: 0 },
-      { key: "2026-09-26", whatsapp: 5, instagram: 2 },
+      { key: "2026-09-24", whatsapp: 3, instagram: 0, past: 0 },
+      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 0 },
+      { key: "2026-09-26", whatsapp: 5, instagram: 2, past: 0 },
     ]);
+  });
+
+  it("el historial importado va a «past» y no suma al canal", () => {
+    const keys = ["2026-09-25", "2026-09-26"];
+    const series = fillSeries(keys, [
+      { bucket: "2026-09-25", channel: "whatsapp", count: 40, past: true },
+      { bucket: "2026-09-26", channel: "whatsapp", count: 12, past: true },
+      { bucket: "2026-09-26", channel: "whatsapp", count: 3, past: false },
+      { bucket: "2026-09-26", channel: "trainer", count: 9, past: true }, // canal desconocido
+    ]);
+    expect(series).toEqual([
+      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 40 },
+      { key: "2026-09-26", whatsapp: 3, instagram: 0, past: 12 },
+    ]);
+    expect(pastTotal(series)).toBe(52);
   });
 });
 
