@@ -16,6 +16,7 @@ import {
   isListingsAction,
   isGenericToolAction,
   isSheetsAction,
+  isFormatArtifactReason,
   isMcpAction,
   resolveStage,
   type AgentActionType,
@@ -85,6 +86,10 @@ import {
   renderListingsPromptSection,
   type ListingsContext,
 } from "@/server/meli/agent-tools";
+
+/** 038: lo que queda en el hilo si el modelo insiste en callar por el formato. */
+const FORMAT_ARTIFACT_SILENCE =
+  "el modelo de IA devolvió dos veces una respuesta con formato inválido; revisá el mensaje y respondé a mano";
 
 /** Vueltas extra al modelo por resultados de herramienta (research D6). */
 const MAX_TOOL_ROUNDS = 2;
@@ -749,6 +754,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   }
 
   let action: AgentActionType = result.data;
+
+  // 038: callar «porque la respuesta anterior no fue JSON» no es callar: el
+  // modelo le contestó al aviso de formato. Se vuelve a pedir UNA vez, de
+  // cero; si insiste, la línea del hilo lo dice en criollo.
+  if (action.action === "none" && isFormatArtifactReason(action.reason)) {
+    console.warn(`[agente] «none» por el formato en ${conversationId} (${clipReason(action.reason)}): se vuelve a pedir`);
+    const again = await chatJson(aiConfig, AgentAction, messages);
+    if (again.ok) action = again.data;
+    if (action.action === "none" && isFormatArtifactReason(action.reason)) {
+      action = { action: "none", reason: FORMAT_ARTIFACT_SILENCE };
+    }
+  }
 
   // 031: la nota del lead puede viajar con una herramienta (`lead_note`) o
   // quedar de un `update_lead` que la guarda de promesas no dejó salir. Se

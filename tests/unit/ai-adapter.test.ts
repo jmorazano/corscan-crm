@@ -68,6 +68,10 @@ describe("chatJson (reintentos y errores tipados)", () => {
     // el reintento agrega la instrucción STRICT
     const secondBody = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
     expect(JSON.stringify(secondBody.messages)).toContain("STRICT");
+    // 038: con lo que había contestado y aclarando que es solo de formato
+    const retry = secondBody.messages as { role: string; content: string }[];
+    expect(retry.at(-2)).toEqual({ role: "assistant", content: "no soy json" });
+    expect(retry.at(-1)!.content).toContain("SOLO sobre el formato");
     // el token de la EMPRESA viaja en el Authorization (no uno de env)
     const headers = (fetchMock.mock.calls[0]![1] as { headers: Record<string, string> })
       .headers;

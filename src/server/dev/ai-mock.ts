@@ -204,6 +204,27 @@ export function aiMockCompletion(messages: InMessage[]): string {
 
   const text = lastUser.toLowerCase();
 
+  // 038: el caso real del 🙀 — el modelo contesta texto suelto (no JSON). En
+  // el reintento, con el aviso viejo (solo, sin su respuesta) elegía callar
+  // «porque la respuesta anterior no fue JSON»; con el aviso nuevo (ve lo
+  // que contestó y que es solo de formato) lo convierte en `reply`.
+  // 038: un modelo terco que SIEMPRE calla por el formato en el reintento.
+  if (lastUser.trim() === "😿") {
+    const strict = messages.some((m) => m.role === "system" && textOf(m.content).startsWith("STRICT"));
+    return strict
+      ? JSON.stringify({ action: "none", reason: "previous response was not valid JSON" })
+      : "😿 ¿Qué pasó?";
+  }
+  if (lastUser.trim() === "🙀") {
+    const strict = messages.filter((m) => m.role === "system").map((m) => textOf(m.content)).find((t) => t.startsWith("STRICT"));
+    if (!strict) return "😅 ¡Uy! ¿Te asustó algo? Contame y lo vemos.";
+    const previous = [...messages].reverse().find((m) => m.role === "assistant");
+    if (strict.includes("SOLO sobre el formato") && previous) {
+      return JSON.stringify({ action: "reply", text: textOf(previous.content) });
+    }
+    return JSON.stringify({ action: "none", reason: "previous response was not valid JSON" });
+  }
+
   // 032: herramientas genéricas del conector (flujo de reserva). Solo con la
   // sección en el prompt y con disparadores concretos; si no, sigue de largo.
   const genericTurn = dispatchGenericTools(messages, system, lastUser);

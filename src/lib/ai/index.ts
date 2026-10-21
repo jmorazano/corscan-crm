@@ -85,6 +85,8 @@ export class ProviderHttpError extends Error {
 }
 
 const MAX_ATTEMPTS = 3;
+/** 038: cuánto de la respuesta inválida se le devuelve al modelo en el reintento. */
+const RETRY_RAW_MAX_CHARS = 1500;
 const RETRY_DELAY_MS = 500;
 
 /**
@@ -132,16 +134,28 @@ export async function chatJson<T>(
     (opts?.judge ? DEFAULT_MAX_TOKENS_JUDGE : DEFAULT_MAX_TOKENS_AGENT);
 
   let lastDetail = "";
+  let lastRaw = "";
   let lastStatus: number | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // 038: el aviso iba solo y el modelo lo tomaba como el mensaje a
+    // contestar: ante un 🙀 respondía texto suelto, y en el reintento elegía
+    // callar con el motivo «previous response was not valid JSON». Ahora ve
+    // lo que había contestado y que el aviso es SOLO de formato.
     const attemptMessages: ChatMessage[] =
       attempt === 1
         ? messages
         : [
             ...messages,
+            ...(lastRaw.trim()
+              ? [{ role: "assistant" as const, content: truncate(lastRaw, RETRY_RAW_MAX_CHARS) }]
+              : []),
             {
               role: "system",
-              content: `STRICT: tu respuesta anterior no fue JSON válido según el esquema (${truncate(lastDetail, 400)}). Responde ÚNICAMENTE el objeto JSON con la forma exacta indicada, sin explicaciones ni markdown.`,
+              content:
+                `STRICT: tu respuesta anterior no fue JSON válido según el esquema (${truncate(lastDetail, 400)}). ` +
+                "Este aviso es SOLO sobre el formato: no es un mensaje nuevo de la conversación y no cambia lo que había que hacer. " +
+                "Convertí lo que ibas a responder al objeto JSON con la forma exacta indicada (si era un texto para la persona, va dentro del JSON). " +
+                "Responde ÚNICAMENTE el objeto JSON, sin explicaciones ni markdown.",
             },
           ];
     try {
@@ -153,9 +167,11 @@ export async function chatJson<T>(
         maxTokens,
         opts?.timeoutMs
       );
+      lastRaw = raw;
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastDetail = `sin JSON extraíble (raw=${truncate(raw)})`;
+        console.warn(`[ia] intento ${attempt}: ${lastDetail}`);
         continue;
       }
       const parsed = schema.safeParse(extracted);

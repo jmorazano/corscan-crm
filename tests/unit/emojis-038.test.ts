@@ -157,3 +157,13 @@ describe("selector de emojis", () => {
     expect(parseRecent(null)).toEqual([]);
   });
 });
+
+describe("038: un aviso de formato no termina en silencio", () => {
+  it("reconoce el motivo que es un artefacto del reintento", async () => {
+    const { isFormatArtifactReason } = await import("@/server/ai/actions");
+    expect(isFormatArtifactReason("previous response was not valid JSON")).toBe(true);
+    expect(isFormatArtifactReason("mi respuesta anterior no fue válida según el esquema")).toBe(true);
+    expect(isFormatArtifactReason("el cliente solo agradeció")).toBe(false);
+    expect(isFormatArtifactReason(undefined)).toBe(false);
+  });
+});

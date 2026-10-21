@@ -252,6 +252,17 @@ export function isCalendarAction(
 export type AgentActionType = z.infer<typeof AgentAction>;
 
 /**
+ * 038, PURA: un `none` cuyo motivo habla del FORMATO de la respuesta (JSON,
+ * esquema) no es una decisión sobre la conversación: el modelo contestó al
+ * aviso del reintento en vez de al cliente. Pasó con un 🙀: el hilo mostró
+ * «decidió no responder: previous response was not valid JSON».
+ */
+export function isFormatArtifactReason(reason: string | undefined | null): boolean {
+  if (!reason) return false;
+  return /\bjson\b|esquema|schema|formato v[aá]lido|valid format|not valid|no (fue|es) v[aá]lid/i.test(reason);
+}
+
+/**
  * Resuelve el nombre de etapa devuelto por el modelo contra las etapas reales
  * de la organización (exacto → lower-case). Sin match: degradar a reply/none.
  */
