@@ -51,6 +51,9 @@ export function buildInboundPayload(input: {
   timestamp?: number;
   /** 035: `referral` de un anuncio Click-to-WhatsApp, tal cual lo manda Meta. */
   referral?: unknown;
+  /** 038: `type: "reaction"` — wamid del mensaje reaccionado y el emoji ("" = la quita). */
+  reactTo?: string;
+  emoji?: string;
 }) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
@@ -61,6 +64,9 @@ export function buildInboundPayload(input: {
   };
   if (type === "text") message.text = { body: input.text ?? "hola" };
   if (input.referral !== undefined) message.referral = input.referral;
+  if (type === "reaction") {
+    message.reaction = { message_id: input.reactTo ?? "", emoji: input.emoji ?? "👍" };
+  }
   // 020: el sobre del adjunto va en la clave del tipo, igual que el real.
   if (MEDIA_KEYS.has(type)) {
     message[type] = {

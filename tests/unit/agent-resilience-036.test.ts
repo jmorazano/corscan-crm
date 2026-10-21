@@ -168,16 +168,30 @@ describe("isBroadcast", () => {
 describe("pendingCustomerMessages", () => {
   it("lo del cliente después del último saliente", () => {
     const history = [
-      { id: "1", direction: "in" },
-      { id: "2", direction: "out" },
-      { id: "3", direction: "in" },
-      { id: "4", direction: "in" },
+      { id: "1", direction: "in", type: "text" },
+      { id: "2", direction: "out", type: "text" },
+      { id: "3", direction: "in", type: "text" },
+      { id: "4", direction: "in", type: "text" },
     ];
     expect(pendingCustomerMessages(history).map((m) => m.id)).toEqual(["3", "4"]);
   });
 
   it("si lo último es del negocio, nada pendiente", () => {
-    expect(pendingCustomerMessages([{ direction: "in" }, { direction: "out" }])).toEqual([]);
+    expect(
+      pendingCustomerMessages([
+        { direction: "in", type: "text" },
+        { direction: "out", type: "text" },
+      ])
+    ).toEqual([]);
+  });
+
+  it("038: una reacción del cliente no lo deja esperando", () => {
+    expect(
+      pendingCustomerMessages([
+        { direction: "out", type: "text" },
+        { direction: "in", type: "reaction" },
+      ])
+    ).toEqual([]);
   });
 });
 

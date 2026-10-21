@@ -32,7 +32,7 @@ import { canFillContactField, normalizeContactPhone, normalizeEmail } from "@/li
 import { visitNote } from "@/lib/meli/render";
 import { normalizeContactName } from "@/lib/contact-name";
 import { canOverwriteContactName } from "@/lib/history-import";
-import { agentTextFor } from "@/lib/inbound-media";
+import { agentTextFor, isCustomerTurnMessage } from "@/lib/inbound-media";
 import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
@@ -388,7 +388,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
   history.reverse();
-  const lastInbound = [...history].reverse().find((m) => m.direction === "in");
+  // 038: una reacción (👍 a un mensaje) es contexto, no algo que responder.
+  const lastInbound = [...history].reverse().find(isCustomerTurnMessage);
   if (!lastInbound) return;
 
   // 031 (decisión del dueño): el equipo presente calla al agente N minutos;
@@ -726,6 +727,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
                 mediaState: m.mediaState,
                 text: m.text,
                 mediaSummary: m.mediaSummary,
+                details: m.details,
               })
             : // 026: un adjunto que mandó el equipo (o el celular) no
               // desaparece del contexto aunque no tenga epígrafe.
@@ -1359,9 +1361,9 @@ async function resumeIfSilenced(
  * 036, PURA: lo que escribió el cliente DESPUÉS del último mensaje del negocio
  * (agente o equipo), en orden.
  */
-export function pendingCustomerMessages<T extends { direction: string }>(history: readonly T[]): T[] {
+export function pendingCustomerMessages<T extends { direction: string; type: string }>(history: readonly T[]): T[] {
   const lastOut = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
-  return history.slice(lastOut + 1).filter((m) => m.direction === "in");
+  return history.slice(lastOut + 1).filter(isCustomerTurnMessage);
 }
 
 /**
@@ -1580,6 +1582,7 @@ async function deliverConversationalReply(
       .select({
         id: schema.message.id,
         direction: schema.message.direction,
+        type: schema.message.type,
         text: schema.message.text,
       })
       .from(schema.message)
@@ -1588,7 +1591,9 @@ async function deliverConversationalReply(
       .limit(6);
     const decision = conversationalReplyDecision({
       turnInboundId,
-      latestInboundId: recent.find((m) => m.direction === "in")?.id ?? null,
+      // 038: una reacción que llega mientras el agente genera no vuelve
+      // vieja su respuesta (el turno se reprogramaría para siempre).
+      latestInboundId: recent.find(isCustomerTurnMessage)?.id ?? null,
       lastOutboundText: recent.find((m) => m.direction === "out")?.text ?? null,
       text,
     });

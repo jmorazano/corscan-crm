@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { Clock3, FileText, Film, Mic, Music, Paperclip, Send, X, Zap } from "lucide-react";
+import { Clock3, FileText, Film, Mic, Music, Paperclip, Send, Smile, X, Zap } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { filterQuickReplies, quickReplyQuery } from "@/lib/gestures";
@@ -22,6 +22,8 @@ import { useIsMobile } from "@/components/use-media";
 import { formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
 import { QuickReplies } from "./quick-replies";
+import { EmojiPicker } from "./emoji-picker";
+import { insertAtCursor } from "@/lib/emoji-catalog";
 import { useVoiceRecorder } from "./use-voice-recorder";
 
 /** Envío de una nota de voz (015): devuelve un mensaje de error o null. */
@@ -92,6 +94,8 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
   const [dragging, setDragging] = useState(false);
+  // 038: selector de emojis (escritorio; en el celular está el teclado).
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaFileRef = useRef<HTMLInputElement>(null);
@@ -120,6 +124,7 @@ export function Composer({
   useEffect(() => {
     clearPending();
     setError(null);
+    setEmojiOpen(false);
   }, [conversation.id]);
   useEffect(
     () => () => {
@@ -360,6 +365,22 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }
 
+  function insertEmoji(emoji: string) {
+    const el = taRef.current;
+    const selection =
+      el && document.activeElement === el ? { start: el.selectionStart, end: el.selectionEnd } : null;
+    const next = insertAtCursor(text, emoji, selection);
+    setText(next.text);
+    // El cursor queda después del emoji, para seguir escribiendo.
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(next.caret, next.caret);
+      autogrow();
+    }, 0);
+  }
+
   function insertTemplate(t: TemplateDto) {
     const firstName = conversation.contact.name.split(" ")[0] ?? "";
     setText(t.body.replace(/\{\{\s*1\s*\}\}/g, firstName));
@@ -559,7 +580,16 @@ export function Composer({
           onPick={insertTemplate}
         />
       )}
-      {templates.length > 0 && !qrOpen && !isTrainer && (
+      {!(recording || uploading) && !qrOpen && emojiOpen && (
+        <EmojiPicker
+          onPick={insertEmoji}
+          onClose={() => {
+            setEmojiOpen(false);
+            taRef.current?.focus();
+          }}
+        />
+      )}
+      {templates.length > 0 && !qrOpen && !emojiOpen && !isTrainer && (
         <div className="mb-2.5 hidden flex-wrap gap-1.5 md:flex">
           {templates.slice(0, 4).map((t) => (
             <button
@@ -632,7 +662,26 @@ export function Composer({
           <Zap className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
         </button>
         )}
-        <div className="flex min-w-0 flex-1 items-end rounded-[22px] border bg-background px-3 py-1.5 transition-shadow focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft md:rounded-md md:py-2">
+        <div className="flex min-w-0 flex-1 items-end rounded-[22px] border bg-background px-3 py-1.5 transition-shadow focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft md:gap-1.5 md:rounded-md md:py-2 md:pl-1.5">
+          <button
+            type="button"
+            aria-label="Emojis"
+            aria-expanded={emojiOpen}
+            title="Emojis"
+            data-testid="emoji-toggle"
+            // El campo conserva el foco y la posición del cursor.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setEmojiOpen((v) => !v);
+              taRef.current?.focus();
+            }}
+            className={cn(
+              "hidden h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent md:flex",
+              emojiOpen ? "text-brand" : "text-text-3"
+            )}
+          >
+            <Smile className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </button>
           <textarea
             ref={taRef}
             placeholder={
@@ -652,6 +701,11 @@ export function Composer({
             }}
             onPaste={onPaste}
             onKeyDown={(e) => {
+              if (emojiOpen && e.key === "Escape") {
+                e.preventDefault();
+                setEmojiOpen(false);
+                return;
+              }
               if (qrOpen) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();

@@ -20,6 +20,7 @@ import { publish } from "@/server/events/bus";
 import {
   getOrCreateConversation,
   ingestInboundCore,
+  recordCustomerReaction,
   serializeMessage,
 } from "@/server/inbox/ingest";
 import {
@@ -286,7 +287,8 @@ async function handleInbound(
         ? storyUrl
           ? { source: { kind: "url", url: storyUrl }, mime: null }
           : null
-        : first?.url && (type === "image" || type === "audio" || type === "video" || type === "document")
+        : first?.url &&
+            (type === "image" || type === "audio" || type === "video" || type === "document" || type === "sticker")
           ? { source: { kind: "url", url: first.url }, mime: null }
           : null,
     at: ev.at,
@@ -503,39 +505,23 @@ async function handleRead(
 /**
  * Reacción del cliente: queda como nota en el hilo (tipo `reaction`) sin
  * sumar no leídos, sin lead y sin despertar al agente. Quitar la reacción
- * no genera nada.
+ * no genera nada. 038: el registro es común con WhatsApp.
  */
 async function handleReaction(
   integration: InstagramIntegration,
   ev: Extract<InstagramEvent, { kind: "reaction" }>
 ) {
   if (ev.action !== "react") return;
-  const db = getDb();
   const { organizationId } = integration;
   const conversation = await findConversation(organizationId, ev.customerId);
   if (!conversation) return;
-  const inserted = await db
-    .insert(schema.message)
-    .values({
-      id: newId("message"),
-      organizationId,
-      conversationId: conversation.id,
-      waMessageId: `reaction:${ev.mid ?? "?"}:${ev.at.getTime()}`,
-      direction: "in",
-      type: "reaction",
-      text: ev.emoji ?? "❤️",
-      status: "delivered",
-      waTimestamp: ev.at,
-    })
-    .onConflictDoNothing({
-      target: [schema.message.organizationId, schema.message.waMessageId],
-    })
-    .returning();
-  const message = inserted[0];
-  if (!message) return;
-  publish(organizationId, {
-    type: "message.new",
-    data: { conversationId: conversation.id, message: serializeMessage(message) },
+  await recordCustomerReaction({
+    organizationId,
+    conversationId: conversation.id,
+    providerMessageId: `reaction:${ev.mid ?? "?"}:${ev.at.getTime()}`,
+    emoji: ev.emoji ?? "❤️",
+    reactedProviderMessageId: ev.mid,
+    at: ev.at,
   });
 }
 

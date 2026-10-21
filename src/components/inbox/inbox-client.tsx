@@ -779,6 +779,9 @@ export function InboxClient() {
       if (!sc) return;
       // Un diálogo abierto se maneja solo (Escape lo cierra a él).
       if (document.querySelector('[aria-modal="true"]')) return;
+      // 038: un Escape que ya usó el composer (cerrar emojis o respuestas
+      // rápidas) no cierra además la ficha o el chat.
+      if (sc === "escape" && e.defaultPrevented) return;
       switch (sc) {
         case "search":
           e.preventDefault();

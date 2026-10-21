@@ -38,6 +38,10 @@ export function mockMediaFor(mediaId: string): MockMedia {
     return { bytes: pdfBytes(), mimeType: "application/pdf" };
   }
   const unreadable = mediaId.includes("empty");
+  // 038: sticker = WebP (lleva el id al final, como el JPEG).
+  if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}sticker`) && !unreadable) {
+    return { bytes: webpBytes(mediaId), mimeType: "image/webp" };
+  }
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}audio`)) {
     return unreadable
       ? { bytes: flacBytes(), mimeType: "audio/flac" }
@@ -52,6 +56,17 @@ export function mockMediaFor(mediaId: string): MockMedia {
         bytes: Buffer.concat([Buffer.from(JPEG_1X1_BASE64, "base64"), Buffer.from(` ${mediaId}`, "ascii")]),
         mimeType: "image/jpeg",
       };
+}
+
+/** 038: cabecera RIFF/WEBP mínima: `sniffImageMime` la reconoce como WebP. */
+function webpBytes(mediaId: string): Buffer {
+  return Buffer.concat([
+    Buffer.from("RIFF", "ascii"),
+    Buffer.from([0x24, 0x00, 0x00, 0x00]),
+    Buffer.from("WEBPVP8 ", "ascii"),
+    Buffer.alloc(24),
+    Buffer.from(` ${mediaId}`, "ascii"),
+  ]);
 }
 
 /** Cabecera fLaC: `sniffAudioMime` la reconoce y el ai-mock la declara vacía. */

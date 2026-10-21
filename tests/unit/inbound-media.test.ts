@@ -45,8 +45,14 @@ describe("planInboundMedia", () => {
     expect(planInboundMedia("document", "mid")).toEqual(pdf);
   });
 
-  it("no descarga stickers, pero el agente se entera", () => {
-    expect(planInboundMedia("sticker", "mid")).toEqual({ kind: "acknowledge", type: "sticker" });
+  it("038: el sticker se baja y se describe; sin id, el agente igual se entera", () => {
+    expect(planInboundMedia("sticker", "mid")).toEqual({
+      kind: "process",
+      type: "image",
+      maxBytes: 5 * 1024 * 1024,
+      sticker: true,
+    });
+    expect(planInboundMedia("sticker", null)).toEqual({ kind: "acknowledge", type: "sticker" });
     expect(planInboundMedia("document", null)).toEqual({ kind: "acknowledge", type: "document" });
   });
 
@@ -92,10 +98,9 @@ describe("attachmentMarker", () => {
     expect(marker).toMatch(/preguntale/i);
   });
 
-  it("video, documento y sticker dicen qué llegó sin prometer abrirlo", () => {
+  it("video y documento dicen qué llegó sin prometer abrirlo", () => {
     expect(attachmentMarker({ ...base, type: "video" })).toContain("un video");
     expect(attachmentMarker({ ...base, type: "document" })).toContain("un documento");
-    expect(attachmentMarker({ ...base, type: "sticker" })).toContain("un sticker");
   });
 
   it("un mensaje de texto no lleva marcador", () => {

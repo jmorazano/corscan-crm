@@ -8,7 +8,9 @@ import { publish } from "@/server/events/bus";
 import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
-import { planInboundMedia } from "@/lib/inbound-media";
+import { planInboundMedia, reactionSnippet } from "@/lib/inbound-media";
+import { scoped } from "@/lib/db/tenant";
+import { mediaLabel } from "@/components/inbox/helpers";
 import { processInboundMedia, type InboundMediaSource } from "@/server/inbox/media";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
@@ -132,7 +134,13 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
   }
 
   for (const msg of value.messages ?? []) {
-    if (!SUPPORTED_TYPES.has(msg.type)) continue; // reacciones, etc.: ignorar
+    // 038: la reacción del cliente (👍 a un mensaje) queda en el hilo como
+    // nota; antes se descartaba y el equipo no la veía.
+    if (msg.type === "reaction") {
+      await ingestWhatsAppReaction(organizationId, msg);
+      continue;
+    }
+    if (!SUPPORTED_TYPES.has(msg.type)) continue; // el resto: ignorar
     const profileName = value.contacts?.find(
       (c) => c.wa_id === msg.from
     )?.profile?.name;
@@ -155,6 +163,100 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       referral: msg.referral === undefined ? null : parseWhatsAppReferral(msg.referral),
     });
   }
+}
+
+/**
+ * 038: reacción de WhatsApp. Sin emoji = la quitó (no genera nada, como en
+ * Instagram). Solo sobre una conversación que ya existe: no se crea un
+ * contacto por una reacción.
+ */
+async function ingestWhatsAppReaction(organizationId: string, msg: WebhookMessage): Promise<void> {
+  const emoji = msg.reaction?.emoji?.trim();
+  if (!emoji) return;
+  const rows = await getDb()
+    .select({ id: schema.conversation.id })
+    .from(schema.conversation)
+    .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.contact.phone, msg.from),
+        eq(schema.conversation.kind, "whatsapp"),
+        eq(schema.conversation.isTest, false)
+      )
+    )
+    .limit(1);
+  const conversation = rows[0];
+  if (!conversation) return;
+  await recordCustomerReaction({
+    organizationId,
+    conversationId: conversation.id,
+    providerMessageId: msg.id,
+    emoji,
+    reactedProviderMessageId: msg.reaction?.message_id ?? null,
+    at: toDate(msg.timestamp),
+  });
+}
+
+/**
+ * 038, COMÚN a WhatsApp e Instagram (023): la reacción del cliente queda
+ * como nota en el hilo (tipo `reaction`) con el comienzo del mensaje al que
+ * reaccionó. Sin no leídos, sin lead, sin abrir la ventana y SIN despertar
+ * al agente: es contexto para el próximo turno, no algo que contestar.
+ * Idempotente por el id del proveedor.
+ */
+export async function recordCustomerReaction(input: {
+  organizationId: string;
+  conversationId: string;
+  providerMessageId: string;
+  emoji: string;
+  /** wamid (WhatsApp) o mid (Instagram) del mensaje reaccionado. */
+  reactedProviderMessageId: string | null;
+  at: Date;
+}): Promise<void> {
+  const db = getDb();
+  let reactionTo: string | null = null;
+  if (input.reactedProviderMessageId) {
+    const target = await db
+      .select({ type: schema.message.type, text: schema.message.text })
+      .from(schema.message)
+      .where(
+        scoped(
+          schema.message.organizationId,
+          input.organizationId,
+          eq(schema.message.conversationId, input.conversationId),
+          eq(schema.message.waMessageId, input.reactedProviderMessageId)
+        )
+      )
+      .limit(1);
+    const t = target[0];
+    if (t) reactionTo = reactionSnippet(t.text) ?? mediaLabel(t.type);
+  }
+  const inserted = await db
+    .insert(schema.message)
+    .values({
+      id: newId("message"),
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      waMessageId: input.providerMessageId,
+      direction: "in",
+      type: "reaction",
+      text: input.emoji,
+      status: "delivered",
+      details: reactionTo ? { reactionTo } : null,
+      waTimestamp: input.at,
+    })
+    .onConflictDoNothing({
+      target: [schema.message.organizationId, schema.message.waMessageId],
+    })
+    .returning();
+  const message = inserted[0];
+  if (!message) return;
+  publish(input.organizationId, {
+    type: "message.new",
+    data: { conversationId: input.conversationId, message: serializeMessage(message) },
+  });
 }
 
 /** El sobre del adjunto vive en una clave distinta según el tipo. */

@@ -419,7 +419,13 @@ const DESCRIBE_MAX_CHARS = 400;
 export async function describeImage(
   config: AiConfig,
   image: { bytes: Buffer | Uint8Array; mimeType: string },
-  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+  opts?: {
+    model?: string;
+    timeoutMs?: number;
+    maxTokens?: number;
+    /** 038: un sticker se describe por lo que EXPRESA, no como un archivo. */
+    sticker?: boolean;
+  }
 ): Promise<DescribeImageResult> {
   if (!config.token.trim()) {
     return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };
@@ -433,7 +439,7 @@ export async function describeImage(
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: [
+      content: opts?.sticker ? STICKER_PROMPT : [
         "Describís en UNA sola oración corta, en español rioplatense, qué es la imagen que un cliente le mandó por WhatsApp a un negocio.",
         "Decí el TIPO de imagen y para qué parece servir. Ejemplos: «un comprobante de transferencia bancaria», «la captura de la ficha de una propiedad del sitio», «una foto de un documento de identidad», «una selfie».",
         "PROHIBIDO copiar datos sensibles aunque se lean con claridad: nunca escribas números de CBU, CVU, alias, número de cuenta, tarjeta, importes, nombres de titulares, DNI ni códigos de operación.",
@@ -443,7 +449,7 @@ export async function describeImage(
     {
       role: "user",
       content: [
-        { type: "text", text: "¿Qué es esta imagen?" },
+        { type: "text", text: opts?.sticker ? "¿Qué expresa este sticker?" : "¿Qué es esta imagen?" },
         { type: "image_url", image_url: { url: dataUri } },
       ],
     },
@@ -485,6 +491,16 @@ export async function describeImage(
   return { ok: false, error: "provider_error", detail: lastDetail };
 }
 
+/** 038: marcador del prompt de stickers: el ai-mock despacha por él. */
+export const STICKER_DESCRIBE_MARKER = "[STICKER]";
+
+const STICKER_PROMPT = [
+  STICKER_DESCRIBE_MARKER,
+  "Un cliente le mandó este sticker por WhatsApp o Instagram a un negocio. Es una forma de expresarse, como un emoji grande.",
+  "Decí en pocas palabras, en español rioplatense, qué expresa o qué gesto hace: por ejemplo «un pulgar arriba», «una carita riéndose a carcajadas», «un gatito mandando un beso», «un perro saludando con la mano».",
+  "Si el sticker tiene un texto corto, copialo entre comillas. Sin preámbulo ni markdown. Si no se entiende, devolvé exactamente " + EMPTY_SENTINEL + ".",
+].join(" ");
+
 /** Marcador del prompt de lectura del Entrenador: el ai-mock despacha por él. */
 export const TRAINER_IMAGE_READ_MARKER = "[IMAGEN_ENTRENADOR]";
 
@@ -505,7 +521,13 @@ const READ_IMAGE_MAX_CHARS = 3000;
 export async function readTrainerImage(
   config: AiConfig,
   image: { bytes: Buffer | Uint8Array; mimeType: string; caption?: string | null },
-  opts?: { model?: string; timeoutMs?: number; maxTokens?: number }
+  opts?: {
+    model?: string;
+    timeoutMs?: number;
+    maxTokens?: number;
+    /** 038: un sticker se describe por lo que EXPRESA, no como un archivo. */
+    sticker?: boolean;
+  }
 ): Promise<DescribeImageResult> {
   if (!config.token.trim()) {
     return { ok: false, error: "not_configured", detail: "La empresa no tiene token de IA" };

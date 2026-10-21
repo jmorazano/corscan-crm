@@ -55,6 +55,11 @@ export type MessageDetails = {
    * chats): no cuenta como «alguien atendiendo».
    */
   broadcast?: boolean;
+  /**
+   * 038: reacción del cliente (`reaction`): el comienzo del mensaje al que
+   * reaccionó, para el hilo y para el agente. Copiado al recibirla.
+   */
+  reactionTo?: string;
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */

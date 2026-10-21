@@ -308,12 +308,19 @@ async function interpret(
     return;
   }
 
-  const result = await describeImage(config, {
-    bytes: media.data,
-    mimeType: media.mimeType,
-  });
+  const sticker = input.plan.kind === "process" && input.plan.sticker === true;
+  const result = await describeImage(
+    config,
+    { bytes: media.data, mimeType: media.mimeType },
+    { sticker }
+  );
   if (!result.ok) {
     await finish(input, { state: "failed", errorCode: "vision" });
+    return;
+  }
+  // 038: un sticker no es un comprobante: no pasa por la planilla (034).
+  if (sticker) {
+    await finish(input, { state: "ready", summary: result.text });
     return;
   }
   await finish(input, {

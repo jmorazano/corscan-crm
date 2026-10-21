@@ -19,6 +19,7 @@ import {
   PauseCircle,
   Paperclip,
   RotateCw,
+  Smile,
   Sparkles,
   UserRound,
   CheckCircle2,
@@ -691,6 +692,41 @@ function ImageAttachment({ message: m, kind }: { message: MessageDto; kind: "wha
 }
 
 /**
+ * 038: sticker del cliente. Se ve chico, como en WhatsApp, y debajo lo que
+ * entendió el agente (es una descripción de la IA, no texto del cliente).
+ */
+function StickerAttachment({ message: m }: { message: MessageDto }) {
+  const summary = m.mediaSummary?.trim() ?? "";
+  return (
+    <div data-testid="sticker-message" data-status={m.mediaState ?? "ready"}>
+      {m.media ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={m.media.url}
+          alt={summary || "Sticker del cliente"}
+          className="h-28 w-28 object-contain"
+          loading="lazy"
+        />
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-text-3">
+          <Smile className="h-3.5 w-3.5" strokeWidth={1.7} />
+          {m.mediaState === "pending" ? "Descargando sticker…" : "Sticker"}
+        </span>
+      )}
+      {summary && (
+        <div
+          data-testid="sticker-summary"
+          className="mt-1 flex items-start gap-1.5 text-[12px] leading-snug text-text-3"
+        >
+          <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-brand" strokeWidth={1.7} />
+          <span className="min-w-0 break-words">{summary}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Adjunto sin binario (026): todavía bajando, o no se pudo guardar. El
  * equipo igual ve qué mandó el cliente y por qué no está.
  */
@@ -1048,7 +1084,8 @@ function Bubble({
           data-testid="message-reaction"
           className="rounded-full bg-background/70 px-2.5 py-0.5 text-[11.5px] text-text-3 shadow-sm"
         >
-          Reaccionó {m.text ?? "❤️"} a un mensaje · {bubbleTime(m.createdAt)}
+          Reaccionó {m.text ?? "❤️"} a {m.details?.reactionTo ? `«${m.details.reactionTo}»` : "un mensaje"} ·{" "}
+          {bubbleTime(m.createdAt)}
         </span>
       </div>
     );
@@ -1084,6 +1121,8 @@ function Bubble({
           <AudioNote message={m} plain={out && wa} />
         ) : m.type === "image" ? (
           <ImageAttachment message={m} kind={kind} />
+        ) : m.type === "sticker" ? (
+          <StickerAttachment message={m} />
         ) : m.type === "video" ? (
           <VideoAttachment message={m} />
         ) : m.type === "document" ? (

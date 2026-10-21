@@ -6,7 +6,7 @@ import {
   PERSONAL_NUMBER_MARKER,
 } from "@/server/mcp/markers";
 import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
-import { TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
+import { STICKER_DESCRIBE_MARKER, TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
 import { TRAINER_IMAGE_MARKER } from "@/lib/trainer-image";
 import { DYNAMIC_TOOLS_HEADING } from "@/server/mcp/dynamic-tools";
 import { RECEIPT_EXTRACT_MARKER } from "@/lib/ai/receipt";
@@ -41,6 +41,9 @@ export const MOCK_INBOUND_TRANSCRIPTION =
 
 /** 020: descripción fija que devuelve el mock ante cualquier `image_url`. */
 export const MOCK_IMAGE_SUMMARY = "un comprobante de transferencia bancaria";
+
+/** 038: lo que «expresa» cualquier sticker WebP del self-test. */
+export const MOCK_STICKER_SUMMARY = "un pulgar arriba";
 
 /** 027: resumen fijo de un PDF del cliente (sin datos sensibles). */
 export const MOCK_DOCUMENT_SUMMARY =
@@ -152,6 +155,10 @@ export function aiMockCompletion(messages: InMessage[]): string {
     const parts = lastUserMsg.content as Exclude<InContent, string>;
     const url = parts.find((p) => p.type === "image_url")?.image_url?.url ?? "";
     if (url.startsWith("data:image/png")) return "[SIN_CONTENIDO]";
+    // 038: un sticker se describe por lo que expresa.
+    if (textOf(messages.find((m) => m.role === "system")?.content).includes(STICKER_DESCRIBE_MARKER)) {
+      return MOCK_STICKER_SUMMARY;
+    }
     // 022: la imagen del dueño en el Entrenador se LEE completa (precios
     // incluidos); la del cliente (020) se describe en una línea.
     const sys = textOf(messages.find((m) => m.role === "system")?.content);
@@ -219,6 +226,14 @@ export function aiMockCompletion(messages: InMessage[]): string {
       return JSON.stringify({
         action: "reply",
         text: `¡Gracias por responder la historia!${seen ? ` (vi: ${seen.slice(0, 60)})` : ""}`,
+      });
+    }
+    // 038: el sticker se toma como un gesto (con lo que expresa, si se vio).
+    if (/mandó un sticker/i.test(lastUser)) {
+      const seen = /como un emoji grande\): ([^\n]+?)\. Tomalo/.exec(lastUser)?.[1]?.trim();
+      return JSON.stringify({
+        action: "reply",
+        text: seen ? `¡Buenísimo! 😊 (entendí tu sticker: ${seen})` : "¡Buenísimo! 😊",
       });
     }
     if (/te mencion[oó] en una historia/i.test(lastUser)) {

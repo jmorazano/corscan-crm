@@ -28,6 +28,9 @@ const schema = z.object({
    * ingesta, igual que con el webhook real.
    */
   referral: z.unknown().optional(),
+  /** 038: reacción (`type: "reaction"`). */
+  reactTo: z.string().optional(),
+  emoji: z.string().optional(),
 });
 
 export async function POST(req: Request) {

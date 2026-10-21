@@ -355,10 +355,15 @@ function normalize(
     if (msg.is_deleted) {
       return { kind: "deleted", accountId, customerId, mid: msg.mid };
     }
-    const attachments: InstagramAttachment[] = (msg.attachments ?? []).map((a) => ({
+    const all: InstagramAttachment[] = (msg.attachments ?? []).map((a) => ({
       type: a.type.toLowerCase(),
       url: typeof a.payload?.url === "string" && a.payload.url ? a.payload.url : null,
     }));
+    // 038: el corazón grande de Instagram (`like_heart`) es un emoji, no un
+    // adjunto: entra como el texto «❤️». Antes caía como «publicación
+    // compartida que no podés abrir» y el agente decía que no lo veía.
+    const liked = all.some((a) => a.type === LIKE_HEART);
+    const attachments = all.filter((a) => a.type !== LIKE_HEART);
     const quick = msg.quick_reply?.payload;
     const template = templateSummary(msg.attachments ?? []);
     const text = msg.text?.trim()
@@ -367,7 +372,9 @@ function normalize(
         ? template.title
         : quick?.trim()
           ? quick
-          : null;
+          : liked && attachments.length === 0
+            ? "❤️"
+            : null;
     const story = msg.reply_to?.story;
     return {
       kind: "message",
@@ -429,6 +436,9 @@ function normalize(
   return null;
 }
 
+/** 038: el «me gusta» de los DM de Instagram. */
+const LIKE_HEART = "like_heart";
+
 /**
  * Tipo de mensaje del CRM para un evento de Instagram. Imagen y audio van
  * por el pipeline de adjuntos de 020; el resto se guarda con su tipo y se
@@ -453,6 +463,10 @@ export function messageTypeFor(ev: {
       return "document";
     case "ephemeral":
       return "unsupported";
+    // 038: GIF o sticker del teclado de Instagram: un gesto, como un emoji.
+    case "animated_image":
+    case "sticker":
+      return "sticker";
     case "story_mention":
     case "ig_story":
     case "story":

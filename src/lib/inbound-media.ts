@@ -82,6 +82,11 @@ export type MediaPlan =
       maxBytes: number;
       /** 030: es una historia de Instagram (si resulta video, se guarda sin IA). */
       story?: boolean;
+      /**
+       * 038: es un sticker. Se describe como un GESTO (qué expresa), no como
+       * un archivo, y jamás pasa por los comprobantes de 034.
+       */
+      sticker?: boolean;
     }
   /**
    * 026: se descarga y se guarda para verlo en el hilo; NO retiene el turno
@@ -108,6 +113,12 @@ export function planInboundMedia(
   const media = type as MediaType;
   if ((media === "audio" || media === "image") && mediaId) {
     return { kind: "process", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
+  }
+  // 038: el sticker es la forma de expresarse de mucha gente (un emoji
+  // grande). Antes no se bajaba y el agente contestaba «no puedo ver lo que
+  // me mandaste»: ahora se describe como una imagen.
+  if (media === "sticker" && mediaId) {
+    return { kind: "process", type: "image", maxBytes: MEDIA_MAX_BYTES.image, sticker: true };
   }
   // 030: la historia que respondió o en la que mencionó al negocio se baja y
   // se describe como una imagen (si es un video, se guarda para el equipo).
@@ -160,6 +171,8 @@ export type AttachmentView = {
   text: string | null;
   /** Descripción generada por IA (imágenes; 027: resumen de un PDF). */
   mediaSummary: string | null;
+  /** 038: a qué mensaje reaccionó (solo `reaction`). */
+  details?: { reactionTo?: string } | null;
 };
 
 /**
@@ -205,6 +218,16 @@ export function attachmentMarker(m: AttachmentView): string | null {
     }
   }
 
+  // 038: un sticker es un gesto, como un emoji: el agente lo toma por lo que
+  // expresa. Aunque no se haya podido mirar, NUNCA le dice al cliente que
+  // no lo puede ver (era el reclamo de los clientes).
+  if (type === "sticker") {
+    if (m.mediaState === "ready" && m.mediaSummary?.trim()) {
+      return `${ATTACHMENT_MARKER} El cliente mandó un sticker (una imagen para expresarse, como un emoji grande): ${m.mediaSummary.trim()}. Tomalo como su gesto o su reacción y seguí la conversación; no hace falta describirlo.`;
+    }
+    return `${ATTACHMENT_MARKER} ${STICKER_FALLBACK}`;
+  }
+
   // 030: respuesta a una historia (trae texto) o mención (sin texto).
   if (type === "story") {
     const what = m.text?.trim()
@@ -220,6 +243,48 @@ export function attachmentMarker(m: AttachmentView): string | null {
   }
 
   return `${ATTACHMENT_MARKER} El cliente mandó ${TYPE_LABEL[type]}. No lo podés abrir: preguntale de qué se trata o escalá si hace falta.`;
+}
+
+/**
+ * 038: el sticker que no se pudo mirar (sin IA, descarga fallida, formato
+ * raro). Mismo trato que un emoji: se interpreta por el contexto.
+ */
+export const STICKER_FALLBACK =
+  "El cliente mandó un sticker (una imagen para expresarse, como un emoji grande). Interpretalo por el contexto de la conversación —suele ser un saludo, un «ok», un agradecimiento o una risa— y seguí con naturalidad. No le digas que no lo podés ver.";
+
+/** 038: prefijo de la reacción del cliente a un mensaje. */
+export const REACTION_MARKER = "[REACCIÓN]";
+
+/**
+ * 038: cómo ve el agente una reacción (tipo `reaction`, WhatsApp o
+ * Instagram). Es contexto: una reacción NUNCA despierta al agente.
+ */
+export function reactionAgentText(m: { text: string | null; reactionTo?: string | null }): string {
+  const emoji = m.text?.trim() || "❤️";
+  const to = m.reactionTo?.trim();
+  return `${REACTION_MARKER} El cliente reaccionó con ${emoji} a ${to ? `este mensaje: «${to}»` : "un mensaje"}.`;
+}
+
+/**
+ * 038: ¿el mensaje es algo que el cliente le ESCRIBIÓ al negocio (y por lo
+ * tanto puede esperar respuesta)? Una reacción no: si contara, un 👍 al
+ * mensaje del equipo haría «retomar» al agente, y uno que llega mientras
+ * el agente genera dejaría su respuesta como vieja para siempre.
+ */
+export function isCustomerTurnMessage(m: { direction: string; type: string }): boolean {
+  return m.direction === "in" && m.type !== "reaction";
+}
+
+const REACTION_SNIPPET_MAX = 80;
+
+/** 038: el comienzo del mensaje reaccionado, por caracteres reales (no parte un emoji). */
+export function reactionSnippet(text: string | null | undefined): string | null {
+  const flat = text?.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  const chars = Array.from(flat);
+  return chars.length > REACTION_SNIPPET_MAX
+    ? `${chars.slice(0, REACTION_SNIPPET_MAX).join("").trimEnd()}…`
+    : flat;
 }
 
 /** 030: marcador de la nota de un comentario de Instagram. */
@@ -243,6 +308,7 @@ export function commentAgentText(m: { text: string | null; mediaSummary: string 
  */
 export function agentTextFor(m: AttachmentView): string | null {
   if (m.type === "comment") return commentAgentText(m);
+  if (m.type === "reaction") return reactionAgentText({ text: m.text, reactionTo: m.details?.reactionTo });
   const marker = attachmentMarker(m);
   const text = m.text?.trim() || null;
   if (marker && text) return `${marker}\n${text}`;
