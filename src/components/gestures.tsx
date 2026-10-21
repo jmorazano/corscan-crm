@@ -8,6 +8,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { cn } from "@/lib/utils";
+import { isIos } from "@/lib/push-client";
 import {
   clampReveal,
   classifySwipe,
@@ -24,6 +25,12 @@ import {
  * si el recorrido alcanza, llama `onBack`. `touchcancel` (p. ej. Safari
  * tomando su propio gesto de historial) NUNCA dispara el back: evita el
  * doble retroceso.
+ *
+ * En iPhone/iPad NO se activa: iOS ya tiene su gesto «atrás» desde el borde
+ * (en Safari y también en la app agregada a inicio, sin forma de apagarlo).
+ * En la app instalada no siempre manda `touchcancel`, así que los dos gestos
+ * corrían juntos: doble retroceso y la pantalla en blanco hasta recargar.
+ * El nativo vuelve por el historial que ya arma la bandeja.
  */
 export function useSwipeBack<T extends HTMLElement>(
   onBack: () => void,
@@ -35,7 +42,7 @@ export function useSwipeBack<T extends HTMLElement>(
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || !enabled) return;
+    if (!el || !enabled || isIos()) return;
     let start: GesturePoint | null = null;
     let axis: SwipeAxis = "pending";
     let dx = 0;

@@ -33,6 +33,8 @@ import { type Branding, resolveInitials } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { canManageConfig, navItemsFor } from "@/lib/roles";
 import { modifierLabel, workspaceShortcut } from "@/lib/gestures";
+import { isIos } from "@/lib/push-client";
+import { isEditableTarget, keyboardOpen, nextBaseline, viewportStuck } from "@/lib/viewport";
 import { signOut } from "@/lib/auth/client";
 import {
   getCurrentSubscription,
@@ -92,29 +94,132 @@ export function useHideTabBar(hidden: boolean) {
  * altura al shell para que el compositor quede sobre el teclado. En Android,
  * `interactive-widget=resizes-content` ya achica `100dvh`, así que no
  * intervenimos.
+ *
+ * Fix iOS (oct-2026): el alto se fijaba al abrir el teclado y, si el campo
+ * desaparecía con el teclado arriba (cambiar de chat, «atrás»), iOS no
+ * avisaba el cierre y la pantalla quedaba comprimida. Ahora el alto solo se
+ * fija con un campo editable con foco, se re-mide al perder el foco y al
+ * navegar, y en la app instalada se fuerza un re-medido cuando iOS deja el
+ * viewport más chico que la pantalla (o sin pintar tras el gesto «atrás»).
  */
 function useKeyboardAwareHeight(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const vv = window.visualViewport;
     const el = ref.current;
     if (!vv || !el) return;
-    const apply = () => {
-      const keyboardOpen = window.innerHeight - vv.height > 100;
-      if (keyboardOpen) {
-        el.style.height = `${vv.height}px`;
-        window.scrollTo(0, 0);
-      } else {
+    const ios = isIos();
+    let baseline: { width: number; height: number } | null = null;
+    let raf = 0;
+    let lastRemeasure = 0;
+    const timers = new Set<number>();
+
+    // `heal` solo desde los momentos de calma (perder el foco, navegar,
+    // volver a la app), nunca en cada evento de scroll del viewport.
+    const measure = (heal = false) => {
+      cancelAnimationFrame(raf);
+      // El `resize` de iOS llega antes de que `visualViewport` tenga el
+      // valor nuevo: se lee en el cuadro siguiente.
+      raf = requestAnimationFrame(() => {
+        const width = window.innerWidth;
+        const innerHeight = window.innerHeight;
+        const open = keyboardOpen({
+          innerHeight,
+          viewportHeight: vv.height,
+          editableFocused: isEditableTarget(document.activeElement as HTMLInputElement | null),
+        });
+        if (open) {
+          el.style.height = `${vv.height}px`;
+          window.scrollTo(0, 0);
+          return;
+        }
         el.style.height = "";
+        if (window.scrollY !== 0) window.scrollTo(0, 0);
+        if (
+          heal &&
+          ios &&
+          Date.now() - lastRemeasure > 1000 &&
+          viewportStuck({ baseline, width, innerHeight, keyboardOpen: false })
+        ) {
+          lastRemeasure = Date.now();
+          remeasureShell(el);
+        }
+        baseline = nextBaseline(baseline, { width, height: window.innerHeight });
+      });
+    };
+    // Tras perder el foco o navegar, el teclado tarda en irse: se vuelve a
+    // medir unas veces mientras se acomoda.
+    const settle = () => {
+      measure();
+      for (const ms of [150, 400, 800]) {
+        const t = window.setTimeout(() => {
+          timers.delete(t);
+          measure(true);
+        }, ms);
+        timers.add(t);
       }
     };
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
+    // «Atrás» con el gesto nativo de iOS: WebKit a veces deja la vista sin
+    // pintar hasta recargar. Re-medir el shell la vuelve a pintar.
+    const onHistory = () => {
+      settle();
+      if (ios) {
+        requestAnimationFrame(() => {
+          lastRemeasure = Date.now();
+          remeasureShell(el);
+        });
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") settle();
+    };
+
+    const onChange = () => measure();
+    vv.addEventListener("resize", onChange);
+    vv.addEventListener("scroll", onChange);
+    window.addEventListener("resize", onChange);
+    document.addEventListener("focusin", onChange);
+    document.addEventListener("focusout", settle);
+    window.addEventListener("popstate", onHistory);
+    window.addEventListener("pageshow", onHistory);
+    document.addEventListener("visibilitychange", onVisibility);
+    measure();
     return () => {
-      vv.removeEventListener("resize", apply);
-      vv.removeEventListener("scroll", apply);
+      vv.removeEventListener("resize", onChange);
+      vv.removeEventListener("scroll", onChange);
+      window.removeEventListener("resize", onChange);
+      document.removeEventListener("focusin", onChange);
+      document.removeEventListener("focusout", settle);
+      window.removeEventListener("popstate", onHistory);
+      window.removeEventListener("pageshow", onHistory);
+      document.removeEventListener("visibilitychange", onVisibility);
+      cancelAnimationFrame(raf);
+      for (const t of timers) window.clearTimeout(t);
       el.style.height = "";
     };
   }, [ref]);
+}
+
+/**
+ * Obliga a WebKit a recalcular el viewport y repintar: ocultar y mostrar el
+ * shell (de alto completo) en el mismo cuadro. `display: none` pierde el
+ * scroll de los contenedores internos (el hilo, la lista): se guarda y se
+ * repone.
+ */
+function remeasureShell(el: HTMLElement) {
+  const scrolled: { node: Element; top: number; left: number }[] = [];
+  for (const node of el.querySelectorAll("*")) {
+    if (node.scrollTop > 0 || node.scrollLeft > 0) {
+      scrolled.push({ node, top: node.scrollTop, left: node.scrollLeft });
+    }
+  }
+  const prev = el.style.display;
+  el.style.display = "none";
+  void el.offsetHeight;
+  el.style.display = prev;
+  for (const s of scrolled) {
+    s.node.scrollTop = s.top;
+    s.node.scrollLeft = s.left;
+  }
 }
 
 const TABS: ReadonlyArray<{
