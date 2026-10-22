@@ -511,6 +511,12 @@ export const agentProfile = pgTable(
      * atención humana. NULL = 10 minutos.
      */
     teamSilenceMs: integer("team_silence_ms"),
+    /**
+     * 039: el agente MIRA los videos del cliente (los describe el modelo de
+     * visión, como las imágenes). Apagado por defecto: un video gasta muchos
+     * más tokens que una foto, así que lo decide cada empresa.
+     */
+    readVideos: boolean("read_videos").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

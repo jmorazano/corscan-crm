@@ -26,6 +26,8 @@ export const GET = withAuth(async (session) => {
       replyDelayMs: p.replyDelayMs,
       // 025: con esto el agente no le contesta a conocidos del celular.
       sharedPersonalNumber: p.sharedPersonalNumber,
+      // 039: apagado por defecto (cada video gasta muchos tokens).
+      readVideos: p.readVideos,
       // 031: null = 10 min (abajo, el efectivo para la bandeja).
       teamSilenceMs: p.teamSilenceMs,
     },

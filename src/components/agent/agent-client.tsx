@@ -33,6 +33,8 @@ type Profile = {
   replyDelayMs: number | null;
   /** 025: el WhatsApp es también el número personal del dueño. */
   sharedPersonalNumber: boolean;
+  /** 039 */
+  readVideos: boolean;
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: number | null;
 };
@@ -152,6 +154,7 @@ export function AgentClient() {
             enabled={profile.sharedPersonalNumber}
             onSave={saveProfile}
           />
+          <VideoReadingSection enabled={profile.readVideos} onSave={saveProfile} />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
@@ -288,6 +291,69 @@ function PersonalNumberSection({
         </ul>
         <p className="mt-2 text-xs font-medium" data-testid="personal-number-state">
           {enabled ? "Activado: el agente solo atiende contactos nuevos." : "Desactivado: el agente atiende a todos."}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 039: el agente mira los videos que manda el cliente, como las fotos.
+ * Apagado por defecto: un video gasta muchos más tokens que una imagen.
+ */
+function VideoReadingSection({
+  enabled,
+  onSave,
+}: {
+  enabled: boolean;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>Ver los videos del cliente</CardTitle>
+            <CardDescription>
+              El agente mira los videos que le mandan (una falla, un lugar, un
+              comprobante grabado) y responde según lo que se ve.
+            </CardDescription>
+          </div>
+          <button
+            role="switch"
+            aria-checked={enabled}
+            aria-label="El agente mira los videos del cliente"
+            data-testid="read-videos-switch"
+            onClick={() => void onSave({ readVideos: !enabled })}
+            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
+              enabled ? "bg-primary" : "bg-secondary"
+            }`}
+          >
+            <span
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground" data-testid="read-videos-hint">
+          <li>
+            Cada video consume <strong>bastantes más tokens</strong> que una foto
+            (aprox. un minuto de video equivale a decenas de imágenes): tenelo en
+            cuenta en el saldo de tu proveedor de IA.
+          </li>
+          <li>
+            Usa el modelo de visión de Ajustes → Inteligencia artificial; tiene
+            que aceptar video (por ejemplo, Gemini).
+          </li>
+          <li>Videos de hasta 16 MB. El equipo los sigue viendo en la Bandeja igual que siempre.</li>
+        </ul>
+        <p className="mt-2 text-xs font-medium" data-testid="read-videos-state">
+          {enabled
+            ? "Activado: el agente mira los videos y responde según lo que se ve."
+            : "Desactivado: el agente sabe que llegó un video, pero no lo mira."}
         </p>
       </CardContent>
     </Card>

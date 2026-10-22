@@ -39,6 +39,8 @@ export const profileUpdateSchema = z.object({
     .optional(),
   /** 025: el WhatsApp es también el número personal del dueño. */
   sharedPersonalNumber: z.boolean().optional(),
+  /** 039: el agente mira los videos del cliente (gasta más tokens). */
+  readVideos: z.boolean().optional(),
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: z
     .number()

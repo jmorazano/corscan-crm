@@ -60,6 +60,8 @@ export type MessageDetails = {
    * reaccionó, para el hilo y para el agente. Copiado al recibirla.
    */
   reactionTo?: string;
+  /** 039: este video lo está mirando la IA (la empresa activó la lectura). */
+  videoRead?: boolean;
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */

@@ -28,6 +28,8 @@ type InContent =
       image_url?: { url: string };
       /** 027: PDF. */
       file?: { filename?: string; file_data?: string };
+      /** 039: video. */
+      video_url?: { url: string };
     }[];
 type InMessage = { role: string; content: InContent };
 
@@ -41,6 +43,10 @@ export const MOCK_INBOUND_TRANSCRIPTION =
 
 /** 020: descripción fija que devuelve el mock ante cualquier `image_url`. */
 export const MOCK_IMAGE_SUMMARY = "un comprobante de transferencia bancaria";
+
+/** 039: lo que «se ve» en cualquier video MP4 del self-test. */
+export const MOCK_VIDEO_SUMMARY =
+  "una pérdida de agua debajo de la bacha de la cocina: gotea el sifón y el mueble está mojado";
 
 /** 038: lo que «expresa» cualquier sticker WebP del self-test. */
 export const MOCK_STICKER_SUMMARY = "un pulgar arriba";
@@ -68,6 +74,10 @@ function hasAudio(c: InContent | undefined): boolean {
 
 function hasImage(c: InContent | undefined): boolean {
   return Array.isArray(c) && c.some((p) => p.type === "image_url");
+}
+
+function hasVideo(c: InContent | undefined): boolean {
+  return Array.isArray(c) && c.some((p) => p.type === "video_url");
 }
 
 function hasFile(c: InContent | undefined): boolean {
@@ -136,6 +146,15 @@ export function aiMockCompletion(messages: InMessage[]): string {
     // 020: el audio de un cliente (ogg, el formato de WhatsApp) trae una
     // consulta de alojamiento; el del entrenador (m4a/wav) enseña al agente.
     return audio?.format === "ogg" ? MOCK_INBOUND_TRANSCRIPTION : MOCK_TRANSCRIPTION;
+  }
+
+  // 039: video → resumen (texto plano). El wa-mock deja el id al final del
+  // MP4: uno con «empty» dispara el sentinel para el camino infeliz.
+  if (lastUserMsg && hasVideo(lastUserMsg.content)) {
+    const parts = lastUserMsg.content as Exclude<InContent, string>;
+    const uri = parts.find((p) => p.type === "video_url")?.video_url?.url ?? "";
+    const raw = Buffer.from(uri.split(",")[1] ?? "", "base64").toString("latin1");
+    return /empty/.test(raw) ? "[SIN_CONTENIDO]" : MOCK_VIDEO_SUMMARY;
   }
 
   // 027: PDF → resumen (texto plano). Un nombre con «ilegible» dispara el
@@ -248,6 +267,18 @@ export function aiMockCompletion(messages: InMessage[]): string {
         action: "reply",
         text: `¡Gracias por responder la historia!${seen ? ` (vi: ${seen.slice(0, 60)})` : ""}`,
       });
+    }
+    // 039: el agente responde según lo que se ve en el video; sin verlo,
+    // sigue con lo demás (no dice «no puedo abrir el video»).
+    const video = /mandó un video: ([^\n]+)/.exec(lastUser);
+    if (video) {
+      return JSON.stringify({
+        action: "reply",
+        text: `Gracias por el video. Por lo que se ve (${video[1]!.trim().slice(0, 80)}), te mandamos a alguien a revisarlo. ¿En qué zona estás?`,
+      });
+    }
+    if (/mandó un video que no viste/i.test(lastUser)) {
+      return JSON.stringify({ action: "reply", text: "¡Gracias! Contame en una frase qué muestra así te ayudo." });
     }
     // 038: el sticker se toma como un gesto (con lo que expresa, si se vio).
     if (/mandó un sticker/i.test(lastUser)) {

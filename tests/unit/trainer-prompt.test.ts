@@ -43,6 +43,7 @@ const profile = {
   replyDelayMs: null,
   teamSilenceMs: null,
   sharedPersonalNumber: false,
+  readVideos: false,
   createdAt: now,
   updatedAt: now,
 };

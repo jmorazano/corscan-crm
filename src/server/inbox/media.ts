@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { describeImage, readDocument, transcribeAudio } from "@/lib/ai";
+import { describeImage, readDocument, readVideo, transcribeAudio } from "@/lib/ai";
 import {
   MEDIA_ERRORS,
   PDF_READ_MAX_BYTES,
@@ -78,6 +78,11 @@ export async function processInboundMedia(input: {
       await readPdf(input, bytes);
       return;
     }
+    // 039: el video, solo si la empresa lo activó (el plan ya lo decidió).
+    if (input.plan.type === "video") {
+      await watchVideo(input, bytes);
+      return;
+    }
     await interpret(input, bytes);
   } catch (err) {
     console.error(
@@ -111,7 +116,7 @@ async function download(input: {
   // 026: video y documento se guardan tal cual; el MIME sale de la firma
   // (y si no se reconoce, del declarado: el visor lo sirve como binario
   // opaco si no es un tipo seguro). 027: también el PDF que se va a leer.
-  if (input.plan.kind === "store" || input.plan.type === "document") {
+  if (input.plan.kind === "store" || input.plan.type === "document" || input.plan.type === "video") {
     const plain = (downloaded.contentType || handleMime || input.declaredMime || "")
       .split(";")[0]!
       .trim()
@@ -429,6 +434,40 @@ async function readPdf(
     state: "ready",
     summary: await withReceiptNote(input, result.text, media),
   });
+}
+
+/**
+ * 039: el modelo de visión mira el video y lo resume. El binario ya quedó
+ * guardado y visible para el equipo (`publishCurrent`), así que cualquier
+ * fallo solo deja al agente sin la descripción: nunca mudo.
+ */
+async function watchVideo(
+  input: {
+    organizationId: string;
+    conversationId: string;
+    messageId: string;
+    plan: Extract<MediaPlan, { kind: "process" | "store" }>;
+  },
+  media: { data: Buffer; mimeType: string }
+): Promise<void> {
+  if (!media.mimeType.startsWith("video/")) {
+    await finish(input, { state: "failed", errorCode: "unsupported" });
+    return;
+  }
+  const config = await getAiConfig(input.organizationId);
+  if (!config) {
+    await finish(input, { state: "failed", errorCode: "not_configured" });
+    return;
+  }
+  const result = await readVideo(config, { bytes: media.data, mimeType: media.mimeType });
+  if (!result.ok) {
+    if (result.error !== "empty") {
+      console.warn(`[medios] lectura de video ${result.error} de ${input.messageId} (${media.mimeType}, ${media.data.byteLength} B): ${result.detail}`);
+    }
+    await finish(input, { state: "failed", errorCode: "video" });
+    return;
+  }
+  await finish(input, { state: "ready", summary: result.text });
 }
 
 /* ============================================================

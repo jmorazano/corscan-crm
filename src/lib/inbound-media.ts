@@ -34,7 +34,7 @@ export const MEDIA_TYPES = [
 export type MediaType = (typeof MEDIA_TYPES)[number];
 
 /** Los que se descargan y se le dan a la IA (D10). 027: los PDF también. */
-export type ProcessedMediaType = "audio" | "image" | "document";
+export type ProcessedMediaType = "audio" | "image" | "document" | "video";
 /** 026: se descargan y se guardan para el equipo, sin IA. */
 export type StoredMediaType = "video" | "document";
 
@@ -107,7 +107,12 @@ export function planInboundMedia(
   type: string,
   mediaId: string | null | undefined,
   /** 027: MIME y nombre del webhook, para saber si un documento es PDF. */
-  hint?: { mime?: string | null; fileName?: string | null }
+  hint?: {
+    mime?: string | null;
+    fileName?: string | null;
+    /** 039: la empresa activó «Ver los videos del cliente» (y el agente está prendido). */
+    readVideos?: boolean;
+  }
 ): MediaPlan {
   if (!MEDIA_TYPES.includes(type as MediaType)) return { kind: "none" };
   const media = type as MediaType;
@@ -130,6 +135,11 @@ export function planInboundMedia(
   if (media === "document" && mediaId && looksLikePdf(hint)) {
     return { kind: "process", type: "document", maxBytes: MEDIA_MAX_BYTES.document };
   }
+  // 039: con la opción de la empresa, el video se MIRA (retiene el turno,
+  // como un PDF). Sin ella, solo se guarda para el equipo (026).
+  if (media === "video" && mediaId && hint?.readVideos) {
+    return { kind: "process", type: "video", maxBytes: MEDIA_MAX_BYTES.video };
+  }
   if ((media === "video" || media === "document") && mediaId) {
     return { kind: "store", type: media, maxBytes: MEDIA_MAX_BYTES[media] };
   }
@@ -148,6 +158,8 @@ export const MEDIA_ERRORS = {
   /** 027 */
   document: "No se pudo leer el documento",
   document_too_long: "El PDF es demasiado grande para leerlo (más de 10 MB)",
+  /** 039 */
+  video: "No se pudo ver el video",
   not_configured: "La empresa no tiene IA configurada",
 } as const;
 export type MediaErrorCode = keyof typeof MEDIA_ERRORS;
@@ -171,8 +183,8 @@ export type AttachmentView = {
   text: string | null;
   /** Descripción generada por IA (imágenes; 027: resumen de un PDF). */
   mediaSummary: string | null;
-  /** 038: a qué mensaje reaccionó (solo `reaction`). */
-  details?: { reactionTo?: string } | null;
+  /** 038: a qué mensaje reaccionó (solo `reaction`). 039: si el video se mira. */
+  details?: { reactionTo?: string; videoRead?: boolean } | null;
 };
 
 /**
@@ -228,6 +240,21 @@ export function attachmentMarker(m: AttachmentView): string | null {
     return `${ATTACHMENT_MARKER} ${STICKER_FALLBACK}`;
   }
 
+  // 039: el video mirado entra con su resumen (escrito por la IA, es DATO).
+  // Sin la opción de la empresa el agente no lo ve, pero tampoco contesta
+  // «no puedo abrir el video» como si fuera una falla: sigue con lo demás.
+  if (type === "video") {
+    if (m.mediaState === "ready" && m.mediaSummary?.trim()) {
+      return `${ATTACHMENT_MARKER} El cliente mandó un video: ${m.mediaSummary.trim()}`;
+    }
+    // Con la opción apagada el video también queda `pending` (se baja para
+    // el equipo) y el turno sale igual: ahí no se «está mirando».
+    if (m.mediaState === "pending" && m.details?.videoRead) {
+      return `${ATTACHMENT_MARKER} El cliente mandó un video que todavía se está mirando.`;
+    }
+    return `${ATTACHMENT_MARKER} ${VIDEO_UNSEEN}`;
+  }
+
   // 030: respuesta a una historia (trae texto) o mención (sin texto).
   if (type === "story") {
     const what = m.text?.trim()
@@ -251,6 +278,13 @@ export function attachmentMarker(m: AttachmentView): string | null {
  */
 export const STICKER_FALLBACK =
   "El cliente mandó un sticker (una imagen para expresarse, como un emoji grande). Interpretalo por el contexto de la conversación —suele ser un saludo, un «ok», un agradecimiento o una risa— y seguí con naturalidad. No le digas que no lo podés ver.";
+
+/**
+ * 039: el video que el agente no vio (opción apagada, o no se pudo mirar).
+ * Respondé a lo demás; si el video hace falta, se pide en una frase.
+ */
+export const VIDEO_UNSEEN =
+  "El cliente mandó un video que no viste. Respondé a lo demás que escribió y al contexto de la conversación; solo si para atenderlo hace falta saber qué muestra, pedile con naturalidad que te lo cuente en una frase.";
 
 /** 038: prefijo de la reacción del cliente a un mensaje. */
 export const REACTION_MARKER = "[REACCIÓN]";

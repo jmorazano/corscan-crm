@@ -22,6 +22,7 @@ const profile = {
   replyDelayMs: null,
   teamSilenceMs: null,
   sharedPersonalNumber: false,
+  readVideos: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -32,7 +32,9 @@ function oggBytes(): Buffer {
 export function mockMediaFor(mediaId: string): MockMedia {
   // 026: video y documento del cliente (se guardan para el equipo, sin IA).
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}video`)) {
-    return { bytes: mp4Bytes(), mimeType: "video/mp4" };
+    // 039: el id viaja al final (sigue siendo un MP4 para la firma): el
+    // ai-mock lee `empty` de ahí para el video que no se entiende.
+    return { bytes: Buffer.concat([mp4Bytes(), Buffer.from(` ${mediaId}`, "ascii")]), mimeType: "video/mp4" };
   }
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}document`)) {
     return { bytes: pdfBytes(), mimeType: "application/pdf" };

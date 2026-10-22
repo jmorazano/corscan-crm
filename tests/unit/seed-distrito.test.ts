@@ -101,6 +101,7 @@ describe("seed de Javier (Distrito Inmobiliario)", () => {
         replyDelayMs: null,
         teamSilenceMs: null,
         sharedPersonalNumber: true,
+        readVideos: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       },

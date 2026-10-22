@@ -259,6 +259,24 @@ export async function recordCustomerReaction(input: {
   });
 }
 
+/**
+ * 039: ¿la empresa activó «Ver los videos del cliente»? Solo con el agente
+ * prendido: con el agente apagado nadie va a usar la lectura y cada video
+ * cuesta muchos tokens. Ante un error, no se mira (se guarda igual).
+ */
+async function agentReadsVideos(organizationId: string): Promise<boolean> {
+  try {
+    const rows = await getDb()
+      .select({ enabled: schema.agentProfile.enabled, readVideos: schema.agentProfile.readVideos })
+      .from(schema.agentProfile)
+      .where(scoped(schema.agentProfile.organizationId, organizationId))
+      .limit(1);
+    return Boolean(rows[0]?.enabled && rows[0].readVideos);
+  } catch {
+    return false;
+  }
+}
+
 /** El sobre del adjunto vive en una clave distinta según el tipo. */
 function attachmentOf(msg: WebhookMessage) {
   return msg.image ?? msg.audio ?? msg.video ?? msg.document ?? msg.sticker ?? null;
@@ -369,6 +387,11 @@ export async function ingestInboundCore(input: {
   const plan = planInboundMedia(input.type, mediaRef, {
     mime: input.media?.mime ?? null,
     fileName: input.media?.fileName ?? null,
+    // 039: la consulta solo corre para videos (el resto no la necesita).
+    readVideos:
+      input.type === "video" && mediaRef && !conversation.isTest
+        ? await agentReadsVideos(organizationId)
+        : false,
   });
 
   // Idempotencia dura POR TENANT: mismo (organization_id, wa_message_id) →
@@ -386,7 +409,10 @@ export async function ingestInboundCore(input: {
       text: input.text,
       status: "delivered",
       mediaState: plan.kind === "process" || plan.kind === "store" ? "pending" : null,
-      details: input.details ?? null,
+      details:
+        plan.kind === "process" && plan.type === "video"
+          ? { ...(input.details ?? {}), videoRead: true }
+          : (input.details ?? null),
       waTimestamp,
     })
     .onConflictDoNothing({

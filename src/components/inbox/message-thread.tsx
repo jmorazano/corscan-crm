@@ -755,8 +755,10 @@ function MissingAttachment({ message: m, noun }: { message: MessageDto; noun: st
 function VideoAttachment({ message: m }: { message: MessageDto }) {
   const media = m.media;
   if (!media) return <MissingAttachment message={m} noun="video" />;
+  const watched = m.direction === "in" && m.details?.videoRead === true;
+  const summary = m.direction === "in" ? (m.mediaSummary?.trim() ?? "") : "";
   return (
-    <div className="min-w-[200px]" data-testid="video-message">
+    <div className="min-w-[200px] max-w-[280px]" data-testid="video-message">
       <video
         controls
         playsInline
@@ -770,6 +772,26 @@ function VideoAttachment({ message: m }: { message: MessageDto }) {
           <Linkified text={m.text} />
         </p>
       )}
+      {/* 039: con la opción de la empresa, la IA mira el video del cliente. */}
+      {watched && m.mediaState === "pending" && (
+        <div
+          data-testid="video-reading"
+          className="mt-1.5 flex items-center gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] text-text-3"
+        >
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" strokeWidth={1.7} />
+          <span>Mirando el video…</span>
+        </div>
+      )}
+      {watched && m.mediaState === "failed" && m.error && (
+        <div
+          data-testid="video-read-error"
+          className="mt-1.5 flex items-start gap-1.5 border-t border-brand-soft/60 pt-1.5 text-[12px] leading-snug text-text-3"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+          <span>{m.error}: el agente sigue con lo demás que escribió.</span>
+        </div>
+      )}
+      {summary && <SummaryLine text={summary} label="Lo que se ve: " testId="video-summary" />}
     </div>
   );
 }
