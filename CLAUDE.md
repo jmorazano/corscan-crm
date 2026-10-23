@@ -188,12 +188,12 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **036-agent-resilience** (el agente no deja chats
-colgados: reintenta el envío ante errores transitorios de Meta, retoma al
-vencer la ventana del equipo solo si el cliente quedó esperando, y las
-difusiones del equipo no lo callan; sin migración) — spec, plan y tasks en
+Feature en curso: **040-crm-mcp-server** (Vocero como servidor MCP: el
+propietario conecta Claude Desktop / Claude Code con OAuth propio y
+conversa sobre sus empresas con 12 herramientas de solo lectura; switch por
+empresa apagado por defecto, tokens hasheados, migración 0029) — spec y
+plan en [specs/040-crm-mcp-server/plan.md](specs/040-crm-mcp-server/plan.md).
+Anterior: 036-agent-resilience (el agente no deja chats colgados) —
 [specs/036-agent-resilience/](specs/036-agent-resilience/spec.md).
-Anterior: 035-whatsapp-ad-origin (origen de anuncios Click-to-WhatsApp) —
+Antes: 035-whatsapp-ad-origin (origen de anuncios Click-to-WhatsApp) —
 [specs/035-whatsapp-ad-origin/](specs/035-whatsapp-ad-origin/spec.md).
-Antes: 034-google-sheets (comprobantes a la planilla y planillas de
-consulta) — [specs/034-google-sheets/](specs/034-google-sheets/spec.md).
