@@ -89,6 +89,30 @@ legítimas sobre datos que el negocio ya publicó); pasar el texto por un
 modelo clasificador (no determinista, costo por llamada, y se puede engañar
 igual).
 
+**Endurecimiento tras la revisión de seguridad (26-oct-2026, tres rondas)**: la
+primera versión se esquivaba con alias sin la palabra «alias» adelante,
+teléfonos con «–», «/», «precio:» o dígitos de ancho completo, y enlaces con
+punto de ancho completo, `\` o TLD fuera de una lista. La guarda final:
+normaliza (NFKC, puntos ideográficos, guiones, sin caracteres de formato) y
+desofusca para detectar (números en palabras, «arroba», «punto», « . »); toma
+el host de los enlaces con `new URL` (como un navegador); trata TODO
+«palabra.palabra» con cualquier TLD (Unicode → punycode) como enlace o alias
+y lo exige ya presente (también «[.]», «(.)», «dot»); rechaza IPs sueltas,
+`@usuarios` nuevos, números dichos con palabras compuestas (5+ palabras de
+número seguidas) y el primer término desconocido de 6+ caracteres en las 8
+palabras después de alias/CBU/CVU/transferí/depósito/Mercado Pago; une
+dígitos a través de hasta 6 separadores o una letra suelta y exime fechas
+(también día/mes), horas y rangos de horas, años, e importes con miles (con
+moneda, cualquiera; sin moneda, hasta 7 dígitos: un teléfono tiene 10). Un dato partido entre dos
+cambios NO se une acá a propósito: la guarda de privacidad del envío (025)
+saca del mensaje cualquier número de 8+ dígitos que no esté ENTERO en el
+conocimiento (test en `assistants-teach-guard.test.ts`). Residual aceptado:
+siempre habrá formas creativas de escribir un dato; por eso además las
+herramientas de escritura se declaran como tales (el cliente pide
+confirmación), todo queda auditado y se deshace, y hay tope por hora.
+Falsos positivos aceptados: «Gracias.Saludos» (sin espacio) se rechaza y
+Claude lo reescribe.
+
 ## D4 — Atomicidad: transacción por pedido, cambio por cambio
 
 **Decision**: cada pedido de `teach_agent`/`edit_agent` corre en UNA

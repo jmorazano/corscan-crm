@@ -112,7 +112,7 @@ describe("applyAssistantChanges", () => {
     expect(applied[0]!.ctx).toMatchObject({ organizationId: "org_1", conversationId: null, messageId: null, source: "assistant" });
     expect(out.rejected.map((r) => r.index)).toEqual([1, 2]);
     expect(out.rejected[0]!.reason).toContain("pagos.rapidos");
-    expect(out.rejected[1]!.reason).toContain("Enlace nuevo");
+    expect(out.rejected[1]!.reason).toContain("nuevo (pagos-rapidos.xyz)");
     expect(out.remaining_this_hour).toBe(29);
     expect(executed).toHaveLength(1); // el lock por empresa
   });

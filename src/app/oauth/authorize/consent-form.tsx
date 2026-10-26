@@ -89,13 +89,13 @@ export function ConsentForm({
       <CardContent className="space-y-5">
         <ul className="space-y-1.5 text-sm text-text-2">
           <li>
+            • Puede leer métricas, campañas, contactos y <strong className="text-foreground">los textos de las conversaciones</strong>{" "}
+            de las empresas que elijas.
+          </li>
+          <li>
             • Puede <strong className="text-foreground">enseñarle al agente</strong> de esas empresas (conocimiento,
             reglas, nombre, tono y saludo) cuando se lo pidas; cada cambio se deshace en el panel del Entrenador. No
             puede enviar mensajes ni cambiar ningún otro dato.
-          </li>
-          <li>
-            • Puede leer métricas, campañas, contactos y <strong className="text-foreground">los textos de las conversaciones</strong>{" "}
-            de las empresas que elijas.
           </li>
           <li>• Lo que lea queda en tu cuenta del asistente. Podés cortar el acceso cuando quieras en Ajustes → Asistentes.</li>
         </ul>

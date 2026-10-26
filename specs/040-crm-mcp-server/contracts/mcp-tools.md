@@ -1,5 +1,10 @@
 # Contrato — Servidor MCP `POST /api/mcp`
 
+> **Desde la 041** el catálogo tiene 17 herramientas: estas 12 de lectura más
+> las 5 para enseñarle al agente, con anotaciones POR herramienta e
+> `instructions` que ya no dicen «solo lectura». Ver
+> [specs/041-assistant-teaching/contracts/mcp-tools.md](../../041-assistant-teaching/contracts/mcp-tools.md).
+
 JSON-RPC 2.0, un mensaje por pedido, `Authorization: Bearer vat_…`
 obligatorio (si no, el `401` de [oauth.md](oauth.md) §1). Respuesta siempre
 `Content-Type: application/json`. `GET`/`DELETE` → `405` con
@@ -12,7 +17,7 @@ obligatorio (si no, el `401` de [oauth.md](oauth.md) §1). Respuesta siempre
 | `initialize` | ver abajo |
 | `notifications/*` (sin `id`) | `202` sin cuerpo |
 | `ping` | `{ "result": {} }` |
-| `tools/list` | las 12 herramientas (sin paginar) |
+| `tools/list` | las 12 herramientas (17 desde la 041; sin paginar) |
 | `tools/call` | resultado de la herramienta |
 | otro | error `-32601` |
 | JSON inválido / arreglo | `-32700` / `-32600` |

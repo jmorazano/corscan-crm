@@ -501,8 +501,8 @@ async function teach() {
   });
   const reasons = Object.fromEntries((taught.data?.rejected ?? []).map((r) => [r.index, r.reason]));
   check("3 aplicados", taught.data?.applied?.length === 3, taught.text);
-  check("rechazo: enlace nuevo", /Enlace nuevo \(pagos-rapidos\.xyz\)/.test(reasons[3] ?? ""), reasons[3]);
-  check("rechazo: teléfono nuevo", /Teléfono o correo/.test(reasons[4] ?? ""), reasons[4]);
+  check("rechazo: enlace nuevo", /Enlace( o alias)? nuevo \(pagos-rapidos\.xyz\)/.test(reasons[3] ?? ""), reasons[3]);
+  check("rechazo: teléfono nuevo", /Teléfono/.test(reasons[4] ?? ""), reasons[4]);
   check("rechazo: dato de un contacto", /dato de un contacto/.test(reasons[5] ?? ""), reasons[5]);
   check("rechazo: marcador interno", /marcador interno/.test(reasons[6] ?? ""), reasons[6]);
   check("rechazo: P/R repetida nombra la entrada", /kb_a41check/.test(reasons[7] ?? ""), reasons[7]);

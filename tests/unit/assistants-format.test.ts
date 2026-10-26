@@ -76,10 +76,15 @@ describe("foreign (texto de terceros)", () => {
 });
 
 describe("catálogo completo", () => {
-  it("publica las 12 herramientas de solo lectura del contrato", () => {
+  it("publica las 12 herramientas de lectura de la 040 y las 5 del agente de la 041", () => {
     expect(listToolsForMcp().map((t) => t.name).sort()).toEqual(
       [
         "get_agent_activity",
+        "get_agent_knowledge",
+        "teach_agent",
+        "edit_agent",
+        "list_agent_changes",
+        "undo_agent_change",
         "get_campaign",
         "get_contact",
         "get_conversation",

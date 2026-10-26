@@ -122,15 +122,6 @@ function findUnknown(text: string, corpus: string, extraPhones: readonly string[
 }
 
 /**
- * Teléfonos y correos de `text` que NO están en `corpus` (041: la guarda de
- * lo que Claude le enseña al agente). Mismo detector que la guarda saliente:
- * precios, fechas, superficies y códigos no cuentan.
- */
-export function findUnknownContactData(text: string, corpus: string): string[] {
-  return findUnknown(text, corpus, []).map((f) => f.value);
-}
-
-/**
  * Oraciones CON su separador. A diferencia de la guarda de precios, el corte
  * es solo en `.`/`!`/`?` seguidos de espacio o fin de texto (y en cada salto
  * de línea): un email (`juan.perez@…`), un enlace o un «1.500» no parten la

@@ -7,6 +7,7 @@ import { foldAccents } from "@/lib/assistants/format";
 import {
   checkTeachChange,
   extractContactKeys,
+  extractDottedTokens,
   extractHosts,
   changeTexts,
   type KnownEntry,
@@ -161,7 +162,8 @@ function hostOf(url: unknown): string | null {
 
 /** Hosts que el agente ya puede nombrar: el CRM, lo que está en su conocimiento y sus integraciones. */
 async function allowedHostsFor(organizationId: string, corpus: string, db: DbOrTx): Promise<string[]> {
-  const hosts = new Set<string>(extractHosts(corpus));
+  // Los enlaces del corpus y sus dominios sueltos («altos.com» deja pasar «reservas.altos.com»).
+  const hosts = new Set<string>([...extractHosts(corpus), ...extractDottedTokens(corpus)]);
   const crm = hostOf(getEnv().APP_BASE_URL);
   if (crm) hosts.add(crm);
   const [mcp, meli] = await Promise.all([

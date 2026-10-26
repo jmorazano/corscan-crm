@@ -1,4 +1,4 @@
-# Conversar con el CRM desde Claude — guía del propietario (040)
+# Conversar con el CRM desde Claude — guía del propietario (040 + 041)
 
 Conectá Claude (Claude Desktop, claude.ai o Claude Code) a tu CRM y
 preguntale por tus números y tus conversaciones en lenguaje natural:
@@ -6,8 +6,9 @@ preguntale por tus números y tus conversaciones en lenguaje natural:
 respondieron la campaña de octubre?», «¿qué preguntan los que llegan por
 anuncios?».
 
-El acceso es de **solo lectura**: Claude no puede enviar mensajes, mover
-leads, cambiar etiquetas ni tocar nada. Solo lee.
+Claude **lee** tus datos y, si se lo pedís, **le enseña al agente** de IA
+(sección 6). No puede enviar mensajes, mover leads, cambiar etiquetas ni
+tocar ningún otro dato.
 
 ## Qué necesitás
 
@@ -72,7 +73,8 @@ es cada número.
   conversaciones**, con las transcripciones de los audios y los resúmenes que
   el CRM ya hizo de imágenes, PDFs y videos.
 - **No ve**: los archivos adjuntos en sí, contraseñas ni credenciales, las
-  conversaciones de prueba del Laboratorio ni las del Entrenador.
+  conversaciones de prueba del Laboratorio ni las del Entrenador. Sí ve el
+  perfil y el conocimiento del agente, para poder enseñarle (sección 6).
 - Lo que Claude lee queda en tu cuenta de Claude, bajo las condiciones de
   Anthropic.
 
@@ -91,6 +93,50 @@ En **Ajustes → Asistentes (Claude)** de cada empresa:
 El acceso también se corta solo si cambiás o restablecés tu contraseña, si
 dejás de ser propietario de la empresa o si la conexión pasa 90 días sin
 usarse. Para volver a usarlo, conectá de nuevo desde Claude.
+
+## 6. Enseñarle al agente desde Claude (041)
+
+Lo que descubrís conversando con Claude se lo podés enseñar al agente sin
+abrir el CRM. Con el mismo switch de la sección 1, Claude puede:
+
+- **Agregar**: preguntas y respuestas, bloques de información, o una regla
+  nueva en el tono, las instrucciones o las reglas de escalado.
+- **Corregir o borrar**: una pregunta/respuesta o un bloque que ya estaba, o
+  reescribir el nombre, el tono, las instrucciones, las reglas de escalado o
+  el saludo.
+
+Ejemplos:
+
+- «Fijate qué preguntas derivó el agente esta semana y enseñale lo que no
+  sabía.»
+- «Enseñale que aceptamos mascotas chicas con un cargo de limpieza.»
+- «Corregí lo que sabe sobre el check-in: ahora es desde las 15.»
+- «¿Qué le cambiaste hoy al agente?» · «Deshacé el último cambio.»
+
+Cada cambio **se aplica en el acto**. Claude Desktop te muestra el texto y te
+pide confirmar antes de cada enseñanza (salvo que elijas «permitir siempre»).
+Después lo ves en el CRM:
+
+- **Agente → Conocimiento**: las entradas nuevas con la marca «desde Claude».
+- **Bandeja → Entrenador → panel de cambios**: cada cambio con «desde
+  Claude» y su botón **«Deshacer»**.
+- **Ajustes → Asistentes**: cada enseñanza en el registro, con cuántos
+  cambios se aplicaron y cuántos se rechazaron (sin copiar el texto).
+
+**Lo que el CRM rechaza aunque Claude lo intente** (protege a tus clientes de
+un mensaje armado para engañar a Claude):
+
+- Enlaces, teléfonos, correos, alias o CBU que el agente **no conocía**. Si son
+  del negocio, cargalos una vez desde el CRM (Agente → Conocimiento) y después
+  Claude ya los puede usar.
+- Datos de tus clientes (teléfono, correo o usuario de un contacto).
+- Textos con marcadores internos del sistema.
+- Una pregunta que ya existe (Claude la tiene que corregir, no duplicar).
+- Más de 30 cambios por hora en la misma empresa.
+
+Los precios **sí** se pueden enseñar. Desde Claude solo se deshacen los
+cambios hechos desde Claude; los que hiciste en el CRM se deshacen en el
+Entrenador.
 
 ## Problemas frecuentes
 
