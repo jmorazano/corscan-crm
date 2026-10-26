@@ -26,7 +26,7 @@ para `toJSONSchema`), Better Auth (sesión del consentimiento),
 `node:crypto` — **sin dependencias nuevas** (ni SDK de MCP ni proveedor
 OAuth)
 
-**Storage**: PostgreSQL — migración 0029 con seis tablas `assistant_*`
+**Storage**: PostgreSQL — migración 0029 con siete tablas `assistant_*`
 ([data-model.md](data-model.md))
 
 **Testing**: Vitest (unit de todo lo puro) + guion E2E

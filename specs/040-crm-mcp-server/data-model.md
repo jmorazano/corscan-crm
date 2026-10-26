@@ -1,7 +1,7 @@
 # Data Model — 040 Conversar con el CRM desde Claude
 
 Migración **0029** (`drizzle/0029_assistant_access.sql`, generada con
-`pnpm db:generate`), solo aditiva: seis tablas nuevas, ninguna columna en
+`pnpm db:generate`), solo aditiva: siete tablas nuevas, ninguna columna en
 tablas existentes. Prefijo `assistant_` para no confundir con las tablas
 del conector de 016 (`mcp_integration`, `mcp_tool_call`), donde Vocero es
 *cliente*.
