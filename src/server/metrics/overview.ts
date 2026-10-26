@@ -197,6 +197,8 @@ export async function overviewForWindow(
         receivedWhatsapp: sql<string>`count(*) filter (where ${IS_RECEIVED} and ${isCurrent} and ${c.kind} = 'whatsapp')`,
         receivedInstagram: sql<string>`count(*) filter (where ${IS_RECEIVED} and ${isCurrent} and ${c.kind} = 'instagram')`,
         receivedPrevious: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent})`,
+        receivedPreviousWhatsapp: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'whatsapp')`,
+        receivedPreviousInstagram: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'instagram')`,
         agent: sql<string>`count(*) filter (where ${IS_AGENT} and ${isCurrent})`,
         agentPrevious: sql<string>`count(*) filter (where ${IS_AGENT} and not ${isCurrent})`,
         allSent: sql<string>`count(*) filter (where ${IS_SENT} and ${isCurrent})`,
@@ -240,6 +242,8 @@ export async function overviewForWindow(
       whatsapp,
       instagram,
       previous: Number(t?.receivedPrevious ?? 0),
+      previousWhatsapp: Number(t?.receivedPreviousWhatsapp ?? 0),
+      previousInstagram: Number(t?.receivedPreviousInstagram ?? 0),
       past: pastTotal(series),
     },
     agentSent: {

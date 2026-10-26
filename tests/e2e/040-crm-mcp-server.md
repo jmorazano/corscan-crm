@@ -90,12 +90,50 @@ vuelve al cliente con `error=invalid_request` y `state` · `grant_type`
 no soportado · cliente desconocido en token → 401 `invalid_client` · POST
 del consentimiento sin sesión ni origen → rechazado.
 
+## D — Claude Code real contra local (quickstart §2)
+
+```bash
+claude mcp add --transport http -s local vocero-local http://localhost:3000/api/mcp
+claude mcp login vocero-local --no-browser
+```
+
+`add` → «Needs authentication» (leyó el 401 + metadatos). `login` hizo
+descubrimiento, registro dinámico («Claude Code (vocero-local)», retorno
+loopback), PKCE; el consentimiento se completó en el Browser pane y Claude
+Code canjeó el token por su callback local → «Authenticated» y
+`claude mcp get` → «✔ Connected». En cada arranque: `initialize` 200,
+`notifications/initialized` 202, GET 405 (el canal SSE opcional),
+`tools/list` 200.
+
+Preguntas con `claude -p "…" --allowedTools "mcp__vocero-local__*"` (el CLI
+necesita su propia sesión de Anthropic: `claude auth login`):
+
+1. Empresas y canales → la empresa, WhatsApp conectado, Instagram
+   desconectado.
+2. Mensajes de 30 días contra los 30 anteriores → 51 (45 WA / 6 IG) contra
+   115; tras agregar `previous_whatsapp/instagram`, canal por canal: WA 45
+   vs 107, IG 6 vs 8.
+3. Tiempo de respuesta → mediana 2,3 s, promedio 7,2 s, 38 respuestas,
+   anterior 2,6 s, espera configurada 2 s.
+4. Semana pasada → 8 nuevas (6 WA, 2 IG), 7 respondidas, 14 la anterior
+   (contrastado con SQL directo: 6/5 + 2/2).
+5. Origen del mes → 2 por comentarios de Instagram, 27 directas, 0 por
+   anuncios.
+6. Campaña con más respuestas → «Promo E2E clientes-2025»: 5 / 4 enviados /
+   1 llegó / 1 leyó / 1 respondió / 1 fallido / 1 salteado — idéntico a
+   `GET /api/campaigns/<id>`.
+7. «Mandale un mensaje a los que respondieron» → no envía nada y explica
+   que el conector es de solo lectura.
+
+Aviso del cliente (benigno): `[mcp-sdk] SEP-2352: stored OAuth credential has
+no 'issuer' stamp` — es del almacenamiento de credenciales de Claude Code;
+la conexión funciona igual.
+
 ## Resultado (26-oct-2026)
 
 A, B, C y unhappy: verdes (todas las verificaciones del cliente de prueba
 OK). Paridad exacta con Métricas (los tres períodos) y con el detalle de la
 campaña `cmp_pdelo2atnqdaohp6apw3`.
 
-Pendiente fuera del self-test: Claude Code real contra `localhost`
-(`claude mcp add --transport http …`, quickstart §2) y Claude Desktop real
-contra producción (quickstart §4).
+D (Claude Code real) verde con las siete preguntas. Pendiente fuera del
+self-test: Claude Desktop real contra producción (quickstart §4).

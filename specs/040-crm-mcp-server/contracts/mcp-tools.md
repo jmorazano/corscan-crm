@@ -88,8 +88,8 @@ null), `timezone`.
 ### 2. `get_message_metrics`
 `workspace`, `period`/`from`/`to`, `timezone`. → `period { label, from, to,
 timezone, series_unit, compared_with { from, to, note } }`,
-`received { total, whatsapp, instagram, previous, change_ratio,
-from_phone_history }`, `sent { total, by_agent, by_agent_previous }`,
+`received { total, whatsapp, instagram, previous, previous_whatsapp,
+previous_instagram, change_ratio, from_phone_history }`, `sent { total, by_agent, by_agent_previous }`,
 `conversations_started { total, whatsapp, instagram, previous, answered }`
 (primer mensaje que no viene del historial importado dentro del período;
 `answered` = tuvo al menos una respuesta de la empresa),

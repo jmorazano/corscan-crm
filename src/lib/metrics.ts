@@ -191,6 +191,9 @@ export type MetricsOverview = {
     whatsapp: number;
     instagram: number;
     previous: number;
+    /** 040: el período anterior por canal (los asistentes comparan canal por canal). */
+    previousWhatsapp: number;
+    previousInstagram: number;
     /**
      * Recibidos del historial de WhatsApp importado del período (los
      * mismos de `series[].past`). Van APARTE: no suman a `total` ni entran en la

@@ -106,6 +106,8 @@ const getMessageMetrics: AssistantTool = {
           whatsapp: overview.received.whatsapp,
           instagram: overview.received.instagram,
           previous: overview.received.previous,
+          previous_whatsapp: overview.received.previousWhatsapp,
+          previous_instagram: overview.received.previousInstagram,
           change_ratio: changeRatio(overview.received.total, overview.received.previous),
           from_phone_history: overview.received.past,
         },

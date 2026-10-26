@@ -49,6 +49,8 @@ vi.mock("@/lib/db", async (importOriginal) => {
               receivedWhatsapp: "7",
               receivedInstagram: "3",
               receivedPrevious: "5",
+              receivedPreviousWhatsapp: "4",
+              receivedPreviousInstagram: "1",
               agent: "6",
               agentPrevious: "4",
               allSent: "8",
@@ -97,7 +99,15 @@ describe("getMetricsOverview", () => {
   it("convierte los números y rellena la serie", async () => {
     const o = await getMetricsOverview("org_a", "day", "America/Argentina/Buenos_Aires", NOW);
     // El pasado importado va aparte: no toca total ni comparación.
-    expect(o.received).toEqual({ total: 10, whatsapp: 7, instagram: 3, previous: 5, past: 55 });
+    expect(o.received).toEqual({
+      total: 10,
+      whatsapp: 7,
+      instagram: 3,
+      previous: 5,
+      previousWhatsapp: 4,
+      previousInstagram: 1,
+      past: 55,
+    });
     expect(o.agentSent).toEqual({ total: 6, previous: 4, allSent: 8 });
     expect(o.responseTime).toEqual({
       medianMs: 24000,

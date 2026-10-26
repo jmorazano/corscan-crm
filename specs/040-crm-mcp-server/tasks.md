@@ -87,7 +87,7 @@ recibe solo la empresa tildada.
 - [X] T029 [US1] `src/app/api/mcp/route.ts`: POST → `resolveAssistantCall`; sin token o inválido → 401 con `wwwAuthenticate` (T009); límite 60/min por conexión (`assistant:<grantId>`) → `toolError`/429 según el punto; delega en `handleMcpRequest`; GET/DELETE → 405 `Allow: POST`; nunca loguea el bearer
 - [X] T030 [US1] Herramienta `list_workspaces` en `src/server/assistants/tools/workspaces.ts` (empresas de la conexión con `active`, `inactive_reason`, canales conectados —número con prefijo visible, @usuario—, `timezone`) y registrarla en `tools/index.ts`
 - [X] T031 [US1] Ajustes mínimo: `src/app/api/settings/assistants/route.ts` GET/PATCH (`withOwner`, contrato settings-api) y `src/app/(app)/settings/assistants/page.tsx` (`requireOwnerPage`) + `src/components/settings/assistants-client.tsx` con el switch, la dirección `<APP_BASE_URL>/api/mcp` con «Copiar» y los pasos de Claude Desktop y Claude Code (quickstart §3); entrada «Asistentes (Claude)» solo owner en `src/components/settings/settings-nav.tsx`
-- [ ] T032 [US1] Conducir la sección A del guion con el cliente de prueba y el Browser pane hasta verde; luego conectar Claude Code real contra `http://localhost:3000/api/mcp` (quickstart §2) y preguntar «¿a qué empresas tenés acceso?» — **parcial**: sección A verde con el cliente de prueba + Browser pane; falta Claude Code real (agrega el servidor a la config del usuario: lo corre el dueño)
+- [X] T032 [US1] Conducir la sección A del guion con el cliente de prueba y el Browser pane hasta verde; luego conectar Claude Code real contra `http://localhost:3000/api/mcp` (quickstart §2) y preguntar «¿a qué empresas tenés acceso?» — Claude Code real conectado por OAuth y probado con 7 preguntas (guion §D); surgió y se agregó `previous_whatsapp/instagram`
 
 **Checkpoint**: Claude Code local conecta y lista empresas.
 
@@ -274,7 +274,7 @@ implementadas en el worktree `.claude/worktrees/040-crm-mcp-server`, rama
 la BD local. Gate verde: `tsc`, `eslint`, `vitest` (176 archivos, 1869
 tests; 7 archivos nuevos) y `next build`. E2E `tests/e2e/040-crm-mcp-server.md`
 A, B, C y unhappy verdes, con paridad exacta contra Métricas y el detalle de
-campaña. Pendiente antes de producción: OK del dueño para mergear y
-deployar, Claude Code real contra local (T032) y la prueba real con Claude
+campaña. Claude Code real contra local probado (T032, guion §D). Pendiente antes de
+producción: OK del dueño para mergear y deployar y la prueba real con Claude
 Desktop en la empresa del operador (checkpoint MVP). Fases 6–8 (US4, US5,
 cierre) sin empezar.
