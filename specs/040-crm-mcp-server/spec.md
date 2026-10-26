@@ -102,7 +102,7 @@ campaña.
 1. **Given** una empresa autorizada, **When** se piden las métricas de un
    período (hoy, semana, mes, año o un rango de fechas), **Then** el
    resultado trae mensajes recibidos y enviados por canal, conversaciones
-   nuevas, tiempo de respuesta (mediana y percentil 90) y la comparación con
+   nuevas, tiempo de respuesta (mediana y promedio) y la comparación con
    el período anterior de igual duración, con los mismos criterios que
    Métricas: sin conversaciones de prueba ni del Entrenador, sin reacciones,
    y el historial importado del celular informado aparte y fuera de los
@@ -345,7 +345,7 @@ los eventos del período con su motivo.
   (WhatsApp, Instagram), zona horaria usada y si el acceso está activo.
 - **FR-011**: Métricas de mensajes por período (hoy, semana, mes, año o
   rango de fechas): recibidos y enviados por canal, conversaciones nuevas,
-  tiempo de respuesta (mediana y p90), comparación con el período anterior y
+  tiempo de respuesta (mediana y promedio, como Métricas), comparación con el período anterior y
   serie por día/semana/mes, con los MISMOS criterios y resultados que la
   pantalla Métricas (024 y su ajuste del historial).
 - **FR-012**: Conversaciones por origen en un período: anuncios de WhatsApp

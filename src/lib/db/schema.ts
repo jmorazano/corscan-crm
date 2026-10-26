@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -1686,4 +1687,149 @@ export const paymentReceipt = pgTable(
     index("payment_receipt_org_created_idx").on(t.organizationId, t.createdAt),
     index("payment_receipt_org_dedup_idx").on(t.organizationId, t.dedupKey),
   ]
+);
+
+/* ============================================================
+ * 040 — Asistentes del usuario (Vocero como servidor MCP).
+ * Prefijo `assistant_` para no confundir con el conector de 016, donde
+ * Vocero es CLIENTE. Las tablas de la autorización (cliente, conexión,
+ * código, token) son de PLATAFORMA —de una persona o una app, como
+ * `user`/`session`—; la pertenencia a empresas vive en
+ * `assistant_grant_org` (ver specs/040-crm-mcp-server/plan.md).
+ * ============================================================ */
+
+/** Switch «Permitir asistentes externos» por empresa. Sin fila = apagado. */
+export const assistantSettings = pgTable("assistant_settings", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  updatedByUserId: text("updated_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/** Cliente registrado por registro dinámico (RFC 7591). `id` = client_id. */
+export const assistantClient = pgTable("assistant_client", {
+  id: text("id").primaryKey(),
+  /** Lo que mandó el cliente: DATO NO CONFIABLE (cualquiera se llama «Claude»). */
+  clientName: text("client_name"),
+  redirectUris: text("redirect_uris").array().notNull(),
+  softwareId: text("software_id"),
+  softwareVersion: text("software_version"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  /** NULL a las 24 h = nunca autorizado → el barrido lo borra. */
+  lastAuthorizedAt: timestamp("last_authorized_at"),
+});
+
+/** La conexión: el permiso que UNA persona dio a UN cliente. */
+export const assistantGrant = pgTable(
+  "assistant_grant",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => assistantClient.id, { onDelete: "cascade" }),
+    /** Derivada del retorno, no del nombre registrado (research D4). */
+    clientLabel: text("client_label").notNull(),
+    scope: text("scope").notNull().default("crm.read"),
+    resource: text("resource").notNull(),
+    /** Monotónica: active → revoked | expired; nunca vuelve. */
+    status: text("status", { enum: ["active", "revoked", "expired"] })
+      .notNull()
+      .default("active"),
+    revokedReason: text("revoked_reason", {
+      enum: ["user", "owner", "password_change", "refresh_reuse", "code_reuse", "idle"],
+    }),
+    revokedByUserId: text("revoked_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [index("assistant_grant_user_status_idx").on(t.userId, t.status)]
+);
+
+/** Empresas incluidas en una conexión (elegidas en el consentimiento). */
+export const assistantGrantOrg = pgTable(
+  "assistant_grant_org",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => assistantGrant.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.grantId, t.organizationId] }),
+    index("assistant_grant_org_org_idx").on(t.organizationId, t.grantId),
+  ]
+);
+
+/** Código de autorización: solo el hash, 5 min, un solo uso. */
+export const assistantAuthCode = pgTable("assistant_auth_code", {
+  codeHash: text("code_hash").primaryKey(),
+  clientId: text("client_id")
+    .notNull()
+    .references(() => assistantClient.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  organizationIds: text("organization_ids").array().notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  resource: text("resource").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  /** La conexión creada al canjearlo (se revoca si el código se reusa). */
+  grantId: text("grant_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/** Tokens de acceso y de renovación: solo SHA-256, nunca recuperables. */
+export const assistantToken = pgTable(
+  "assistant_token",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => assistantGrant.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["access", "refresh"] }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    /** Solo refresh: canjeado (rotación de un solo uso). */
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("assistant_token_grant_idx").on(t.grantId)]
+);
+
+/** Registro de consultas por empresa (sin el contenido devuelto). */
+export const assistantAccessLog = pgTable(
+  "assistant_access_log",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    grantId: text("grant_id").references(() => assistantGrant.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    clientLabel: text("client_label").notNull(),
+    tool: text("tool").notNull(),
+    summary: text("summary").notNull(),
+    outcome: text("outcome", { enum: ["ok", "denied", "error"] }).notNull(),
+    reason: text("reason", {
+      enum: ["not_authorized", "disabled", "not_owner", "invalid_args", "not_found", "rate_limited", "internal"],
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("assistant_access_log_org_created_idx").on(t.organizationId, t.createdAt)]
 );

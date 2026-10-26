@@ -168,8 +168,11 @@ sola empresa activa, se puede omitir.
 **Decisión**: `tools/call` devuelve `structuredContent` (objeto) **y** el
 mismo objeto como JSON compacto en `content[0].text` (clientes que no leen
 `structuredContent`). Cada herramienta declara `inputSchema` y
-`outputSchema` y `annotations: { readOnlyHint: true, openWorldHint: false,
-destructiveHint: false, idempotentHint: true }`.
+`annotations: { readOnlyHint: true, openWorldHint: false,
+destructiveHint: false, idempotentHint: true }`. **Sin `outputSchema`**
+(cambio en la implementación): un cliente que lo valide estricto rechazaría
+la llamada ante cualquier diferencia de forma; la forma vive en el
+contrato.
 
 Todo campo con texto escrito por un tercero (texto de mensajes, nombres de
 contactos, captions, comentarios, transcripciones, resúmenes de adjuntos)

@@ -6,6 +6,7 @@ import {
   fillSeries,
   metricsWindow,
   type MetricsOverview,
+  type MetricsWindow,
   pastTotal,
   type MetricsRange,
 } from "@/lib/metrics";
@@ -173,7 +174,20 @@ async function overviewIn(
   timeZone: string,
   now: Date
 ): Promise<MetricsOverview> {
-  const w = metricsWindow(range, timeZone, now);
+  const overview = await overviewForWindow(organizationId, metricsWindow(range, timeZone, now), timeZone);
+  return { range, ...overview };
+}
+
+/**
+ * Las mismas cifras de la pantalla para CUALQUIER ventana (040: los
+ * asistentes piden «la semana pasada» o un rango de fechas). La pantalla de
+ * Métricas sigue entrando por `getMetricsOverview(range)`.
+ */
+export async function overviewForWindow(
+  organizationId: string,
+  w: MetricsWindow,
+  timeZone: string
+): Promise<Omit<MetricsOverview, "range">> {
   const db = getDb();
   const isCurrent = sql`${m.createdAt} >= ${ts(w.start)}`;
 
@@ -219,7 +233,6 @@ async function overviewIn(
   );
 
   return {
-    range,
     timeZone,
     unit: w.unit,
     received: {

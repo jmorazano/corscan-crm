@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gt, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -8,6 +8,7 @@ import {
   deleteCampaign,
 } from "@/server/campaigns/manage";
 import { getQuotaUsage } from "@/server/campaigns/quota";
+import { campaignCounts } from "@/server/campaigns/stats";
 import { previewSegment } from "@/server/campaigns/recipients";
 
 export const dynamic = "force-dynamic";
@@ -78,43 +79,7 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   const nextCursor =
     recipients.length > PAGE_SIZE ? page[page.length - 1]!.recipient.id : null;
 
-  const statusCounts = await db
-    .select({ status: schema.campaignRecipient.status, n: count() })
-    .from(schema.campaignRecipient)
-    .where(
-      and(
-        eq(schema.campaignRecipient.organizationId, session.organizationId),
-        eq(schema.campaignRecipient.campaignId, campaign.id)
-      )
-    )
-    .groupBy(schema.campaignRecipient.status);
-  const deliveryCounts = await db
-    .select({ status: schema.message.status, n: count() })
-    .from(schema.campaignRecipient)
-    .innerJoin(
-      schema.message,
-      eq(schema.campaignRecipient.messageId, schema.message.id)
-    )
-    .where(
-      and(
-        eq(schema.campaignRecipient.organizationId, session.organizationId),
-        eq(schema.campaignRecipient.campaignId, campaign.id)
-      )
-    )
-    .groupBy(schema.message.status);
-  const repliedRows = await db
-    .select({ n: count() })
-    .from(schema.campaignRecipient)
-    .where(
-      and(
-        eq(schema.campaignRecipient.organizationId, session.organizationId),
-        eq(schema.campaignRecipient.campaignId, campaign.id),
-        isNotNull(schema.campaignRecipient.repliedAt)
-      )
-    );
-
-  const s = Object.fromEntries(statusCounts.map((r) => [r.status, r.n]));
-  const d = Object.fromEntries(deliveryCounts.map((r) => [r.status, r.n]));
+  const counts = await campaignCounts(session.organizationId, campaign.id);
 
   const eligibleNow =
     campaign.status === "draft"
@@ -140,21 +105,7 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
       cancelledAt: campaign.cancelledAt?.toISOString() ?? null,
       eligibleNow,
     },
-    counts: {
-      total:
-        (s.pending ?? 0) +
-        (s.sending ?? 0) +
-        (s.sent ?? 0) +
-        (s.failed ?? 0) +
-        (s.skipped ?? 0),
-      pending: (s.pending ?? 0) + (s.sending ?? 0),
-      sent: s.sent ?? 0,
-      delivered: d.delivered ?? 0,
-      read: d.read ?? 0,
-      replied: repliedRows[0]?.n ?? 0,
-      failed: (s.failed ?? 0) + (d.failed ?? 0),
-      skipped: s.skipped ?? 0,
-    },
+    counts,
     recipients: page.map((r) => ({
       contactId: r.recipient.contactId,
       name: r.contactName,

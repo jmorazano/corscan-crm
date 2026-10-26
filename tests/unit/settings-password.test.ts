@@ -40,6 +40,11 @@ vi.mock("@/lib/auth", () => ({
   getAuth: () => ({ api: { changePassword: changePasswordMock } }),
 }));
 
+const revokeGrantsMock = vi.fn(async (_userId: string, _reason?: string) => 0);
+vi.mock("@/server/assistants/grants", () => ({
+  revokeAllGrantsForUser: (userId: string, reason?: string) => revokeGrantsMock(userId, reason),
+}));
+
 vi.mock("@/lib/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db")>();
   return {
@@ -111,6 +116,8 @@ describe("POST /api/settings/password", () => {
     expect(call.body.revokeOtherSessions).toBe(true);
     expect(call.body.newPassword).toBe("nueva-segura-1");
     expect(userUpdates[0]).toMatchObject({ mustChangePassword: false });
+    // 040 (D14): los asistentes conectados pierden el acceso.
+    expect(revokeGrantsMock).toHaveBeenCalledWith(expect.any(String), "password_change");
     // La cookie de la sesión nueva viaja en la respuesta: sin esto el
     // navegador queda con una cookie muerta y rebota a /login.
     expect(res.headers.get("set-cookie")).toContain("vocero.session=");

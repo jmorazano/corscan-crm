@@ -56,7 +56,10 @@ true` y un texto claro, sin trazas:
 ```
 
 Toda herramienta: `annotations: { readOnlyHint: true, destructiveHint:
-false, idempotentHint: true, openWorldHint: false }`.
+false, idempotentHint: true, openWorldHint: false }`. No se declara
+`outputSchema` (research D8): si un cliente lo valida estricto, una
+diferencia de forma tumbaría la llamada; la forma de cada resultado es la
+de este contrato.
 
 Parámetros comunes:
 - `workspace` (string): id `org_…` o nombre/slug exacto. Opcional solo si
@@ -83,20 +86,24 @@ Sin parámetros. → `workspaces[]`: `id`, `name`, `slug`, `active`
 null), `timezone`.
 
 ### 2. `get_message_metrics`
-`workspace`, `period`/`from`/`to`, `timezone`. → `period { from, to,
-label, unit }`, `received { total, whatsapp, instagram, previous,
-change_ratio, from_phone_history }`, `sent { total, by_agent,
-by_agent_previous }`, `new_conversations { total, whatsapp, instagram,
-previous }`, `response_time { median_ms, p90_ms, samples,
-configured_delay_ms }`, `series[] { key, label, whatsapp, instagram,
-from_phone_history }`, `notes[]` (p. ej. «El historial importado del
-celular no suma a los totales»). Mismas definiciones que Métricas (024).
+`workspace`, `period`/`from`/`to`, `timezone`. → `period { label, from, to,
+timezone, series_unit, compared_with { from, to, note } }`,
+`received { total, whatsapp, instagram, previous, change_ratio,
+from_phone_history }`, `sent { total, by_agent, by_agent_previous }`,
+`conversations_started { total, whatsapp, instagram, previous, answered }`
+(primer mensaje que no viene del historial importado dentro del período;
+`answered` = tuvo al menos una respuesta de la empresa),
+`agent_response_time { median_ms, average_ms, samples, previous_median_ms,
+configured_wait_ms }`, `series[] { key, label, whatsapp, instagram,
+from_phone_history }`, `notes[]`. Mismas definiciones que Métricas (024):
+la pantalla muestra mediana y promedio, no p90.
 
 ### 3. `get_conversation_origins`
 `workspace`, período. → `origins[] { kind: "whatsapp_ad" |
-"instagram_link" | "instagram_comment" | "instagram_ad" | "organic",
-label, conversations, with_reply_from_team_or_agent }`, y para anuncios
-`top_ads[] { title, conversations }` (máx. 10).
+"instagram_link" | "instagram_comment" | "instagram_ad" | "instagram_story"
+| "organic", label, conversations, whatsapp, instagram }` (conversaciones
+CREADAS en el período, por el origen marcado en la conversación) y
+`top_ads[] { title, conversations }` (máx. 10), `notes[]`.
 
 ### 4. `list_campaigns`
 `workspace`, `status[]` (`draft`·`running`·`paused`·`completed`·
@@ -112,7 +119,8 @@ default `none`), `cursor`, `limit`. →
 `campaign { id, name, template, status, paused_reason, tag_filter,
 created_at, launched_at, completed_at, cancelled_at }`,
 `counts { total, pending, sent, delivered, read, reached, replied,
-failed, skipped, opted_out }`, `rates { reached_over_sent,
+failed, skipped, opted_out }` (`sent` es el estado del destinatario e
+incluye a los entregados y leídos), `rates { reached_over_sent,
 replied_over_reached }`, `failure_reasons[] { reason, count }`,
 `definitions` (qué significa cada cifra: «delivered = entregado y todavía
 no leído», «reached = delivered + read»), `recipients[] { contact_id,

@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { isSuperAdminEmail } from "@/server/auth/super-admin";
 import { isMemberOf } from "@/server/auth/membership";
 import type { AdminDbConn } from "@/server/admin/organizations";
+import { revokeAllGrantsForUser } from "@/server/assistants/grants";
 
 /**
  * Gestión de usuarios por el super admin (US5, contrato admin-api.md):
@@ -202,6 +203,8 @@ export async function resetUserPassword(
   await db
     .delete(schema.session)
     .where(eq(schema.session.userId, input.userId));
+  // 040 (D14): y los asistentes conectados por esa cuenta.
+  await revokeAllGrantsForUser(input.userId, "password_change");
 
   return { ok: true };
 }

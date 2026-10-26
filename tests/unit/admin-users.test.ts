@@ -32,6 +32,12 @@ const hashMock = vi.fn();
 const findAccountsMock = vi.fn();
 const updatePasswordMock = vi.fn();
 const createAccountMock = vi.fn();
+const revokeGrantsMock = vi.fn(async (_userId: string, _reason?: string) => 0);
+
+// 040: el reset de la temporal también corta los asistentes conectados.
+vi.mock("@/server/assistants/grants", () => ({
+  revokeAllGrantsForUser: (userId: string, reason?: string) => revokeGrantsMock(userId, reason),
+}));
 
 vi.mock("@/lib/auth", () => ({
   getAuth: () => ({
@@ -270,6 +276,8 @@ describe("resetUserPassword", () => {
     expect(state.session).toEqual([
       expect.objectContaining({ id: "s_ajena", userId: "u_otro" }),
     ]);
+    // 040 (D14): y los asistentes conectados por esa cuenta.
+    expect(revokeGrantsMock).toHaveBeenCalledWith("u_1", "password_change");
   });
 
   it("usuario sin cuenta credential → la crea (patrón del plugin admin)", async () => {

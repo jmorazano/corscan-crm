@@ -23,5 +23,9 @@ export async function register(): Promise<void> {
     // memoria; un reinicio las reprograma.
     const { rescheduleTeamResumes } = await import("./server/ai/pipeline");
     await rescheduleTeamResumes();
+    // 040: barrido diario de los asistentes (códigos y tokens vencidos,
+    // conexiones sin uso, registro de más de 90 días).
+    const { startAssistantsSweepTicker } = await import("./server/assistants/grants");
+    startAssistantsSweepTicker();
   }
 }

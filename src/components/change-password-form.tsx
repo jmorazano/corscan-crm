@@ -13,7 +13,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function ChangePasswordForm() {
+/** `next`: vuelta segura (ya validada en el servidor) al consentimiento de un asistente (040). */
+export function ChangePasswordForm({ next = null }: { next?: string | null } = {}) {
   const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -50,7 +51,7 @@ export function ChangePasswordForm() {
       );
       return;
     }
-    router.push("/inbox");
+    router.push(next ?? "/inbox");
     router.refresh();
   }
 

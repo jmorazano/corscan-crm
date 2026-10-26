@@ -99,6 +99,9 @@ function createAuth() {
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
         await clearMustChangePassword(user.id);
+        // 040 (D14): restablecer la contraseña corta también los asistentes.
+        const { revokeAllGrantsForUser } = await import("@/server/assistants/grants");
+        await revokeAllGrantsForUser(user.id, "password_change");
       },
     },
     // 029: el token de recuperación se guarda HASHEADO: una copia de la base

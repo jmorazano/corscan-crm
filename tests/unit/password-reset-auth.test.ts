@@ -26,6 +26,10 @@ let captured: AuthOptions | null = null;
 let mailConfigured = true;
 const queueSpy = vi.fn();
 const clearSpy = vi.fn(async (_userId: string) => {});
+const revokeGrantsSpy = vi.fn(async (_userId: string, _reason?: string) => 0);
+vi.mock("@/server/assistants/grants", () => ({
+  revokeAllGrantsForUser: (userId: string, reason?: string) => revokeGrantsSpy(userId, reason),
+}));
 
 vi.mock("better-auth", () => ({
   betterAuth: (opts: AuthOptions) => {
@@ -103,6 +107,8 @@ describe("opciones de Better Auth", () => {
   it("onPasswordReset limpia must_change_password", async () => {
     await options().emailAndPassword.onPasswordReset({ user: { id: "u_9" } });
     expect(clearSpy).toHaveBeenCalledWith("u_9");
+    // 040 (D14): restablecer la contraseña corta también los asistentes.
+    expect(revokeGrantsSpy).toHaveBeenCalledWith("u_9", "password_change");
   });
 });
 

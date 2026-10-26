@@ -332,3 +332,160 @@ export function niceTicks(max: number, target = 4): number[] {
   for (let v = 0; v <= top; v += safeStep) ticks.push(v);
   return ticks;
 }
+
+/* ============================================================
+ * 040 — Períodos que piden los asistentes («la semana pasada», un rango).
+ * Mismas definiciones que la pantalla: los tres períodos de Métricas son
+ * EXACTAMENTE `metricsWindow(day|week|year)` (paridad con la UI).
+ * ============================================================ */
+
+export const ASSISTANT_PERIODS = [
+  "today",
+  "yesterday",
+  "this_week",
+  "last_week",
+  "this_month",
+  "last_month",
+  "last_30_days",
+  "last_12_weeks",
+  "last_12_months",
+  "this_year",
+] as const;
+export type AssistantPeriod = (typeof ASSISTANT_PERIODS)[number];
+
+/** Tope de un rango `from`/`to` (días calendario, `to` inclusive). */
+export const MAX_CUSTOM_PERIOD_DAYS = 400;
+
+export type PeriodWindow = MetricsWindow & {
+  /** Primer día local incluido y último día local incluido (YYYY-MM-DD). */
+  fromKey: string;
+  toKey: string;
+  label: string;
+};
+
+const PERIOD_LABELS: Record<AssistantPeriod, string> = {
+  today: "Hoy",
+  yesterday: "Ayer",
+  this_week: "Esta semana",
+  last_week: "La semana pasada",
+  this_month: "Este mes",
+  last_month: "El mes pasado",
+  last_30_days: RANGE_SPECS.day.period,
+  last_12_weeks: RANGE_SPECS.week.period,
+  last_12_months: RANGE_SPECS.year.period,
+  this_year: "Este año",
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function mondayOf(key: string): string {
+  const d = parseDateKey(key)!;
+  const weekday = new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay();
+  return addDaysToKey(key, -((weekday + 6) % 7));
+}
+
+function daysBetween(fromKey: string, toKeyExclusive: string): number {
+  const a = parseDateKey(fromKey)!;
+  const b = parseDateKey(toKeyExclusive)!;
+  return Math.round(
+    (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / DAY_MS
+  );
+}
+
+/** Unidad de la serie según el largo: ≤ 62 días → día, ≤ 26 semanas → semana. */
+export function unitForDays(days: number): BucketUnit {
+  if (days <= 62) return "day";
+  if (days <= 26 * 7) return "week";
+  return "month";
+}
+
+function bucketKeys(fromKey: string, toKeyExclusive: string, unit: BucketUnit): string[] {
+  const keys: string[] = [];
+  if (unit === "day") {
+    for (let k = fromKey; k < toKeyExclusive; k = addDaysToKey(k, 1)) keys.push(k);
+  } else if (unit === "week") {
+    for (let k = mondayOf(fromKey); k < toKeyExclusive; k = addDaysToKey(k, 7)) keys.push(k);
+  } else {
+    for (let k = `${fromKey.slice(0, 7)}-01`; k < toKeyExclusive; k = addMonthsToKey(k, 1)) keys.push(k);
+  }
+  return keys;
+}
+
+/** Ventana de [fromKey, toKeyExclusive) local; compara contra la misma duración transcurrida. */
+function customWindow(
+  fromKey: string,
+  toKeyExclusive: string,
+  timeZone: string,
+  now: Date,
+  label: string
+): PeriodWindow {
+  const unit = unitForDays(daysBetween(fromKey, toKeyExclusive));
+  const start = keyToUtc(timeZone, fromKey);
+  const end = keyToUtc(timeZone, toKeyExclusive);
+  const elapsed = Math.max(0, Math.min(now.getTime(), end.getTime()) - start.getTime());
+  return {
+    unit,
+    keys: bucketKeys(fromKey, toKeyExclusive, unit),
+    start,
+    end,
+    previousStart: new Date(start.getTime() - elapsed),
+    fromKey,
+    toKey: addDaysToKey(toKeyExclusive, -1),
+    label,
+  };
+}
+
+export function periodWindow(
+  input: { period: AssistantPeriod } | { from: string; to: string },
+  timeZone: string,
+  now: Date
+): { ok: true; window: PeriodWindow } | { ok: false; message: string } {
+  const today = localDateKey(timeZone, now);
+  if ("from" in input) {
+    if (!parseDateKey(input.from) || !parseDateKey(input.to)) {
+      return { ok: false, message: "Las fechas van como AAAA-MM-DD (por ejemplo 2026-10-01)." };
+    }
+    if (input.to < input.from) {
+      return { ok: false, message: "La fecha «to» no puede ser anterior a «from»." };
+    }
+    const toExclusive = addDaysToKey(input.to, 1);
+    if (daysBetween(input.from, toExclusive) > MAX_CUSTOM_PERIOD_DAYS) {
+      return { ok: false, message: `El rango puede tener hasta ${MAX_CUSTOM_PERIOD_DAYS} días.` };
+    }
+    return {
+      ok: true,
+      window: customWindow(input.from, toExclusive, timeZone, now, `Del ${input.from} al ${input.to}`),
+    };
+  }
+
+  const label = PERIOD_LABELS[input.period];
+  const tomorrow = addDaysToKey(today, 1);
+  switch (input.period) {
+    case "last_30_days":
+    case "last_12_weeks":
+    case "last_12_months": {
+      const range: MetricsRange =
+        input.period === "last_30_days" ? "day" : input.period === "last_12_weeks" ? "week" : "year";
+      const w = metricsWindow(range, timeZone, now);
+      return { ok: true, window: { ...w, fromKey: w.keys[0]!, toKey: today, label } };
+    }
+    case "today":
+      return { ok: true, window: customWindow(today, tomorrow, timeZone, now, label) };
+    case "yesterday":
+      return { ok: true, window: customWindow(addDaysToKey(today, -1), today, timeZone, now, label) };
+    case "this_week":
+      return { ok: true, window: customWindow(mondayOf(today), tomorrow, timeZone, now, label) };
+    case "last_week": {
+      const monday = mondayOf(today);
+      return { ok: true, window: customWindow(addDaysToKey(monday, -7), monday, timeZone, now, label) };
+    }
+    case "this_month":
+      return { ok: true, window: customWindow(`${today.slice(0, 7)}-01`, tomorrow, timeZone, now, label) };
+    case "last_month": {
+      const first = `${today.slice(0, 7)}-01`;
+      return { ok: true, window: customWindow(addMonthsToKey(first, -1), first, timeZone, now, label) };
+    }
+    case "this_year":
+      return { ok: true, window: customWindow(`${today.slice(0, 4)}-01-01`, tomorrow, timeZone, now, label) };
+  }
+}

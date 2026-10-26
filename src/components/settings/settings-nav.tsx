@@ -20,6 +20,8 @@ const TABS = [
   { href: "/settings/notifications", label: "Notificaciones" },
   // 014: claves y guía de la API pública de envíos.
   { href: "/settings/api", label: "API" },
+  // 040: asistentes del propietario (Claude) conectados por MCP.
+  { href: "/settings/assistants", label: "Asistentes (Claude)" },
   // Cambio de contraseña propio (FR-017): disponible siempre, no solo en el
   // primer login forzado. Vive en el grupo (auth), fuera del shell.
   { href: "/change-password", label: "Mi contraseña" },

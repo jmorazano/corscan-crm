@@ -42,6 +42,9 @@ const prefixes = {
   sheetsIntegration: "shint",
   sheetSource: "shsrc",
   paymentReceipt: "prc",
+  assistantClient: "acl",
+  assistantGrant: "agr",
+  assistantAccessLog: "alog",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

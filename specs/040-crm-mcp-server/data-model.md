@@ -42,7 +42,7 @@ para «conexiones con acceso a mi empresa».
 | `tool` | text NOT NULL | nombre de la herramienta |
 | `summary` | text NOT NULL | lenguaje claro, ≤ 200 caracteres, sin contenido devuelto |
 | `outcome` | text enum `ok` · `denied` · `error` | |
-| `reason` | text NULL | `not_authorized` · `disabled` · `not_owner` · `invalid_args` · `rate_limited` · `internal` |
+| `reason` | text NULL | `not_authorized` · `disabled` · `not_owner` · `invalid_args` · `not_found` · `rate_limited` · `internal` |
 | `created_at` | timestamp NOT NULL | |
 
 Índice (`organization_id`, `created_at` desc). Purga > 90 días.

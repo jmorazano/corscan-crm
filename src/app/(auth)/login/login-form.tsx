@@ -11,9 +11,16 @@ import { Label } from "@/components/ui/label";
 
 /**
  * Formulario de ingreso. `passwordReset`: se vuelve acá tras elegir una
- * contraseña nueva por el enlace del correo (029).
+ * contraseña nueva por el enlace del correo (029). `next`: vuelta segura (ya
+ * validada en el servidor) al consentimiento de un asistente (040).
  */
-export function LoginForm({ passwordReset }: { passwordReset: boolean }) {
+export function LoginForm({
+  passwordReset,
+  next = null,
+}: {
+  passwordReset: boolean;
+  next?: string | null;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +41,7 @@ export function LoginForm({ passwordReset }: { passwordReset: boolean }) {
       );
       return;
     }
-    router.push("/inbox");
+    router.push(next ?? "/inbox");
     router.refresh();
   }
 

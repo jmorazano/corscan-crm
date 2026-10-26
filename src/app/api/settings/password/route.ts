@@ -10,6 +10,7 @@ import {
   type SuperAdminContext,
 } from "@/lib/auth/session";
 import { getDb, schema } from "@/lib/db";
+import { revokeAllGrantsForUser } from "@/server/assistants/grants";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,8 @@ export async function POST(req: Request): Promise<Response> {
       .update(schema.user)
       .set({ mustChangePassword: false, updatedAt: new Date() })
       .where(eq(schema.user.id, session.userId));
+    // 040 (D14): los asistentes conectados también pierden el acceso.
+    await revokeAllGrantsForUser(session.userId, "password_change");
   } catch (err) {
     console.error("[api] error no controlado:", err);
     return apiError(500, "internal", "Error interno");
