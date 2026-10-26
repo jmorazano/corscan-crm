@@ -159,8 +159,8 @@ pasados los topes de cantidad el CRM corta con un mensaje claro.
 5. **Given** un cambio con marcadores internos del sistema (los que el CRM usa
    para delimitar datos o instrucciones del agente), **When** se procesa,
    **Then** se rechaza.
-6. **Given** una conexión que ya aplicó el máximo de cambios permitido en la
-   última hora para una empresa, **When** pide otro, **Then** el CRM lo rechaza
+6. **Given** una empresa que ya recibió desde Claude el máximo de cambios
+   permitido en la última hora, **When** pide otro, **Then** el CRM lo rechaza
    explicando cuándo podrá volver a enseñar; las lecturas siguen funcionando.
 7. **Given** una persona que dejó de ser propietaria, una empresa con el
    switch apagado o una conexión revocada, **When** se pide enseñar o
@@ -269,9 +269,10 @@ que no puede hacer y dónde se deshace.
 **Protección ante engaños**
 
 - **FR-008**: Las herramientas de enseñanza y deshacer MUST declararse al
-  cliente como de escritura, y las operaciones que borran o reescriben como
-  destructivas, para que el cliente pida confirmación; las de lectura MUST
-  seguir declarándose de solo lectura.
+  cliente como de escritura, y las operaciones que borran o reescriben MUST
+  ir en una herramienta aparte declarada como destructiva (agregar y
+  corregir son herramientas distintas), para que el cliente pida
+  confirmación; las de lectura MUST seguir declarándose de solo lectura.
 - **FR-009**: Un cambio cuyo texto contenga un enlace cuyo dominio no figure
   ya en el conocimiento o el perfil de esa empresa ni sea de una integración
   conectada de esa empresa MUST rechazarse, indicando que se agregue desde el
@@ -283,8 +284,9 @@ que no puede hacer y dónde se deshace.
   Instagram de un contacto de la empresa MUST rechazarse.
 - **FR-012**: Un cambio con marcadores internos del sistema MUST rechazarse.
 - **FR-013**: El CRM MUST limitar los cambios aplicados desde Claude a 30 por
-  hora por conexión y empresa; superado el tope, enseñar se rechaza con la
-  hora en que vuelve a estar disponible y las lecturas no se ven afectadas.
+  hora por empresa (sumando todas las conexiones); superado el tope, enseñar
+  se rechaza con la hora en que vuelve a estar disponible y las lecturas no
+  se ven afectadas.
 - **FR-014**: Enseñar y deshacer MUST revalidar en cada llamada lo mismo que la
   040 (conexión vigente, empresa autorizada en esa conexión, switch encendido,
   rol propietario), y MUST respetar el límite de consultas por minuto de la
@@ -358,8 +360,8 @@ que no puede hacer y dónde se deshace.
 - **SC-004**: Apagar el switch, revocar la conexión o quitar el rol de
   propietario impide la siguiente enseñanza en el 100 % de los casos, sin
   esperar a que venza ningún token.
-- **SC-005**: Ninguna conexión puede aplicar más de 30 cambios por hora en una
-  empresa.
+- **SC-005**: Desde Claude no se pueden aplicar más de 30 cambios por hora en
+  una empresa, sumando todas las conexiones.
 - **SC-006**: Las cifras y lecturas de la 040 no cambian: el self-test de la
   040 sigue verde.
 
@@ -380,7 +382,11 @@ que no puede hacer y dónde se deshace.
 - No hace falta migración: el origen de cambios y entradas ya admite valores
   nuevos; la conexión que hizo el cambio se registra en el registro de
   consultas.
+- La página de privacidad publicada (corscan.com.ar/privacidad, sección de
+  asistentes) dice hoy que el asistente no modifica datos: se actualiza
+  antes del deploy, con el OK del dueño.
 - Topes: 10 cambios por pedido (igual que el Entrenador) y 30 por hora por
-  conexión y empresa; se ajustan si el uso real lo pide.
+  empresa sumando todas las conexiones de Claude; se ajustan si el uso real
+  lo pide.
 - Deshacer desde Claude se limita a sus propios cambios para no mezclar
   responsabilidades con el Entrenador y la edición manual.

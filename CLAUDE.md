@@ -189,12 +189,13 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **040-crm-mcp-server** (Vocero como servidor MCP: el
-propietario conecta Claude Desktop / Claude Code con OAuth propio y
-conversa sobre sus empresas con 12 herramientas de solo lectura; switch por
-empresa apagado por defecto, tokens hasheados, migración 0029) — spec y
-plan en [specs/040-crm-mcp-server/plan.md](specs/040-crm-mcp-server/plan.md).
-Anterior: 036-agent-resilience (el agente no deja chats colgados) —
+Feature en curso: **041-assistant-teaching** (Claude le enseña al agente:
+primera escritura del servidor MCP — 5 herramientas, mismas operaciones y
+deshacer del Entrenador con origen `assistant`, guardas deterministas,
+tope 30/h por empresa, mismo switch; sin migración; constitución 1.14.0) —
+plan en [specs/041-assistant-teaching/plan.md](specs/041-assistant-teaching/plan.md).
+Anterior: 040-crm-mcp-server (Vocero como servidor MCP de solo lectura,
+OAuth propio, migración 0029) —
+[specs/040-crm-mcp-server/plan.md](specs/040-crm-mcp-server/plan.md).
+Antes: 036-agent-resilience (el agente no deja chats colgados) —
 [specs/036-agent-resilience/](specs/036-agent-resilience/spec.md).
-Antes: 035-whatsapp-ad-origin (origen de anuncios Click-to-WhatsApp) —
-[specs/035-whatsapp-ad-origin/](specs/035-whatsapp-ad-origin/spec.md).
