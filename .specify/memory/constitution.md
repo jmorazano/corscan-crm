@@ -1,7 +1,33 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.12.0 → 1.12.1
+Versión: 1.12.1 → 1.13.0
+
+Cambios (feature 040-crm-mcp-server, 26-oct-2026) — MINOR:
+  - Principio I: regla nueva «Acceso entrante de asistentes del usuario».
+    Un PROPIETARIO puede autorizar a un asistente de IA que él eligió (hoy
+    Claude Desktop / claude.ai / Claude Code) a LEER datos de sus empresas
+    por el estándar MCP con OAuth 2.1, con siete condiciones no negociables
+    (a)–(g): apagado por defecto y switch por empresa; consentimiento empresa
+    por empresa en el propio CRM; solo lectura (habilitar escritura exige
+    otra enmienda); tokens y códigos solo como hash, cortos, rotativos y
+    revocables, y cortados al cambiar o restablecer la contraseña;
+    revalidación de conexión, empresa, switch y rol en CADA llamada;
+    registro de consultas sin contenido, 90 días; jamás Laboratorio,
+    Entrenador, credenciales, secretos ni binarios, y el texto de terceros
+    como dato.
+  - Se aclara que NO es una dependencia de runtime: el CRM no llama a ningún
+    servicio; quien lee es el asistente que el propietario conectó. El
+    Principio II y su lista cerrada no cambian; el instalador no configura
+    nada.
+  - Motivación: pedido del dueño (23-oct-2026) — el cliente de Altos de
+    Calamuchita y Altos de la Ciudad quiere preguntarle a Claude Desktop por
+    sus mensajes, campañas y conversaciones. Decisiones cerradas: solo
+    lectura, solo propietario, con textos, switch apagado por defecto.
+  - Plantillas: sin cambios (plan/spec/tasks no exigen secciones nuevas).
+    CLAUDE.md: mapa del código y feature activa (040).
+
+Versión anterior: 1.12.0 → 1.12.1
 
 Cambios (feature 034-google-sheets, 8-oct-2026) — PATCH:
   - Principio II, categoría 3: se nombra a **Google Sheets** como tercera
@@ -307,6 +333,26 @@ velocidad de entrega o conveniencia de desarrollo.
 - Si el producto es multi-tenant, todo dato de un tenant está aislado de los demás:
   ninguna consulta, endpoint o tarea en segundo plano debe devolver o modificar datos
   de un tenant distinto al del solicitante. El aislamiento se aplica por defecto.
+- **Acceso entrante de asistentes del usuario** (desde 1.13.0): una persona con rol
+  PROPIETARIO puede autorizar a un asistente de IA que ELLA eligió (hoy Claude
+  Desktop, claude.ai o Claude Code) a LEER datos de sus empresas por el estándar
+  Model Context Protocol, con autorización OAuth 2.1 emitida por la propia instancia.
+  No es una dependencia de runtime: el CRM no llama a ningún servicio —quien lee es
+  el asistente que el propietario conectó—, el Principio II no cambia y el
+  instalador no configura nada. Condiciones NO negociables: (a) apagado por defecto:
+  un switch por empresa que solo el propietario cambia, y apagado ninguna conexión
+  obtiene datos de esa empresa; (b) consentimiento explícito empresa por empresa, en
+  una pantalla del propio CRM con la sesión del usuario; (c) SOLO LECTURA: ninguna
+  herramienta envía mensajes, cambia datos ni toca las APIs de Meta, el agente o los
+  conectores de terceros —habilitar escritura exige otra enmienda—; (d) tokens y
+  códigos guardados solo como hash, de vida corta, rotativos y revocables; cambiar o
+  restablecer la contraseña revoca todas las conexiones de la persona; (e) en CADA
+  llamada se revalidan la conexión, la empresa autorizada, el switch y el rol
+  propietario, sin caché; (f) registro de consultas por empresa, visible para el
+  propietario, sin el contenido devuelto, conservado 90 días; (g) jamás datos del
+  Laboratorio ni del Entrenador, credenciales, secretos ni binarios de adjuntos, y
+  todo texto escrito por terceros viaja saneado y marcado como dato, nunca como
+  instrucción.
 
 **Rationale**: Una fuga de credenciales o un cruce de datos entre clientes es un
 fallo catastrófico e irreversible; prevenirlo siempre cuesta menos que remediarlo.
@@ -643,4 +689,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.12.1 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-08
+**Version**: 1.13.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-26

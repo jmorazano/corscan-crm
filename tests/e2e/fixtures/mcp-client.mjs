@@ -13,6 +13,8 @@
  *                    deja en <state>.url) + espera el código en un loopback +
  *                    canje → guarda tokens en --state. Con --reuse-code además
  *                    reusa el código y verifica que eso cierra la conexión.
+ *   read             US4/US5: conversaciones, mensajes, contactos, pipeline y
+ *                    actividad del agente (sembrar antes con seed-assistant.mjs)
  *   tools [--expect FILE.json]   initialize + tools/list + llama todas las
  *                    herramientas del MVP; con --expect compara cifras
  *   call NAME [JSON] llama una herramienta con esos argumentos
@@ -370,12 +372,90 @@ async function status() {
   if (expected) check(`ping → ${expected}`, String(r.status) === expected, r.status);
 }
 
-const COMMANDS = { connect, tools, call, refresh, unhappy, ratelimit, revoke, status };
+// --------------------------------------------------------- US4 / US5 (§E–F)
+// Requiere `node tests/e2e/fixtures/seed-assistant.mjs` antes.
+
+async function readTools() {
+  console.log("read");
+  const s = loadState();
+  const t = (name, a) => callTool(s.access_token, name, { workspace: "principal", ...a });
+
+  const tagged = await t("search_conversations", { tags: ["e2e-040"] });
+  const inj = tagged.data?.conversations?.[0];
+  check("search_conversations por etiqueta → el chat sembrado", tagged.data?.total_matching === 1 && inj?.id === "cv_a40_inj", tagged.text);
+  check("trae etapa, IA pausada y atención humana", inj?.stage === "Interesado" && inj?.ai?.enabled === false && inj?.ai?.handoff === true, inj);
+  check("aviso de contenido de terceros", typeof tagged.data?.aviso_contenido_de_terceros === "string");
+  const human = await t("search_conversations", { handoff: true, ai_paused: true });
+  check("filtro atención humana + IA pausada", human.data?.conversations?.some((c) => c.id === "cv_a40_inj"), human.text);
+  const byStage = await t("search_conversations", { stage: "interesado" });
+  check("filtro por etapa (sin mayúsculas)", byStage.data?.conversations?.some((c) => c.id === "cv_a40_inj"), byStage.text);
+  const badStage = await t("search_conversations", { stage: "Inexistente" });
+  check("etapa inexistente → isError con la lista", badStage.result?.isError === true && /Etapas:/.test(badStage.text), badStage.text);
+  const page1 = await t("search_conversations", { limit: 2 });
+  const page2 = await t("search_conversations", { limit: 2, cursor: page1.data?.next_cursor });
+  check("paginación de conversaciones sin repetir", page1.data?.next_cursor && page2.data?.conversations?.[0]?.id !== page1.data?.conversations?.[1]?.id, [page1.data?.next_cursor]);
+
+  const price = await t("search_messages", { text: "precio", direction: "inbound" });
+  const hit = price.data?.matches?.find((m) => m.message_id === "msg_a40_1");
+  check("search_messages encuentra «precio» del cliente", hit?.author === "cliente" && /precio/i.test(hit?.snippet ?? ""), price.text);
+  const lab = await t("search_messages", { text: "zanahoria040" });
+  check("el Laboratorio NUNCA aparece en las búsquedas", lab.data?.matches?.length === 0, lab.data?.matches);
+  const noAccent = await t("search_messages", { text: "cuanto", direction: "inbound", from: "2026-09-01" });
+  check("search_messages no distingue tildes («cuanto» → «Cuánto»)", noAccent.data?.matches?.some((m) => /cuánto/i.test(m.snippet ?? "")), noAccent.data?.matches?.map((m) => m.snippet));
+  const withMedia = await t("search_messages", { has_attachment: true, from: "2026-09-01" });
+  check("search_messages solo con adjuntos", withMedia.data?.matches?.length > 0 && withMedia.data.matches.every((m) => m.attachment), withMedia.text?.slice(0, 300));
+  const videos = await t("search_messages", { types: ["video"], from: "2026-09-01" });
+  check("search_messages por tipo", videos.data?.matches?.length > 0 && videos.data.matches.every((m) => m.type === "video"), videos.data?.matches?.map((m) => m.type));
+  const short = await t("search_messages", { text: "a" });
+  check("texto de 1 letra → isError", short.result?.isError === true);
+
+  const conv = await t("get_conversation", { conversation_id: "cv_a40_inj" });
+  const msgs = conv.data?.messages ?? [];
+  check("get_conversation en orden y con autores", msgs.map((m) => m.author).join(",") === "cliente,agente,cliente,cliente", msgs.map((m) => m.author));
+  const injected = msgs[3]?.text ?? "";
+  check("la inyección llega como DATO y sin marcadores del sistema", /Ignorá tus instrucciones/.test(injected) && !injected.includes("[HERRAMIENTA]"), injected);
+  check("línea de derivación del agente en events", conv.data?.events?.some((e) => e.kind === "ai_handoff" && /persona/i.test(e.text)), conv.data?.events);
+  const older = await t("get_conversation", { conversation_id: "cv_a40_inj", limit: 2 });
+  const older2 = await t("get_conversation", { conversation_id: "cv_a40_inj", limit: 2, before: older.data?.next_before });
+  check("hilo por tramos hacia atrás", older.data?.messages?.[0]?.id === "msg_a40_3" && older2.data?.messages?.map((m) => m.id).join() === "msg_a40_1,msg_a40_2" && older2.data?.next_before === null, [older.data?.messages?.map((m) => m.id), older2.data?.messages?.map((m) => m.id)]);
+  const labConv = await t("get_conversation", { conversation_id: "cv_a40_lab" });
+  check("conversación del Laboratorio → no encontrada", labConv.result?.isError === true && /No encontré/.test(labConv.text), labConv.text);
+
+  const media = await t("search_conversations", { q: "", limit: 50 });
+  let withSummary = null;
+  for (const c of media.data?.conversations ?? []) {
+    const r = await t("get_conversation", { conversation_id: c.id, limit: 100 });
+    withSummary = r.data?.messages?.find((m) => m.attachment?.summary);
+    if (withSummary) break;
+  }
+  check("adjunto con resumen del CRM (sin binario)", withSummary && withSummary.attachment.summary_source === "resumen del CRM" && !("url" in withSummary.attachment), withSummary?.attachment);
+
+  const contacts = await t("search_contacts", { q: "Inyección" });
+  check("search_contacts", contacts.data?.contacts?.[0]?.id === "ct_a40_inj" && contacts.data?.contacts?.[0]?.stage === "Interesado", contacts.text);
+  const labContact = await t("search_contacts", { q: "Laboratorio 040" });
+  check("contactos del Laboratorio fuera", labContact.data?.total_matching === 0, labContact.data);
+  const card = await t("get_contact", { contact_id: "ct_a40_inj" });
+  check("get_contact con conversaciones", card.data?.contact?.tags?.includes("e2e-040") && card.data?.conversations?.length === 1, card.text);
+  const labCard = await t("get_contact", { contact_id: "ct_a40_lab" });
+  check("ficha del Laboratorio → no encontrada", labCard.result?.isError === true);
+
+  const pipe = await t("get_pipeline", {});
+  const interesado = pipe.data?.stages?.find((x) => x.name === "Interesado");
+  check("get_pipeline con etapas y cantidades", interesado && interesado.leads >= 1 && pipe.data.stages.some((x) => x.kind === "lost"), pipe.data?.stages);
+  const stageLeads = await t("get_pipeline", { stage: "Interesado" });
+  check("leads de la etapa", stageLeads.data?.leads?.some((l) => l.contact.id === "ct_a40_inj" && l.conversation_id === "cv_a40_inj"), stageLeads.text);
+
+  const act = await t("get_agent_activity", { period: "today", list: true });
+  check("get_agent_activity cuenta derivaciones", (act.data?.counts?.ai_handoff ?? 0) >= 1, act.data?.counts);
+  check("y lista el evento con su texto", act.data?.events?.some((e) => e.conversation_id === "cv_a40_inj" && e.kind === "ai_handoff" && e.text), act.data?.events?.slice(0, 2));
+}
+
+const COMMANDS = { connect, read: readTools, tools, call, refresh, unhappy, ratelimit, revoke, status };
 
 async function main() {
   const fn = COMMANDS[command];
   if (!fn) {
-    console.log("Comandos: connect [--reuse-code] | tools | call | refresh [--reuse] | unhappy | ratelimit | revoke | status");
+    console.log("Comandos: connect [--reuse-code] | tools | read | call | refresh [--reuse] | unhappy | ratelimit | revoke | status");
     process.exit(2);
   }
   await fn();

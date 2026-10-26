@@ -128,30 +128,44 @@ name, phone, status, delivery_status, replied_at, conversation_id,
 error }` cuando se piden.
 
 ### 6. `search_conversations`
-`workspace`, `q` (nombre, teléfono, etiqueta o último mensaje, como la
-Bandeja), `channel`, `tags[]` + `tags_mode` (`any`·`all`), `stage_id`
-**o** `stage` (nombre), `origin` (como §3), `unread`, `handoff`,
-`ai_paused`, `active_from`/`active_to`, `cursor`, `limit`. →
-`conversations[] { id, channel, contact { id, name, phone,
-instagram_username }, last_message { at, direction, author, preview },
-unread, tags[], stage, ai { enabled, handoff, handoff_reason },
-origin_label, created_at, updated_at }`, `total_matching`.
+`workspace`, `q` (nombre, teléfono, @usuario, etiqueta o último mensaje,
+como la Bandeja), `channel`, `tags[]` + `tags_mode` (`any`·`all`), `stage`
+(nombre sin distinguir mayúsculas, o id `stg_…`; inexistente → error con la
+lista de etapas), `origin` (como §3), `unread`, `handoff`, `ai_paused`,
+`active_from`/`active_to`, `timezone`, `cursor`, `limit` (25, máx. 50). →
+`total_matching`, `conversations[] { id, channel, contact { id, name,
+phone (null en Instagram), instagram_username, opted_out },
+last_message_at, last_inbound_at, last_message_preview, unread, tags[],
+stage, ai { enabled, handoff, handoff_at, handoff_reason }, origin,
+created_at }`, `next_cursor`, `truncated`, aviso.
 
 ### 7. `search_messages`
-`workspace`, `text` (≥ 2 caracteres), `from`/`to` (default 90 días, máx.
-365), `channel`, `direction` (`inbound`·`outbound`·`any`), `cursor`,
-`limit`. → `matches[] { conversation_id, contact { id, name }, message_id,
-at, direction, author, snippet }`.
+`workspace`, `text` (≥ 2 caracteres; sin distinguir tildes ni mayúsculas:
+«cuanto» encuentra «cuánto»; opcional si se usa `has_attachment` o
+`types`), `has_attachment` (solo mensajes con adjunto), `types[]`
+(`audio`·`image`·`video`·`document`·`sticker`), `from`/`to` (default 90
+días, máx. 365), `channel`, `direction` (`inbound`·`outbound`·`any`),
+`timezone`, `cursor`, `limit`. → `searched { text, has_attachment, types,
+from, to }`, `matches[] { conversation_id, contact { id, name },
+message_id, at, author, type, snippet, attachment { kind, file_name,
+state, summary } | null }`, `next_cursor`, `truncated`, aviso.
+
+Los dos filtros nuevos (tildes y adjuntos) salieron de la prueba real con
+Claude Code (guion §G): sin ellos, «cuanto» no encontraba «cuánto» y para
+listar adjuntos tenía que leer las conversaciones una por una.
 
 ### 8. `get_conversation`
-`workspace`, `conversation_id`, `before` (cursor), `limit` (default 50,
-máx. 100), `include_events` (default true). →
-`conversation` (como §6) + `messages[] { id, at, direction, author:
-"cliente"|"agente"|"equipo"|"celular"|"api"|"campaña"|"historial",
-author_name, status, text, attachment { kind, file_name, mime,
-size_bytes, summary, summary_source: "transcripción"|"resumen del CRM" }
-| null, type }` (`type`: texto, plantilla, reacción, sticker, adjunto…) en orden cronológico, `events[] { at, kind, text }`
-(textos de 031) intercalables por fecha, `next_before`.
+`workspace`, `conversation_id`, `before` (el `next_before` anterior),
+`limit` (50, máx. 100), `include_events` (default true), `timezone`. →
+`conversation` (como §6, sin el fragmento), `messages[] { id, at,
+direction: "entrante"|"saliente", author: "cliente"|"agente"|"equipo"|
+"celular"|"api"|"campaña"|"historial", author_name (solo equipo), type,
+status (salientes), text, attachment { kind, file_name, mime, size_bytes,
+duration_ms, state, summary, summary_source } | null }` en orden
+cronológico, `events[] { at, kind, text }` (textos de 031, del tramo
+leído), `next_before`, `truncated`, aviso. Las notas de voz traen la
+transcripción en `text` (`summary_source: "transcripción (va en text)"`);
+imágenes, PDFs y videos, el resumen del CRM en `summary`.
 
 ### 9. `search_contacts`
 `workspace`, `q`, `tags[]` + `tags_mode`, `channel`, `opted_out`,
@@ -159,9 +173,10 @@ size_bytes, summary, summary_source: "transcripción"|"resumen del CRM" }
 email, channel, tags[], opted_out, stage, created_at }`, `total_matching`.
 
 ### 10. `get_contact`
-`workspace`, `contact_id`. → ficha completa (como §9 + `origin_label`,
-`consent_source`, `notes` del equipo, `archived`) y `conversations[] { id, channel,
-updated_at }` y `campaigns[] { id, name, status, replied_at }`.
+`workspace`, `contact_id`. → `contact` (como §9 + `notes` del equipo,
+`consent_source`, `opted_out_at`, `archived`), `conversations[] { id,
+channel, last_message_at, origin }` y `campaigns[] { id, name,
+recipient_status, sent_at, replied_at }`, aviso.
 
 ### 11. `get_pipeline`
 `workspace`, `stage_id`/`stage` (opcional), `updated_from`/`updated_to`,

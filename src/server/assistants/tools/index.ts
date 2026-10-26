@@ -7,6 +7,9 @@ import { ToolInputError, ToolNotFoundError, type AssistantTool } from "./common"
 import { listWorkspacesTool } from "./workspaces";
 import { metricsTools } from "./metrics";
 import { campaignTools } from "./campaigns";
+import { conversationTools } from "./conversations";
+import { contactTools } from "./contacts";
+import { pipelineTools } from "./pipeline";
 
 /**
  * Catálogo de herramientas de SOLO LECTURA del servidor MCP de los
@@ -27,6 +30,9 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   listWorkspacesTool,
   ...metricsTools,
   ...campaignTools,
+  ...conversationTools,
+  ...contactTools,
+  ...pipelineTools,
 ];
 
 const BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.name, t]));

@@ -181,6 +181,16 @@ function createAuth() {
           });
         }
       }),
+      // 040 (D14): si alguien cambia la contraseña por el endpoint propio de
+      // Better Auth (la UI usa /api/settings/password, que ya revoca), los
+      // asistentes conectados también pierden el acceso.
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/change-password") return;
+        const userId = ctx.context.session?.user.id ?? ctx.context.newSession?.user.id;
+        if (!userId || ctx.context.returned instanceof Error) return;
+        const { revokeAllGrantsForUser } = await import("@/server/assistants/grants");
+        await revokeAllGrantsForUser(userId, "password_change");
+      }),
     },
     databaseHooks: {
       user: {

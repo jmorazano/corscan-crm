@@ -11,6 +11,19 @@ const nextConfig: NextConfig = {
   // en la raíz, sin redirecciones ni login. El rewrite es interno (el
   // cliente ve 200 en esa URL) y el handler solo responde si el nombre
   // coincide con GOOGLE_SITE_VERIFICATION (runtime, sin rebuild).
+  // 040: la pantalla de permiso de los asistentes no se puede enmarcar en
+  // otro sitio (clickjacking sobre «Permitir»).
+  async headers() {
+    return [
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

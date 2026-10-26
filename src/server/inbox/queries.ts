@@ -80,23 +80,24 @@ export type ConversationPage = {
 };
 
 /** Último mensaje de la conversación (texto o tipo de media). */
-const previewSql = sql<string | null>`(
+export const previewSql = sql<string | null>`(
   select coalesce(m.text, m.type)
   from message m
   where m.conversation_id = ${schema.conversation.id}
   order by m.created_at desc
   limit 1
 )`;
-const stageSql = sql<string | null>`(
+export const stageSql = sql<string | null>`(
   select s.name from lead l
   join pipeline_stage s on s.id = l.stage_id
   where l.contact_id = ${schema.contact.id}
   limit 1
 )`;
 /** Clave de orden de la bandeja: fecha del último mensaje (o creación). */
-const sortKeySql = sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`;
+export const sortKeySql = sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`;
 
-function conversationSearchWhere(q: string | undefined): SQL | undefined {
+/** 040: lo reusan los asistentes para buscar igual que la Bandeja. */
+export function conversationSearchWhere(q: string | undefined): SQL | undefined {
   const term = q?.trim();
   if (!term) return undefined;
   const like = `%${term}%`;

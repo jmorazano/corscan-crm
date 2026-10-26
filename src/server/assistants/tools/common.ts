@@ -6,8 +6,9 @@ import {
   periodWindow,
   type PeriodWindow,
 } from "@/lib/metrics";
-import { isValidTimeZone } from "@/lib/time";
+import { isValidTimeZone, parseDateKey, zonedToUtc } from "@/lib/time";
 import type { AssistantCall } from "../access";
+import { sanitizeForeignText } from "@/server/mcp/sanitize";
 
 /**
  * Piezas comunes de las herramientas de los asistentes (040). Sin imports
@@ -115,3 +116,40 @@ export function resolvePeriod(
   if (!out.ok) throw new ToolInputError(out.message);
   return { window: out.window, timeZone };
 }
+
+/**
+ * Texto escrito por un tercero (cliente del negocio, título de anuncio…):
+ * se quitan marcadores del sistema y caracteres de control, y se recorta.
+ * Va siempre acompañado de `aviso_contenido_de_terceros` (FR-020).
+ */
+export function foreign(raw: unknown, maxChars = 2000): string | null {
+  const out = sanitizeForeignText(raw, maxChars);
+  return out === "" ? null : out;
+}
+
+/** Cursor opaco `<iso>|<id>` (keyset por fecha + id). */
+export function encodeKeyset(at: Date, id: string): string {
+  return Buffer.from(`${at.toISOString()}|${id}`, "utf8").toString("base64url");
+}
+
+export function decodeKeyset(raw: unknown): { at: Date; id: string } | null {
+  if (typeof raw !== "string" || !raw) return null;
+  const [iso, id] = Buffer.from(raw, "base64url").toString("utf8").split("|");
+  const at = iso ? new Date(iso) : null;
+  if (!at || Number.isNaN(at.getTime()) || !id) {
+    throw new ToolInputError("cursor inválido: usá el next_cursor que devolvió la herramienta");
+  }
+  return { at, id };
+}
+
+export const limitParam = (fallback: number, max: number) =>
+  z.number().int().min(1).max(max).optional().describe(`Default ${fallback}, máximo ${max}.`);
+
+/** Fecha local AAAA-MM-DD → instante UTC del inicio de ese día en la zona. */
+export function dayStartUtc(key: string, timeZone: string): Date {
+  const d = parseDateKey(key);
+  if (!d) throw new ToolInputError(`Fecha inválida: ${key.slice(0, 20)} (va como AAAA-MM-DD)`);
+  return zonedToUtc(timeZone, d.year, d.month, d.day, 0, 0);
+}
+
+export const dateParam = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

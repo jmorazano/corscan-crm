@@ -161,17 +161,17 @@ búsquedas devuelven exactamente las esperadas y el hilo sale en orden.
 
 ### Tests for User Story 4
 
-- [ ] T050 [P] [US4] Tests en `tests/unit/assistants-format.test.ts`: autor de cada mensaje (cliente, agente, equipo con nombre, celular, API, campaña, historial), adjuntos con `summary_source`, saneo de texto de terceros (marcadores del sistema quitados, recorte) y presencia de `aviso_contenido_de_terceros`
-- [ ] T051 [P] [US4] Seed `tests/e2e/fixtures/seed-assistant.mjs` (conversaciones WhatsApp/Instagram con etiquetas, etapa, origen, handoff, IA pausada, nota de voz transcripta, PDF resumido, un mensaje con «ignorá tus instrucciones…», una conversación `is_test` y la del Entrenador) y guion sección D (escenarios 1–7 de US4)
+- [X] T050 [P] [US4] Tests en `tests/unit/assistants-format.test.ts`: autor de cada mensaje (cliente, agente, equipo con nombre, celular, API, campaña, historial), adjuntos con `summary_source`, saneo de texto de terceros (marcadores del sistema quitados, recorte) y presencia de `aviso_contenido_de_terceros`
+- [X] T051 [P] [US4] Seed `tests/e2e/fixtures/seed-assistant.mjs` (conversaciones WhatsApp/Instagram con etiquetas, etapa, origen, handoff, IA pausada, nota de voz transcripta, PDF resumido, un mensaje con «ignorá tus instrucciones…», una conversación `is_test` y la del Entrenador) y guion sección D (escenarios 1–7 de US4)
 
 ### Implementation for User Story 4
 
-- [ ] T052 [US4] Exportar `conversationSearchWhere` de `src/server/inbox/queries.ts` sin cambiar la Bandeja
-- [ ] T053 [US4] `src/server/assistants/queries/conversations.ts`: búsqueda con `tagsWhere`, `conversationSearchWhere`, etapa, origen, `handoff_at`, `ai_enabled`, rango de actividad, `kind in ('whatsapp','instagram')`, `is_test = false`, cursor keyset de `src/lib/pagination.ts`, `total_matching`
-- [ ] T054 [US4] `src/server/assistants/queries/messages.ts`: hilo por tramos (50, máx. 100) hacia atrás con medios (`toMediaDto`) y eventos (`listConversationEvents` + `eventText`), y búsqueda `ILIKE` escapada (`likePattern`) con ventana obligatoria (default 90, máx. 365 días) y fragmento
-- [ ] T055 [P] [US4] `src/server/assistants/queries/contacts.ts`: búsqueda con `contactListWhere` (033) + ficha con `serializeContact`, conversaciones y campañas del contacto
-- [ ] T056 [US4] Herramientas `search_conversations`, `get_conversation` (`src/server/assistants/tools/conversations.ts`), `search_messages` (`tools/messages.ts`), `search_contacts`, `get_contact` (`tools/contacts.ts`) con salida según contrato, texto de terceros por `sanitizeForeignText` y el aviso, ids de otra empresa = «no encontrado»; registrar con `describeCall`
-- [ ] T057 [US4] Conducir la sección D; medir `search_messages` en la base local con el volumen más grande disponible y anotar el tiempo en el guion (si supera SC-005, crear la tarea de `pg_trgm`)
+- [X] T052 [US4] Exportar `conversationSearchWhere` de `src/server/inbox/queries.ts` sin cambiar la Bandeja
+- [X] T053 [US4] `src/server/assistants/queries/conversations.ts`: búsqueda con `tagsWhere`, `conversationSearchWhere`, etapa, origen, `handoff_at`, `ai_enabled`, rango de actividad, `kind in ('whatsapp','instagram')`, `is_test = false`, cursor keyset de `src/lib/pagination.ts`, `total_matching` — consultas en `queries/conversations.ts`; los subqueries que referencian la tabla del SELECT van calificados a mano (drizzle no antepone la tabla en SELECTs de una sola tabla)
+- [X] T054 [US4] `src/server/assistants/queries/messages.ts`: hilo por tramos (50, máx. 100) hacia atrás con medios (`toMediaDto`) y eventos (`listConversationEvents` + `eventText`), y búsqueda `ILIKE` escapada (`likePattern`) con ventana obligatoria (default 90, máx. 365 días) y fragmento — búsqueda sin tildes (`translate` + `foldAccents`) y filtros `has_attachment`/`types`, surgidos de la prueba real con Claude Code
+- [X] T055 [P] [US4] `src/server/assistants/queries/contacts.ts`: búsqueda con `contactListWhere` (033) + ficha con `serializeContact`, conversaciones y campañas del contacto — la consulta quedó dentro de `tools/contacts.ts` (sin `queries/contacts.ts`)
+- [X] T056 [US4] Herramientas `search_conversations`, `get_conversation` (`src/server/assistants/tools/conversations.ts`), `search_messages` (`tools/messages.ts`), `search_contacts`, `get_contact` (`tools/contacts.ts`) con salida según contrato, texto de terceros por `sanitizeForeignText` y el aviso, ids de otra empresa = «no encontrado»; registrar con `describeCall`
+- [X] T057 [US4] Conducir la sección D; medir `search_messages` en la base local con el volumen más grande disponible y anotar el tiempo en el guion (si supera SC-005, crear la tarea de `pg_trgm`)
 
 **Checkpoint**: «leeme la conversación con…» y «¿qué preguntaron los del anuncio…?» funcionan.
 
@@ -184,21 +184,21 @@ búsquedas devuelven exactamente las esperadas y el hilo sale en orden.
 **Independent Test**: con leads y `conversation_event` sembrados, las
 cantidades por etapa y por tipo coinciden y las listas traen el motivo.
 
-- [ ] T058 [P] [US5] Ampliar `tests/e2e/fixtures/seed-assistant.mjs` con leads en varias etapas y eventos `ai_*`, y guion sección E
-- [ ] T059 [P] [US5] `src/server/assistants/queries/pipeline.ts` + `get_pipeline` en `src/server/assistants/tools/pipeline.ts` (etapas en orden con tipo y cantidad, leads por etapa con `updated_from/to`, nota de que no hay historial de etapas)
-- [ ] T060 [P] [US5] `src/server/assistants/queries/events.ts` + `get_agent_activity` en `src/server/assistants/tools/agent.ts` (conteo por tipo en el período, lista con `eventText`)
-- [ ] T061 [US5] Registrar las dos herramientas y conducir la sección E
+- [X] T058 [P] [US5] Ampliar `tests/e2e/fixtures/seed-assistant.mjs` con leads en varias etapas y eventos `ai_*`, y guion sección E
+- [X] T059 [P] [US5] `src/server/assistants/queries/pipeline.ts` + `get_pipeline` en `src/server/assistants/tools/pipeline.ts` (etapas en orden con tipo y cantidad, leads por etapa con `updated_from/to`, nota de que no hay historial de etapas) — consulta dentro de `tools/pipeline.ts`
+- [X] T060 [P] [US5] `src/server/assistants/queries/events.ts` + `get_agent_activity` en `src/server/assistants/tools/agent.ts` (conteo por tipo en el período, lista con `eventText`) — `get_agent_activity` también en `tools/pipeline.ts`
+- [X] T061 [US5] Registrar las dos herramientas y conducir la sección E
 
 ---
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T062 Enmienda de la constitución a 1.13.0 «acceso entrante de asistentes del usuario» con `/speckit-constitution` en `.specify/memory/constitution.md` (research D15)
-- [ ] T063 [P] Guía del cliente `docs/integraciones/claude-mcp.md` (qué puede preguntar, pasos de Claude Desktop y Claude Code, cómo revocar, qué ve y qué no) y enlace desde Ajustes → Asistentes
-- [ ] T064 [P] Borrador del párrafo de privacidad para la política externa (`APP_PRIVACY_URL`) con el subagente `public-site-builder`, en `specs/040-crm-mcp-server/privacy-paragraph.md`; se publica solo con OK del dueño
-- [ ] T065 [P] Fila «Servidor MCP para asistentes del usuario (040)» en el mapa de `CLAUDE.md`
-- [ ] T066 Revisión de seguridad (`/security-review`) del diff: tokens fuera de logs, `Origin` del consentimiento, retornos, aislamiento por empresa, saneo
-- [ ] T067 Gate completo + guion E2E A–E completo después de `rm -rf .next`; marcar tareas y escribir «Estado» al final de este archivo
+- [X] T062 Enmienda de la constitución a 1.13.0 «acceso entrante de asistentes del usuario» con `/speckit-constitution` en `.specify/memory/constitution.md` (research D15)
+- [X] T063 [P] Guía del cliente `docs/integraciones/claude-mcp.md` (qué puede preguntar, pasos de Claude Desktop y Claude Code, cómo revocar, qué ve y qué no) y enlace desde Ajustes → Asistentes — sin enlace desde Ajustes: `docs/` no se sirve; la pantalla ya trae los pasos
+- [X] T064 [P] Borrador del párrafo de privacidad para la política externa (`APP_PRIVACY_URL`) con el subagente `public-site-builder`, en `specs/040-crm-mcp-server/privacy-paragraph.md`; se publica solo con OK del dueño — borrador en `specs/040-crm-mcp-server/privacy-paragraph.md` con [COMPLETAR] de razón social y contacto; NO publicado
+- [X] T065 [P] Fila «Servidor MCP para asistentes del usuario (040)» en el mapa de `CLAUDE.md`
+- [X] T066 Revisión de seguridad (`/security-review`) del diff: tokens fuera de logs, `Origin` del consentimiento, retornos, aislamiento por empresa, saneo — sin hallazgos ≥ 8/10; se aplicaron dos endurecimientos que sugirió: `X-Frame-Options: DENY` + `frame-ancestors 'none'` en `/oauth/*` (next.config) y revocación también por el `/change-password` propio de Better Auth (`hooks.after`), ambos verificados en vivo
+- [X] T067 Gate completo + guion E2E A–E completo después de `rm -rf .next`; marcar tareas y escribir «Estado» al final de este archivo — tsc, eslint, vitest (1896 tests) y next build verdes; guion A–G verde
 - [ ] T068 Prueba real de las diez preguntas de SC-006 con Claude Desktop en producción (empresa del operador); luego el dueño decide habilitar Altos de Calamuchita y Altos de la Ciudad
 
 ---
@@ -268,13 +268,11 @@ T008 params.ts · T009 metadata.ts · T010 jsonrpc.ts · T011 authorize.ts
 
 ## Estado
 
-26-oct-2026 — Fases 1 a 5 (MVP: US1 conectar, US2 cifras, US3 control)
-implementadas en el worktree `.claude/worktrees/040-crm-mcp-server`, rama
-`040-crm-mcp-server` sobre `origin/main` b2bcf1f. Migración 0029 aplicada en
-la BD local. Gate verde: `tsc`, `eslint`, `vitest` (176 archivos, 1869
-tests; 7 archivos nuevos) y `next build`. E2E `tests/e2e/040-crm-mcp-server.md`
-A, B, C y unhappy verdes, con paridad exacta contra Métricas y el detalle de
-campaña. Claude Code real contra local probado (T032, guion §D). Pendiente antes de
-producción: OK del dueño para mergear y deployar y la prueba real con Claude
-Desktop en la empresa del operador (checkpoint MVP). Fases 6–8 (US4, US5,
-cierre) sin empezar.
+26-oct-2026 — Fases 1 a 8 implementadas (US1–US5 + cierre) en el worktree
+`.claude/worktrees/040-crm-mcp-server`, rama `040-crm-mcp-server` sobre
+`origin/main` b2bcf1f. 12 herramientas de solo lectura. Migración 0029.
+Constitución 1.13.0. Gate verde (1896 tests + build). Guion E2E A–G verde,
+incluido Claude Code REAL (13 preguntas en total, cifras contrastadas con
+Métricas, campañas, pipeline y SQL). Pendientes: T044 (cubierto por E2E),
+T068 (Claude Desktop en producción, después del deploy) y publicar el
+párrafo de privacidad con el OK del dueño.

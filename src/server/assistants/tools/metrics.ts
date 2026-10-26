@@ -143,7 +143,7 @@ const getMessageMetrics: AssistantTool = {
 };
 
 /** Clave de origen para agrupar (contracts/mcp-tools.md §3). */
-const ORIGIN_KIND_SQL = sql<string>`case
+export const ORIGIN_KIND_SQL = sql<string>`case
   when ${c.igOrigin} is null then 'organic'
   when coalesce(${c.igOrigin}->>'channel', 'instagram') = 'whatsapp' then 'whatsapp_ad'
   when ${c.igOrigin}->>'kind' = 'link' then 'instagram_link'
@@ -152,7 +152,7 @@ const ORIGIN_KIND_SQL = sql<string>`case
   else 'instagram_story'
 end`;
 
-const ORIGIN_LABELS: Record<string, string> = {
+export const ORIGIN_LABELS: Record<string, string> = {
   whatsapp_ad: "Anuncio de Facebook/Instagram que abre WhatsApp",
   instagram_link: "Link de entrada de Instagram (ig.me)",
   instagram_comment: "Comentario en una publicación de Instagram",
