@@ -108,6 +108,11 @@ function kbLabel(s: KbSnapshot | null | undefined): string {
   return s.kind === "qa" ? `P/R: ${short(s.question)}` : `bloque: ${short(s.content)}`;
 }
 
+/** «Nueva P/R» pero «Nuevo bloque»: el adjetivo concuerda con lo que se cambió. */
+function kbVerb(s: KbSnapshot | null | undefined, femenino: string, masculino: string): string {
+  return s?.kind === "block" ? masculino : femenino;
+}
+
 /** Resumen legible de un cambio (puro; es lo que ve el panel). */
 export function summarizeChange(
   op: ChangeOp,
@@ -116,11 +121,11 @@ export function summarizeChange(
 ): string {
   switch (op) {
     case "kb_add":
-      return `Nueva ${kbLabel(after as KbSnapshot)}`;
+      return `${kbVerb(after as KbSnapshot, "Nueva", "Nuevo")} ${kbLabel(after as KbSnapshot)}`;
     case "kb_update":
-      return `Actualizada ${kbLabel((after ?? before) as KbSnapshot)}`;
+      return `${kbVerb((after ?? before) as KbSnapshot, "Actualizada", "Actualizado")} ${kbLabel((after ?? before) as KbSnapshot)}`;
     case "kb_delete":
-      return `Borrada ${kbLabel(before as KbSnapshot)}`;
+      return `${kbVerb(before as KbSnapshot, "Borrada", "Borrado")} ${kbLabel(before as KbSnapshot)}`;
     case "profile_update": {
       const b = before as ProfileSnapshot | null;
       const a = after as ProfileSnapshot | null;

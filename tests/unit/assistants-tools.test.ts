@@ -7,7 +7,14 @@ import { changeRatio, isoInZone } from "@/lib/assistants/format";
 describe("listToolsForMcp", () => {
   const tools = listToolsForMcp();
 
-  it("publica las herramientas del MVP, todas de solo lectura", () => {
+  const WRITE = {
+    teach_agent: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    edit_agent: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    undo_agent_change: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+  } as const;
+
+  it("publica 17 herramientas: las 12 de la 040 de solo lectura y las 5 del agente (041)", () => {
+    expect(tools).toHaveLength(17);
     expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "list_workspaces",
@@ -15,18 +22,31 @@ describe("listToolsForMcp", () => {
         "get_conversation_origins",
         "list_campaigns",
         "get_campaign",
+        "get_agent_knowledge",
+        "teach_agent",
+        "edit_agent",
+        "list_agent_changes",
+        "undo_agent_change",
       ])
     );
     for (const t of tools) {
-      expect(t.annotations).toMatchObject({
-        readOnlyHint: true,
-        destructiveHint: false,
-        openWorldHint: false,
-      });
+      const write = WRITE[t.name as keyof typeof WRITE];
+      expect(t.annotations).toMatchObject(
+        write
+          ? { ...write, openWorldHint: false }
+          : { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+      );
       expect(t.description.length).toBeGreaterThan(40);
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema).not.toHaveProperty("$schema");
     }
+  });
+
+  it("teach_agent solo agrega y edit_agent solo corrige o borra", () => {
+    const ops = (name: string) =>
+      JSON.stringify(tools.find((t) => t.name === name)!.inputSchema).match(/"const":"(\w+)"/g)?.map((m) => m.slice(9, -1));
+    expect(ops("teach_agent")?.sort()).toEqual(["kb_add", "profile_append"]);
+    expect(ops("edit_agent")?.sort()).toEqual(["kb_delete", "kb_update", "profile_set"]);
   });
 
   it("las herramientas con empresa piden `workspace` y los períodos sus enums", () => {

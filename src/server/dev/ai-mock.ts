@@ -353,6 +353,24 @@ export function aiMockCompletion(messages: InMessage[]): string {
     });
   }
 
+  // 041: «[E2E_KB] <palabra>» → responde con la línea del CONOCIMIENTO DEL
+  // NEGOCIO del prompt que contiene la palabra (prueba que el turno ya ve
+  // lo que Claude le enseñó). Sin coincidencia: «no lo sé».
+  const kbProbe = /\[E2E_KB\]\s*(\S+)/.exec(lastUser);
+  if (kbProbe) {
+    const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const word = fold(kbProbe[1]!);
+    const kbStart = system.indexOf("CONOCIMIENTO DEL NEGOCIO");
+    const lines = kbStart >= 0 ? system.slice(kbStart).split("\n").slice(1) : [];
+    const at = lines.findIndex((l) => fold(l).includes(word));
+    // Si cae en la pregunta de una P/R («P: …»), la respuesta es la línea siguiente.
+    const hit = at >= 0 && lines[at]!.startsWith("P:") && lines[at + 1]?.startsWith("R:") ? lines[at + 1] : lines[at];
+    return JSON.stringify({
+      action: "reply",
+      text: hit ? hit.trim().slice(0, 300) : "Eso no lo sé todavía; lo consulto con el equipo.",
+    });
+  }
+
   // 031: perillas del guion E2E del agente a la vista.
   // «[E2E_NADA]» → el modelo elige callar y dice por qué.
   if (lastUser.includes("[E2E_NADA]")) {

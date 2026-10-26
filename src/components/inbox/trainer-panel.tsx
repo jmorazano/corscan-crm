@@ -21,6 +21,8 @@ import { formatTime } from "./helpers";
 type ChangeDto = {
   id: string;
   op: "kb_add" | "kb_update" | "kb_delete" | "profile_update";
+  /** 041: `assistant` = lo enseñó Claude por MCP. */
+  source?: string;
   targetId: string | null;
   summary: string;
   before: unknown;
@@ -233,6 +235,9 @@ export function TrainerPanel({
                         </p>
                         <p className="mt-0.5 text-[11px] text-text-3">
                           {formatTime(c.createdAt)}
+                          {c.source === "assistant" && (
+                            <span data-testid="trainer-change-source"> · desde Claude</span>
+                          )}
                           {reverted ? " · Deshecho" : ""}
                         </p>
                       </div>

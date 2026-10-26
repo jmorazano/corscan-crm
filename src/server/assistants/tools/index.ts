@@ -10,6 +10,7 @@ import { campaignTools } from "./campaigns";
 import { conversationTools } from "./conversations";
 import { contactTools } from "./contacts";
 import { pipelineTools } from "./pipeline";
+import { agentTools } from "./agent";
 
 /**
  * Catálogo de herramientas del servidor MCP de los asistentes (040 de solo
@@ -34,6 +35,7 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   ...conversationTools,
   ...contactTools,
   ...pipelineTools,
+  ...agentTools,
 ];
 
 const BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.name, t]));

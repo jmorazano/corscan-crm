@@ -46,7 +46,7 @@ type KbEntry = {
   answer: string | null;
   content: string | null;
   /** 015: origen de la entrada (chip «desde el chat» / «del Laboratorio»). */
-  source?: "manual" | "lab" | "trainer";
+  source?: "manual" | "lab" | "trainer" | "assistant";
 };
 
 export function AgentClient() {
@@ -629,10 +629,12 @@ function KbSection({
                     title={
                       e.source === "trainer"
                         ? "La agregó el agente a partir de lo que le enseñaste en la Bandeja"
-                        : "Sugerencia del Laboratorio aplicada"
+                        : e.source === "assistant"
+                          ? "Se la enseñaste desde Claude; se deshace en el panel del Entrenador"
+                          : "Sugerencia del Laboratorio aplicada"
                     }
                   >
-                    {e.source === "trainer" ? "desde el chat" : "del Laboratorio"}
+                    {e.source === "trainer" ? "desde el chat" : e.source === "assistant" ? "desde Claude" : "del Laboratorio"}
                   </span>
                 )}
               </div>

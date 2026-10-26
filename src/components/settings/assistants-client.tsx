@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 /**
  * Ajustes → Asistentes (040, FR-023): el switch «Permitir asistentes
  * externos», cómo conectar Claude, quién tiene acceso a esta empresa y qué
- * consultó. Solo propietario.
+ * consultó. Desde la 041 el mismo switch también deja enseñarle al agente.
+ * Solo propietario.
  */
 
 type Connection = {
@@ -29,6 +30,8 @@ type View = {
   updatedBy: string | null;
   connectorUrl: string;
   connections: Connection[];
+  trainerConversationId: string | null;
+  teachingNotice: boolean;
 };
 
 type LogEntry = {
@@ -59,6 +62,14 @@ const REASON_TEXT: Record<string, string> = {
   not_found: "no encontrado",
   rate_limited: "demasiadas consultas",
   internal: "error interno",
+  rejected: "todo rechazado por las protecciones",
+};
+
+/** 041: las herramientas que cambian algo se distinguen de las consultas. */
+const TOOL_KIND: Record<string, string> = {
+  teach_agent: "Enseñanza",
+  edit_agent: "Enseñanza",
+  undo_agent_change: "Deshacer",
 };
 
 function fmt(iso: string | null): string {
@@ -171,16 +182,32 @@ export function AssistantsSettingsClient() {
         <h2 className="font-semibold">Asistentes (Claude)</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Conectá Claude Desktop o Claude Code para preguntarle por los números y las conversaciones de esta empresa:
-          «¿cuántos mensajes llegaron esta semana?», «¿cuántos respondieron la campaña?». El acceso es de{" "}
-          <strong>solo lectura</strong>: no puede enviar mensajes ni cambiar nada.
+          «¿cuántos mensajes llegaron esta semana?», «¿cuántos respondieron la campaña?». También puede{" "}
+          <strong>enseñarle al agente</strong> lo que le pidas (preguntas y respuestas, información, reglas, nombre,
+          tono y saludo): cada cambio se aplica en el acto y se ve y se deshace en el{" "}
+          {view.trainerConversationId ? (
+            <a className="underline" href={`/inbox?c=${view.trainerConversationId}`}>
+              panel del Entrenador
+            </a>
+          ) : (
+            "panel del Entrenador"
+          )}
+          . No puede enviar mensajes ni cambiar ningún otro dato.
         </p>
       </div>
+
+      {view.teachingNotice && (
+        <p data-testid="teaching-notice" className="rounded-md border border-brand-soft bg-brand-tint px-4 py-3 text-sm text-brand-text">
+          Desde el 27 de octubre, las conexiones de Claude que ya tenías también pueden enseñarle al agente. Si no
+          querés eso, apagá el switch o revocá la conexión.
+        </p>
+      )}
 
       <div className="flex items-start justify-between gap-4 rounded-md border px-4 py-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">Permitir asistentes externos</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Apagado, ningún asistente obtiene datos de esta empresa, aunque esté conectado.
+            Apagado, ningún asistente obtiene datos de esta empresa ni le enseña al agente, aunque esté conectado.
             {view.updatedAt && ` Último cambio: ${fmt(view.updatedAt)}${view.updatedBy ? ` por ${view.updatedBy}` : ""}.`}
           </p>
         </div>
@@ -274,9 +301,9 @@ export function AssistantsSettingsClient() {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Qué consultaron</h3>
+        <h3 className="text-sm font-semibold">Qué consultaron y qué enseñaron</h3>
         <p className="text-xs text-muted-foreground">
-          Se guarda qué se pidió y cuándo (90 días), nunca lo que el CRM devolvió.
+          Se guarda qué se pidió y cuándo (90 días), nunca lo que el CRM devolvió ni el texto enseñado.
         </p>
         {log.length === 0 && <p className="text-sm text-muted-foreground">Todavía no hubo consultas.</p>}
         {log.length > 0 && (
@@ -284,7 +311,14 @@ export function AssistantsSettingsClient() {
             {log.map((e) => (
               <li key={e.id} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
                 <div className="min-w-0">
-                  <p className="truncate">{e.summary}</p>
+                  <p className="truncate">
+                    {TOOL_KIND[e.tool] && (
+                      <span className="mr-1.5 rounded bg-brand-tint px-1.5 py-0.5 text-[11px] font-medium text-brand-text">
+                        {TOOL_KIND[e.tool]}
+                      </span>
+                    )}
+                    {e.summary}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {fmt(e.at)} · {e.user ?? "—"} · {e.clientLabel}
                   </p>

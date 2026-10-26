@@ -2,16 +2,28 @@ import { z } from "zod";
 import { parseBody, withOwner } from "@/lib/api";
 import { assistantResource } from "@/server/assistants/authorize";
 import { listConnectionsForOrganization } from "@/server/assistants/grants";
-import { getAssistantSettings, setAssistantsEnabled } from "@/server/assistants/settings";
+import { getAssistantSettings, setAssistantsEnabled, TEACHING_SINCE } from "@/server/assistants/settings";
+import { getTrainerConversation } from "@/server/trainer/conversation";
 
 export const dynamic = "force-dynamic";
 
 async function view(organizationId: string) {
-  const [settings, connections] = await Promise.all([
+  const [settings, connections, trainer] = await Promise.all([
     getAssistantSettings(organizationId),
     listConnectionsForOrganization(organizationId),
+    getTrainerConversation(organizationId),
   ]);
-  return { ...settings, connectorUrl: assistantResource(), connections };
+  return {
+    ...settings,
+    connectorUrl: assistantResource(),
+    connections,
+    // 041: dónde se ven y se deshacen los cambios que hizo Claude.
+    trainerConversationId: trainer?.conversation.id ?? null,
+    // 041: hay conexiones de antes de que el switch también dejara enseñar.
+    teachingNotice: connections.some(
+      (c) => c.status === "active" && new Date(c.createdAt).getTime() < TEACHING_SINCE.getTime()
+    ),
+  };
 }
 
 /**

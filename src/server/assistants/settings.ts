@@ -7,6 +7,12 @@ import { scoped } from "@/lib/db/tenant";
  * = apagado: la empresa tiene que encenderlo a propósito.
  */
 
+/**
+ * 041: desde esta fecha el mismo switch también deja ENSEÑARLE al agente. Las
+ * conexiones activas anteriores siguen valiendo; Ajustes avisa el cambio.
+ */
+export const TEACHING_SINCE = new Date("2026-10-27T03:00:00Z");
+
 export type AssistantSettingsDto = {
   enabled: boolean;
   updatedAt: string | null;

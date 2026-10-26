@@ -97,6 +97,9 @@ describe("summarizeChange", () => {
     expect(summarizeChange("kb_add", null, snap)).toBe("Nueva P/R: ¿Cuál es el precio de mensura?");
     expect(summarizeChange("kb_update", snap, { ...snap, answer: "200" })).toContain("Actualizada P/R");
     expect(summarizeChange("kb_delete", snap, null)).toBe("Borrada P/R: ¿Cuál es el precio de mensura?");
+    const block = { ...snap, kind: "block" as const, question: null, answer: null, content: "Check-in desde las 14 h." };
+    expect(summarizeChange("kb_add", null, block)).toBe("Nuevo bloque: Check-in desde las 14 h.");
+    expect(summarizeChange("kb_delete", block, null)).toBe("Borrado bloque: Check-in desde las 14 h.");
     expect(
       summarizeChange(
         "profile_update",

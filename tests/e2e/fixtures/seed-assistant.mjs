@@ -1,4 +1,5 @@
-// E2E 040 (tests/e2e/040-crm-mcp-server.md §E–F): siembra en la BD LOCAL,
+// E2E 040 (tests/e2e/040-crm-mcp-server.md §E–F) y 041
+// (tests/e2e/041-assistant-teaching.md): siembra en la BD LOCAL,
 // dentro de «Negocio de Super Admin Local», lo que la base de desarrollo no
 // trae: un chat en atención humana con la IA pausada, etiqueta `e2e-040`,
 // lead en «Interesado», una derivación del agente y un mensaje con un intento
@@ -25,13 +26,36 @@ export const INJECTION =
 export const LAB_WORD = "zanahoria040";
 
 (async () => {
+  // 041: perillas del guion — `--switch on|off` (switch de asistentes de la
+  // empresa) y `--role owner|member` (rol del usuario e2e). No re-siembran.
+  const sw = process.argv.indexOf("--switch");
+  const role = process.argv.indexOf("--role");
+  if (sw >= 0 || role >= 0) {
+    if (sw >= 0) {
+      const enabled = process.argv[sw + 1] === "on";
+      await sql`insert into assistant_settings (organization_id, enabled) values (${ORG}, ${enabled})
+        on conflict (organization_id) do update set enabled = ${enabled}, updated_at = now()`;
+    }
+    if (role >= 0) {
+      const value = process.argv[role + 1] === "member" ? "member" : "owner";
+      await sql`update member set role = ${value} where organization_id = ${ORG}
+        and user_id = (select id from "user" where email = 'e2e@vocero.test')`;
+    }
+    console.log("ok");
+    await sql.end();
+    return;
+  }
   await sql`delete from conversation_event where id like 'ev_a40_%'`;
   await sql`delete from lead where id like 'ld_a40_%'`;
   await sql`delete from message where id like 'msg_a40_%'`;
   await sql`delete from conversation where id like 'cv_a40_%'`;
   await sql`delete from contact where id like 'ct_a40_%'`;
+  // 041: lo que enseñó Claude en corridas anteriores (y lo sembrado) se borra.
+  await sql`delete from agent_change where organization_id = ${ORG} and (source = 'assistant' or id like 'chg_a41%')`;
+  await sql`delete from kb_entry where organization_id = ${ORG} and (source = 'assistant' or id like 'kb_a41%')`;
+  await sql`delete from contact where id like 'ct_a41_%'`;
   if (process.argv.includes("--cleanup")) {
-    console.log("sembrado de la 040 borrado");
+    console.log("sembrado de la 040/041 borrado");
     await sql.end();
     return;
   }
@@ -85,7 +109,38 @@ export const LAB_WORD = "zanahoria040";
     created_at: iso(now - 10 * MIN),
   })}`;
 
-  console.log(JSON.stringify({ conversation: "cv_a40_inj", contact: "ct_a40_inj", lab_word: LAB_WORD, stage: "Interesado" }));
+  // 041 (tests/e2e/041-assistant-teaching.md): conocimiento conocido del
+  // agente (enlace, teléfono, correo y alias DEL NEGOCIO), un contacto de
+  // Instagram con correo y usuario, y un cambio hecho por el Entrenador (que
+  // Claude NO puede deshacer). El perfil local se respeta: si no hay, se crea.
+  const [profile] = await sql`select id from agent_profile where organization_id = ${ORG}`;
+  if (!profile) {
+    await sql`insert into agent_profile ${sql({ id: "agp_a41", organization_id: ORG, name: "Ari", tone: "Cálido y breve" })}`;
+  }
+  const kb = [
+    ["kb_a41web", "block", null, null,
+      "Reservas en https://reservas.altos-ejemplo.com. Oficina: +54 9 351 555-1234, hola@altos-ejemplo.com. Pagos al alias altos.cabanas.mp"],
+    ["kb_a41check", "qa", "¿A qué hora es el check-in?", "Desde las 14 h.", null],
+    ["kb_a41pileta", "block", null, null, "La pileta está abierta de diciembre a marzo."],
+  ];
+  for (const [id, kind, question, answer, content] of kb) {
+    await sql`insert into kb_entry ${sql({ id, organization_id: ORG, kind, question, answer, content, source: id === "kb_a41pileta" ? "trainer" : "manual" })}`;
+  }
+  await sql`insert into contact ${sql({
+    id: "ct_a41_ig", organization_id: ORG, phone: "ig:17841400000000041", name: "Juan Prueba 041",
+    channel: "instagram", ig_username: "juan.prueba041", email: "juan.prueba041@gmail.com", is_test: false,
+  })}`;
+  await sql`insert into agent_change ${sql({
+    id: "chg_a41trainer", organization_id: ORG, source: "trainer", op: "kb_add", target_id: "kb_a41pileta",
+    before: null, after: sql.json({ id: "kb_a41pileta", kind: "block", question: null, answer: null,
+      content: "La pileta está abierta de diciembre a marzo.", source: "trainer", createdAt: iso(now) }),
+    summary: "Nuevo bloque: La pileta está abierta de diciembre a marzo.",
+  })}`;
+
+  console.log(JSON.stringify({
+    conversation: "cv_a40_inj", contact: "ct_a40_inj", lab_word: LAB_WORD, stage: "Interesado",
+    kb: kb.map((k) => k[0]), trainer_change: "chg_a41trainer", ig_contact: "ct_a41_ig",
+  }));
   await sql.end();
 })().catch(async (err) => {
   console.error(err);
