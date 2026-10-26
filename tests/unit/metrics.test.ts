@@ -6,6 +6,7 @@ import {
   bucketLongLabel,
   deltaRatio,
   fillSeries,
+  formatConversations,
   formatDelta,
   formatDuration,
   metricsWindow,
@@ -107,36 +108,44 @@ describe("fillSeries", () => {
   it("rellena con ceros, suma por canal e ignora lo que no corresponde", () => {
     const keys = ["2026-09-24", "2026-09-25", "2026-09-26"];
     const series = fillSeries(keys, [
-      { bucket: "2026-09-24", channel: "whatsapp", count: 3 },
-      { bucket: "2026-09-26", channel: "instagram", count: 2 },
-      { bucket: "2026-09-26", channel: "whatsapp", count: 5 },
-      { bucket: "2026-01-01", channel: "whatsapp", count: 99 }, // fuera de la ventana
-      { bucket: "2026-09-25", channel: "trainer", count: 7 }, // canal desconocido
+      { bucket: "2026-09-24", channel: "whatsapp", count: 3, conversations: 1 },
+      { bucket: "2026-09-26", channel: "instagram", count: 2, conversations: 2 },
+      { bucket: "2026-09-26", channel: "whatsapp", count: 5, conversations: 3 },
+      { bucket: "2026-01-01", channel: "whatsapp", count: 99, conversations: 9 }, // fuera de la ventana
+      { bucket: "2026-09-25", channel: "trainer", count: 7, conversations: 1 }, // canal desconocido
     ]);
+    // Las conversaciones de cada canal son disjuntas: se suman.
     expect(series).toEqual([
-      { key: "2026-09-24", whatsapp: 3, instagram: 0, past: 0 },
-      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 0 },
-      { key: "2026-09-26", whatsapp: 5, instagram: 2, past: 0 },
+      { key: "2026-09-24", whatsapp: 3, instagram: 0, past: 0, conversations: 1 },
+      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 0, conversations: 0 },
+      { key: "2026-09-26", whatsapp: 5, instagram: 2, past: 0, conversations: 5 },
     ]);
   });
 
   it("el historial importado va a «past» y no suma al canal", () => {
     const keys = ["2026-09-25", "2026-09-26"];
     const series = fillSeries(keys, [
-      { bucket: "2026-09-25", channel: "whatsapp", count: 40, past: true },
-      { bucket: "2026-09-26", channel: "whatsapp", count: 12, past: true },
-      { bucket: "2026-09-26", channel: "whatsapp", count: 3, past: false },
+      { bucket: "2026-09-25", channel: "whatsapp", count: 40, past: true, conversations: 6 },
+      { bucket: "2026-09-26", channel: "whatsapp", count: 12, past: true, conversations: 2 },
+      { bucket: "2026-09-26", channel: "whatsapp", count: 3, past: false, conversations: 1 },
       { bucket: "2026-09-26", channel: "trainer", count: 9, past: true }, // canal desconocido
     ]);
+    // El pasado no suma conversaciones.
     expect(series).toEqual([
-      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 40 },
-      { key: "2026-09-26", whatsapp: 3, instagram: 0, past: 12 },
+      { key: "2026-09-25", whatsapp: 0, instagram: 0, past: 40, conversations: 0 },
+      { key: "2026-09-26", whatsapp: 3, instagram: 0, past: 12, conversations: 1 },
     ]);
     expect(pastTotal(series)).toBe(52);
   });
 });
 
 describe("formatos", () => {
+  it("formatConversations", () => {
+    expect(formatConversations(1)).toBe("1 conversación");
+    expect(formatConversations(0)).toBe("0 conversaciones");
+    expect(formatConversations(1234)).toBe("1.234 conversaciones");
+  });
+
   it("formatDuration", () => {
     expect(formatDuration(null)).toBe("—");
     expect(formatDuration(400)).toBe("0 s");

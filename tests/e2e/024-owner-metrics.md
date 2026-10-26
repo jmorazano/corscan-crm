@@ -91,4 +91,39 @@ y 2 entrantes del historial de Instagram (no cuentan nunca).
 14. **Móvil 375 px**: sin scroll horizontal, la leyenda baja de línea y
     «Ver tabla» no se parte. ✅
 
+### US4 — En cuántas conversaciones (ampliación, 26-oct-2026)
+
+Pedido del dueño mirando «Mensajes recibidos 4.472»: además, en cuántas
+conversaciones se dieron. El seed suma la conversación WhatsApp C, que solo
+escribe (nadie le contesta, no toca el tiempo de respuesta): 3 recibidos
+hace 8 días y 2 hace 1 día → SIEMPRE dos semanas distintas. Con C los
+recibidos del rango diario pasan a 10 (WhatsApp 9) y US1/US3 cambian en
+consecuencia; el tiempo de respuesta queda IDÉNTICO.
+
+15. **API diario**: `received.conversations {total 3, whatsapp 2,
+    instagram 1, previous 1, previousWhatsapp 1, previousInstagram 0}` —
+    A con 4 recibidos y C con 5 cuentan UNA vez cada una; el historial
+    importado no suma conversaciones. `agentSent {total 3, whatsapp 2,
+    instagram 1, previous 1, allSent 4, conversations {total 2, whatsapp 1,
+    instagram 1, previous 1}}`. Barras: `conversations` 1 / 1 / 1 / 2 en
+    los días de hace 8, 3, 2 y 1 días; 0 en las barras solo de pasado.
+    Coincide EXACTO con lo que imprime el seed. ✅
+16. **API semanal**: `received.conversations.total 3`, y C cuenta en DOS
+    barras (12–18 oct → 1, 19–25 oct → 3): la suma de las barras (5) no es
+    el total (3). Coincide con `weekConversations` del seed. ✅
+17. **Página diario**: «Mensajes recibidos 10 en 3 conversaciones»,
+    «↗ +900 % mensajes · ↗ +200 % conversaciones vs. los 30 días
+    anteriores», «WhatsApp 9 en 2 conversaciones · Instagram 1 en 1
+    conversación»; «Enviados por el agente 3 en 2 conversaciones» (+200 % ·
+    +100 %), una línea por canal y «75 % de todo lo que envió la empresa
+    (4)». ✅
+18. **Tooltip**: 23/10 → «0 Instagram · 3 WhatsApp · 2 Pasado (celular) ·
+    5 Total · en 1 conversación (sin el pasado)»; 16/10 → «en 0
+    conversaciones». ✅
+19. **Tabla semanal**: columna «Conversaciones» (19 al 25 de octubre → 3,
+    12 al 18 → 1); tarjetas «11 en 3 conversaciones» y «Sin datos de las
+    12 semanas anteriores». ✅
+20. **Móvil 375 px**: sin scroll horizontal (`scrollWidth` 375) con el
+    texto nuevo de las tarjetas. ✅
+
 Limpieza: `node tests/e2e/fixtures/seed-metrics.mjs --cleanup`.

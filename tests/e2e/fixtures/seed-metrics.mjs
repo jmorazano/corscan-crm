@@ -24,6 +24,13 @@ let seq = 0;
 const id = (p) => `${p}_m24_${(++seq).toString().padStart(4, '0')}`;
 const iso = (t) => new Date(t).toISOString();
 const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t));
+// Lunes local de la semana de `t` (date_trunc('week') de Postgres).
+const localWeekKey = (t) => {
+  const [y, mo, d] = localKey(t).split('-').map(Number);
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+};
 
 (async () => {
   const [u] = await sql`select id from "user" where email = 'e2e@vocero.test'`;
@@ -63,20 +70,32 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   const LAB = await conv('whatsapp', true, '5493510000009');
   const TR = await conv('trainer', true, 'trainer');
 
-  const series = {}; // key → {whatsapp, instagram, past}
-  const bump = (t, ch) => { const k = localKey(t); series[k] ??= { whatsapp: 0, instagram: 0, past: 0 }; series[k][ch]++; };
+  // key → {whatsapp, instagram, past, conversations}: conversaciones
+  // DISTINTAS con recibidos en vivo en la barra (el pasado no suma).
+  const series = {};
+  const weekConvs = {}; // lunes → Set de conversaciones (rango semanal)
+  const convsIn = {};
+  const bump = (t, ch, cv) => {
+    const k = localKey(t);
+    series[k] ??= { whatsapp: 0, instagram: 0, past: 0, conversations: 0 };
+    series[k][ch]++;
+    if (ch === 'past') return;
+    (convsIn[k] ??= new Set()).add(cv);
+    series[k].conversations = convsIn[k].size;
+    (weekConvs[localWeekKey(t)] ??= new Set()).add(cv);
+  };
 
   // A: grupo de 2 entrantes → agente a los 2 min del PRIMERO (120 s).
   const t0 = now - 3 * DAY;
-  await msg(A, 'in', t0); bump(t0, 'whatsapp');
-  await msg(A, 'in', t0 + MIN); bump(t0 + MIN, 'whatsapp');
+  await msg(A, 'in', t0); bump(t0, 'whatsapp', A);
+  await msg(A, 'in', t0 + MIN); bump(t0 + MIN, 'whatsapp', A);
   await msg(A, 'out', t0 + 2 * MIN, { ai: true });
   // A: grupo respondido por una PERSONA → no cuenta en el tiempo.
-  await msg(A, 'in', t0 + 10 * MIN); bump(t0 + 10 * MIN, 'whatsapp');
+  await msg(A, 'in', t0 + 10 * MIN); bump(t0 + 10 * MIN, 'whatsapp', A);
   await msg(A, 'out', t0 + 11 * MIN);
   // A: saliente del agente FALLIDO (no responde) y luego el bueno a los 90 s.
   const t1 = now - 2 * DAY;
-  await msg(A, 'in', t1); bump(t1, 'whatsapp');
+  await msg(A, 'in', t1); bump(t1, 'whatsapp', A);
   await msg(A, 'out', t1 + 30_000, { ai: true, status: 'failed' });
   await msg(A, 'out', t1 + 90_000, { ai: true });
   // A: historial importado de WhatsApp → no cuenta en las tarjetas; los
@@ -95,21 +114,39 @@ const localKey = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: '
   await msg(B, 'in', now - 6 * DAY + MIN, { source: 'history' });
   // B (Instagram): agente a los 40 s; la reacción no es un mensaje.
   const t2 = now - 1 * DAY;
-  await msg(B, 'in', t2); bump(t2, 'instagram');
+  await msg(B, 'in', t2); bump(t2, 'instagram', B);
   await msg(B, 'out', t2 + 40_000, { ai: true });
   await msg(B, 'in', t2 + 2 * MIN, { type: 'reaction', text: '❤️' });
+  // C (WhatsApp): solo escribe, nadie le contesta (no toca el tiempo de
+  // respuesta). 3 recibidos hace 8 días y 2 hace 1 día: SIEMPRE dos semanas
+  // distintas → cuenta en ambas barras semanales y una sola vez en el total.
+  const C = await conv('whatsapp', false, '5493510000003');
+  const t3 = now - 8 * DAY;
+  for (let i = 0; i < 3; i++) { await msg(C, 'in', t3 + i * MIN); bump(t3 + i * MIN, 'whatsapp', C); }
+  for (let i = 0; i < 2; i++) { await msg(C, 'in', t2 + 5 * MIN + i * MIN); bump(t2 + 5 * MIN + i * MIN, 'whatsapp', C); }
   // Laboratorio y Entrenador → nunca cuentan.
   await msg(LAB, 'in', t2); await msg(LAB, 'out', t2 + 5000, { ai: true });
   await msg(TR, 'out', t2); await msg(TR, 'in', t2 + 5000, { ai: true });
   // Período anterior (hace 40 días): 1 recibido, agente a los 60 s.
   const tp = now - 40 * DAY;
   await msg(A, 'in', tp); await msg(A, 'out', tp + 60_000, { ai: true });
+  (weekConvs[localWeekKey(tp)] ??= new Set()).add(A); // dentro de las 12 semanas
 
+  // Rango diario. Conversaciones: A (4 recibidos) y C (5) cuentan UNA vez
+  // cada una; B, una. El período anterior: A (hace 40 días).
   const expected = {
-    received: { total: 5, whatsapp: 4, instagram: 1, previous: 1, past: 9 },
-    agentSent: { total: 3, previous: 1, allSent: 4 },
+    received: {
+      total: 10, whatsapp: 9, instagram: 1, previous: 1, past: 9,
+      conversations: { total: 3, whatsapp: 2, instagram: 1, previous: 1, previousWhatsapp: 1, previousInstagram: 0 },
+    },
+    agentSent: {
+      total: 3, whatsapp: 2, instagram: 1, previous: 1, allSent: 4,
+      conversations: { total: 2, whatsapp: 1, instagram: 1, previous: 1 },
+    },
     responseTime: { medianMs: 90_000, avgMs: (120_000 + 90_000 + 40_000) / 3, count: 3, previousMedianMs: 60_000 },
     series,
+    // Rango semanal: conversaciones distintas por barra (C en dos semanas).
+    weekConversations: Object.fromEntries(Object.entries(weekConvs).sort().map(([k, v]) => [k, v.size])),
   };
   console.log(JSON.stringify(expected, null, 2));
   await sql.end();

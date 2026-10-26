@@ -89,13 +89,22 @@ null), `timezone`.
 `workspace`, `period`/`from`/`to`, `timezone`. → `period { label, from, to,
 timezone, series_unit, compared_with { from, to, note } }`,
 `received { total, whatsapp, instagram, previous, previous_whatsapp,
-previous_instagram, change_ratio, from_phone_history }`, `sent { total, by_agent, by_agent_previous }`,
+previous_instagram, change_ratio, from_phone_history, conversations {
+total, whatsapp, instagram, previous, previous_whatsapp,
+previous_instagram, change_ratio } }`, `sent { total, by_agent,
+by_agent_whatsapp, by_agent_instagram, by_agent_previous,
+by_agent_conversations { total, whatsapp, instagram, previous,
+change_ratio } }` (`conversations` = conversaciones DISTINTAS con al menos
+un mensaje de ese tipo en el período, con las mismas exclusiones que los
+mensajes; el historial importado no suma — 26-oct-2026),
 `conversations_started { total, whatsapp, instagram, previous, answered }`
 (primer mensaje que no viene del historial importado dentro del período;
 `answered` = tuvo al menos una respuesta de la empresa),
 `agent_response_time { median_ms, average_ms, samples, previous_median_ms,
 configured_wait_ms }`, `series[] { key, label, whatsapp, instagram,
-from_phone_history }`, `notes[]`. Mismas definiciones que Métricas (024):
+from_phone_history, conversations }` (`conversations` por barra: una
+conversación que escribió en dos barras cuenta en ambas, una sola vez en el
+total), `notes[]`. Mismas definiciones que Métricas (024):
 la pantalla muestra mediana y promedio, no p90.
 
 ### 3. `get_conversation_origins`

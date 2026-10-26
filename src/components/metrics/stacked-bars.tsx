@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   bucketAxisLabel,
   bucketLongLabel,
+  formatConversations,
   formatCount,
   niceTicks,
   type BucketUnit,
@@ -26,7 +27,8 @@ import {
  * La leyenda, la columna de la tabla y la nota solo aparecen si hay.
  *
  * Interacción: cada barra es su propio blanco (toda la franja, no solo el
- * trazo); el tooltip lista ambos canales y el total. Con el foco en el
+ * trazo); el tooltip lista ambos canales, el total y en cuántas
+ * conversaciones distintas se dieron (sin el pasado). Con el foco en el
  * gráfico, ←/→ recorren las barras (mismo tooltip que con el puntero).
  */
 
@@ -314,8 +316,8 @@ export function StackedBars({ series, unit }: { series: SeriesPoint[]; unit: Buc
         <p className="text-xs text-text-3" data-testid="metrics-past-note">
           <span className="font-medium text-text-2">Pasado:</span> mensajes de WhatsApp que llegaron
           al celular antes de conectar el CRM, importados del historial con su fecha original. Son
-          una referencia del volumen que venías manejando: no suman a las tarjetas ni a las
-          comparaciones.
+          una referencia del volumen que venías manejando: no suman a las tarjetas, a las
+          conversaciones ni a las comparaciones.
         </p>
       )}
     </div>
@@ -376,6 +378,13 @@ function Tooltip({
           <span className="font-semibold tabular-nums text-foreground">{formatCount(total)}</span>
           <span className="text-text-2">Total</span>
         </li>
+        <li className="flex items-center gap-2 text-text-2" data-testid="metrics-tooltip-conversations">
+          <span aria-hidden className="inline-block w-3" />
+          <span>
+            en <span className="font-semibold tabular-nums text-foreground">{formatConversations(point.conversations)}</span>
+            {point.past > 0 ? " (sin el pasado)" : ""}
+          </span>
+        </li>
       </ul>
     </div>
   );
@@ -401,6 +410,7 @@ function DataTable({
             <th className="px-3 py-2 text-right font-medium">Instagram</th>
             {hasPast && <th className="px-3 py-2 text-right font-medium">Pasado</th>}
             <th className="px-3 py-2 text-right font-medium">Total</th>
+            <th className="px-3 py-2 text-right font-medium">Conversaciones</th>
           </tr>
         </thead>
         <tbody className="tabular-nums">
@@ -416,6 +426,7 @@ function DataTable({
                 <td className="px-3 py-1.5 text-right text-text-3">{formatCount(p.past)}</td>
               )}
               <td className="px-3 py-1.5 text-right font-medium">{formatCount(barTotal(p))}</td>
+              <td className="px-3 py-1.5 text-right text-text-2">{formatCount(p.conversations)}</td>
             </tr>
           ))}
         </tbody>

@@ -151,6 +151,13 @@ export type SeriesPoint = {
    * últimos mensajes por conversación y el volumen sería engañoso.
    */
   past: number;
+  /**
+   * Conversaciones DISTINTAS con algún recibido en vivo en esa barra
+   * (WhatsApp + Instagram; el pasado importado no suma). Una conversación
+   * que escribió en dos barras cuenta en ambas, pero una sola vez en el
+   * total del período (`received.conversations`).
+   */
+  conversations: number;
 };
 
 /**
@@ -161,17 +168,27 @@ export type SeriesPoint = {
  */
 export function fillSeries(
   keys: readonly string[],
-  rows: ReadonlyArray<{ bucket: string; channel: string; count: number; past?: boolean }>
+  rows: ReadonlyArray<{
+    bucket: string;
+    channel: string;
+    count: number;
+    past?: boolean;
+    /** Conversaciones distintas del grupo (bucket, canal): los canales no se pisan. */
+    conversations?: number;
+  }>
 ): SeriesPoint[] {
   const byKey = new Map<string, SeriesPoint>(
-    keys.map((key) => [key, { key, whatsapp: 0, instagram: 0, past: 0 }])
+    keys.map((key) => [key, { key, whatsapp: 0, instagram: 0, past: 0, conversations: 0 }])
   );
   for (const row of rows) {
     const point = byKey.get(row.bucket);
     if (!point) continue;
     if (row.channel !== "whatsapp" && row.channel !== "instagram") continue;
     if (row.past) point.past += row.count;
-    else point[row.channel] += row.count;
+    else {
+      point[row.channel] += row.count;
+      point.conversations += row.conversations ?? 0;
+    }
   }
   return keys.map((key) => byKey.get(key)!);
 }
@@ -180,6 +197,18 @@ export function fillSeries(
 export function pastTotal(series: ReadonlyArray<SeriesPoint>): number {
   return series.reduce((sum, p) => sum + p.past, 0);
 }
+
+/**
+ * En cuántas conversaciones DISTINTAS se dieron los mensajes de una
+ * tarjeta, con los mismos filtros que esos mensajes. Una conversación es de
+ * un solo canal, así que `total = whatsapp + instagram`.
+ */
+export type ConversationCounts = {
+  total: number;
+  whatsapp: number;
+  instagram: number;
+  previous: number;
+};
 
 /** Lo que devuelve `GET /api/metrics` (contrato de la UI). */
 export type MetricsOverview = {
@@ -201,10 +230,18 @@ export type MetricsOverview = {
      * no existió).
      */
     past: number;
+    conversations: ConversationCounts & {
+      previousWhatsapp: number;
+      previousInstagram: number;
+    };
   };
   agentSent: {
     total: number;
+    whatsapp: number;
+    instagram: number;
     previous: number;
+    /** Conversaciones en las que respondió el agente. */
+    conversations: ConversationCounts;
     /** Todo lo que envió la empresa en el período (agente + equipo + campañas + celular). */
     allSent: number;
   };
@@ -233,6 +270,11 @@ const COUNT_FORMAT = new Intl.NumberFormat("es-AR");
 
 export function formatCount(n: number): string {
   return COUNT_FORMAT.format(n);
+}
+
+/** "1 conversación", "812 conversaciones". */
+export function formatConversations(n: number): string {
+  return `${formatCount(n)} ${n === 1 ? "conversación" : "conversaciones"}`;
 }
 
 /** Cambio relativo contra el período anterior; sin base no hay cambio. */

@@ -86,7 +86,7 @@ const getMessageMetrics: AssistantTool = {
   name: "get_message_metrics",
   title: "Métricas de mensajes",
   description:
-    "Mensajes recibidos y enviados por canal (WhatsApp, Instagram), conversaciones que empezaron, tiempo de respuesta del agente y comparación con el período anterior de igual duración. Mismas definiciones que la pantalla Métricas del CRM: sin conversaciones de prueba, sin reacciones, y el historial importado del celular aparte.",
+    "Mensajes recibidos y enviados por canal (WhatsApp, Instagram) y en cuántas conversaciones se dieron, conversaciones que empezaron, tiempo de respuesta del agente y comparación con el período anterior de igual duración. Mismas definiciones que la pantalla Métricas del CRM: sin conversaciones de prueba, sin reacciones, y el historial importado del celular aparte.",
   input: metricsInput,
   needsWorkspace: true,
   describe: (args) => `Métricas de mensajes · ${String(args.from ? `${args.from} a ${args.to}` : args.period ?? "last_30_days")}`,
@@ -110,11 +110,35 @@ const getMessageMetrics: AssistantTool = {
           previous_instagram: overview.received.previousInstagram,
           change_ratio: changeRatio(overview.received.total, overview.received.previous),
           from_phone_history: overview.received.past,
+          conversations: {
+            total: overview.received.conversations.total,
+            whatsapp: overview.received.conversations.whatsapp,
+            instagram: overview.received.conversations.instagram,
+            previous: overview.received.conversations.previous,
+            previous_whatsapp: overview.received.conversations.previousWhatsapp,
+            previous_instagram: overview.received.conversations.previousInstagram,
+            change_ratio: changeRatio(
+              overview.received.conversations.total,
+              overview.received.conversations.previous
+            ),
+          },
         },
         sent: {
           total: overview.agentSent.allSent,
           by_agent: overview.agentSent.total,
+          by_agent_whatsapp: overview.agentSent.whatsapp,
+          by_agent_instagram: overview.agentSent.instagram,
           by_agent_previous: overview.agentSent.previous,
+          by_agent_conversations: {
+            total: overview.agentSent.conversations.total,
+            whatsapp: overview.agentSent.conversations.whatsapp,
+            instagram: overview.agentSent.conversations.instagram,
+            previous: overview.agentSent.conversations.previous,
+            change_ratio: changeRatio(
+              overview.agentSent.conversations.total,
+              overview.agentSent.conversations.previous
+            ),
+          },
         },
         conversations_started: started,
         agent_response_time: {
@@ -130,11 +154,13 @@ const getMessageMetrics: AssistantTool = {
           whatsapp: p.whatsapp,
           instagram: p.instagram,
           from_phone_history: p.past,
+          conversations: p.conversations,
         })),
         notes: [
           "received y sent no incluyen el historial importado del celular; from_phone_history lo informa aparte.",
           "sent.total es todo lo que mandó la empresa (agente, equipo, campañas, celular) sin los fallidos; by_agent, solo el agente de IA.",
           "agent_response_time mide cuánto tardó el AGENTE en contestar (incluye la espera configurada, configured_wait_ms); las respuestas de personas del equipo no entran.",
+          "received.conversations y sent.by_agent_conversations cuentan conversaciones DISTINTAS con al menos un mensaje de ese tipo en el período (las mismas exclusiones que los mensajes; el historial importado no suma). series[].conversations es lo mismo por barra: una conversación que escribió en dos barras cuenta en ambas, pero una sola vez en el total.",
           "conversations_started cuenta conversaciones cuyo primer mensaje (sin contar el historial importado) cae en el período; answered, las que tuvieron al menos una respuesta de la empresa.",
         ],
       },

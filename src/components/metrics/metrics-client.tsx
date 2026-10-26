@@ -11,6 +11,7 @@ import {
   METRICS_RANGES,
   RANGE_SPECS,
   deltaRatio,
+  formatConversations,
   formatCount,
   formatDelta,
   formatDuration,
@@ -158,6 +159,7 @@ function StatCard({
   icon: Icon,
   label,
   value,
+  valueNote,
   delta,
   children,
   testId,
@@ -165,6 +167,8 @@ function StatCard({
   icon: LucideIcon;
   label: string;
   value: string;
+  /** Al lado del número: «en 812 conversaciones». */
+  valueNote?: React.ReactNode;
   delta: React.ReactNode;
   children: React.ReactNode;
   testId: string;
@@ -175,11 +179,14 @@ function StatCard({
         <Icon className="h-4 w-4 text-text-3" strokeWidth={1.7} aria-hidden />
         {label}
       </div>
-      <div
-        className="mt-2 text-[30px] font-semibold leading-none tracking-tight"
-        data-testid={`${testId}-value`}
-      >
-        {value}
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span
+          className="text-[30px] font-semibold leading-none tracking-tight"
+          data-testid={`${testId}-value`}
+        >
+          {value}
+        </span>
+        {valueNote && <span className="text-sm text-text-2">{valueNote}</span>}
       </div>
       <div className="mt-2 min-h-[18px] text-xs">{delta}</div>
       <div className="mt-3 flex-1 border-t pt-3 text-xs text-text-2">{children}</div>
@@ -197,16 +204,46 @@ function Delta({
   previous,
   previousLabel,
   goodWhenUp,
+  conversations,
 }: {
   current: number | null;
   previous: number | null;
   previousLabel: string;
   goodWhenUp: boolean | null;
+  /**
+   * Cambio de las conversaciones, al lado del de los mensajes. Comparten
+   * filtro: sin mensajes antes tampoco hubo conversaciones antes.
+   */
+  conversations?: { current: number; previous: number };
 }) {
   const ratio = deltaRatio(current, previous);
   if (ratio === null) {
     return <span className="text-text-3">Sin datos de {previousLabel}</span>;
   }
+  const convRatio = conversations
+    ? deltaRatio(conversations.current, conversations.previous)
+    : null;
+  return (
+    <span
+      className="inline-flex flex-wrap items-center gap-x-1 text-text-2"
+      data-testid="metrics-delta"
+    >
+      <DeltaValue ratio={ratio} goodWhenUp={goodWhenUp} />
+      {convRatio !== null && (
+        <>
+          <span className="text-text-3">mensajes ·</span>
+          <span className="inline-flex items-center gap-x-1" data-testid="metrics-delta-conversations">
+            <DeltaValue ratio={convRatio} goodWhenUp={goodWhenUp} />
+            <span className="text-text-3">conversaciones</span>
+          </span>
+        </>
+      )}
+      <span className="text-text-3">vs. {previousLabel}</span>
+    </span>
+  );
+}
+
+function DeltaValue({ ratio, goodWhenUp }: { ratio: number; goodWhenUp: boolean | null }) {
   const up = ratio > 0;
   const flat = Math.round(ratio * 100) === 0;
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
@@ -217,16 +254,43 @@ function Delta({
         ? "text-success"
         : "text-destructive";
   return (
-    <span
-      className="inline-flex flex-wrap items-center gap-x-1 text-text-2"
-      data-testid="metrics-delta"
-    >
-      <span className="inline-flex items-center gap-0.5 whitespace-nowrap font-medium">
-        {!flat && <Arrow className={cn("h-3.5 w-3.5", tone)} strokeWidth={2} aria-hidden />}
-        {formatDelta(ratio)}
-      </span>
-      <span className="text-text-3">vs. {previousLabel}</span>
+    <span className="inline-flex items-center gap-0.5 whitespace-nowrap font-medium">
+      {!flat && <Arrow className={cn("h-3.5 w-3.5", tone)} strokeWidth={2} aria-hidden />}
+      {formatDelta(ratio)}
     </span>
+  );
+}
+
+/** «en 812 conversaciones» al lado del número de la tarjeta. */
+function InConversations({ n, testId }: { n: number; testId: string }) {
+  return (
+    <span data-testid={testId}>
+      en <span className="font-semibold text-foreground">{formatConversations(n)}</span>
+    </span>
+  );
+}
+
+/** Una línea por canal: «● WhatsApp 4.452 en 790 conversaciones». */
+function ChannelLines({
+  messages,
+  conversations,
+  testId,
+}: {
+  messages: Record<"whatsapp" | "instagram", number>;
+  conversations: Record<"whatsapp" | "instagram", number>;
+  testId: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {(["whatsapp", "instagram"] as const).map((ch) => (
+        <span key={ch} className="inline-flex items-center gap-1.5" data-testid={`${testId}-${ch}`}>
+          <ChannelDot channel={ch} />
+          {CHANNEL_SERIES[ch].label}
+          <span className="font-semibold text-foreground">{formatCount(messages[ch])}</span>
+          <span className="text-text-3">en {formatConversations(conversations[ch])}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -247,20 +311,19 @@ function ReceivedCard({ data, previousLabel }: { data: MetricsOverview; previous
       icon={Inbox}
       label="Mensajes recibidos"
       value={formatCount(r.total)}
+      valueNote={<InConversations n={r.conversations.total} testId="metrics-received-conversations" />}
       testId="metrics-received"
       delta={
-        <Delta current={r.total} previous={r.previous} previousLabel={previousLabel} goodWhenUp={null} />
+        <Delta
+          current={r.total}
+          previous={r.previous}
+          previousLabel={previousLabel}
+          goodWhenUp={null}
+          conversations={{ current: r.conversations.total, previous: r.conversations.previous }}
+        />
       }
     >
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {(["whatsapp", "instagram"] as const).map((ch) => (
-          <span key={ch} className="inline-flex items-center gap-1.5" data-testid={`metrics-received-${ch}`}>
-            <ChannelDot channel={ch} />
-            {CHANNEL_SERIES[ch].label}
-            <span className="font-semibold text-foreground">{formatCount(r[ch])}</span>
-          </span>
-        ))}
-      </div>
+      <ChannelLines messages={r} conversations={r.conversations} testId="metrics-received" />
       {r.past > 0 && (
         <div className="mt-1.5 inline-flex items-center gap-1.5 text-text-3" data-testid="metrics-received-past">
           <span
@@ -286,18 +349,30 @@ function AgentSentCard({ data, previousLabel }: { data: MetricsOverview; previou
       icon={Bot}
       label="Enviados por el agente"
       value={formatCount(a.total)}
+      valueNote={<InConversations n={a.conversations.total} testId="metrics-agent-conversations" />}
       testId="metrics-agent"
       delta={
-        <Delta current={a.total} previous={a.previous} previousLabel={previousLabel} goodWhenUp={null} />
+        <Delta
+          current={a.total}
+          previous={a.previous}
+          previousLabel={previousLabel}
+          goodWhenUp={null}
+          conversations={{ current: a.conversations.total, previous: a.conversations.previous }}
+        />
       }
     >
       {share === null ? (
         <span className="text-text-3">La empresa no envió mensajes en este período.</span>
       ) : (
-        <span data-testid="metrics-agent-share">
-          <span className="font-semibold text-foreground">{share} %</span> de todo lo que envió la
-          empresa ({formatCount(a.allSent)})
-        </span>
+        <div className="flex flex-col gap-1.5">
+          {a.total > 0 && (
+            <ChannelLines messages={a} conversations={a.conversations} testId="metrics-agent" />
+          )}
+          <span data-testid="metrics-agent-share">
+            <span className="font-semibold text-foreground">{share} %</span> de todo lo que envió la
+            empresa ({formatCount(a.allSent)})
+          </span>
+        </div>
       )}
     </StatCard>
   );

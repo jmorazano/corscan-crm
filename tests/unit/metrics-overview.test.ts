@@ -10,8 +10,39 @@ import type { SQL } from "drizzle-orm";
  * reintenta con la de Buenos Aires.
  */
 
+type TotalsRow = Record<string, string>;
+
+const DEFAULT_TOTALS: TotalsRow = {
+  receivedWhatsapp: "7",
+  receivedInstagram: "3",
+  receivedPrevious: "5",
+  receivedPreviousWhatsapp: "4",
+  receivedPreviousInstagram: "1",
+  convWhatsapp: "2",
+  convInstagram: "1",
+  convPreviousWhatsapp: "1",
+  convPreviousInstagram: "1",
+  agentWhatsapp: "5",
+  agentInstagram: "1",
+  agentPrevious: "4",
+  agentConvWhatsapp: "2",
+  agentConvInstagram: "1",
+  agentConvPrevious: "2",
+  allSent: "8",
+};
+
+const DEFAULT_SERIES = [
+  { bucket: "2026-09-26", channel: "whatsapp", past: false, count: "4", conversations: "2" },
+  { bucket: "2026-09-26", channel: "instagram", past: false, count: "2", conversations: "1" },
+  { bucket: "2026-09-20", channel: "whatsapp", past: false, count: "3", conversations: "1" },
+  { bucket: "2026-09-20", channel: "whatsapp", past: true, count: "25", conversations: "4" },
+  { bucket: "2026-09-01", channel: "whatsapp", past: true, count: "30", conversations: "6" },
+];
+
 const state = vi.hoisted(() => ({
   queries: [] as { sql: string; params: unknown[] }[],
+  totals: null as Record<string, string> | null,
+  series: null as Record<string, unknown>[] | null,
   profileDelay: null as number | null,
   failTimeZone: null as string | null,
 }));
@@ -36,26 +67,16 @@ vi.mock("@/lib/db", async (importOriginal) => {
     select: (fields: Record<string, unknown>) => ({
       from: (table: unknown) => {
         const finish = (cond: unknown) => {
-          const r = record(cond);
-          if (table === schema.agentProfile) {
-            const rows = [{ replyDelayMs: state.profileDelay }];
-            return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve(rows) });
+          if (table !== schema.agentProfile) {
+            // Totales: se registran las columnas (los count) junto al WHERE.
+            const where = render(cond);
+            const columns = Object.values(fields).map((f) => render(f).sql);
+            state.queries.push({ sql: `${columns.join(",\n")}\nwhere ${where.sql}`, params: where.params });
+            return Promise.resolve([state.totals]);
           }
-          // Totales: Postgres devuelve los count(*) como texto.
-          void fields;
-          void r;
-          return Promise.resolve([
-            {
-              receivedWhatsapp: "7",
-              receivedInstagram: "3",
-              receivedPrevious: "5",
-              receivedPreviousWhatsapp: "4",
-              receivedPreviousInstagram: "1",
-              agent: "6",
-              agentPrevious: "4",
-              allSent: "8",
-            },
-          ]);
+          record(cond);
+          const rows = [{ replyDelayMs: state.profileDelay }];
+          return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve(rows) });
         };
         return {
           innerJoin: () => ({ where: finish }),
@@ -73,13 +94,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
           { avg_ms: "31500.5", median_ms: 24000, n: "12", previous_median_ms: "18000" },
         ]);
       }
-      return Promise.resolve([
-        { bucket: "2026-09-26", channel: "whatsapp", past: false, count: "4" },
-        { bucket: "2026-09-26", channel: "instagram", past: false, count: "2" },
-        { bucket: "2026-09-20", channel: "whatsapp", past: false, count: "3" },
-        { bucket: "2026-09-20", channel: "whatsapp", past: true, count: "25" },
-        { bucket: "2026-09-01", channel: "whatsapp", past: true, count: "30" },
-      ]);
+      return Promise.resolve(state.series);
     },
   };
   return { ...actual, getDb: () => db };
@@ -91,6 +106,8 @@ const NOW = new Date("2026-09-26T18:30:00Z");
 
 beforeEach(() => {
   state.queries = [];
+  state.totals = DEFAULT_TOTALS;
+  state.series = DEFAULT_SERIES;
   state.profileDelay = null;
   state.failTimeZone = null;
 });
@@ -107,8 +124,24 @@ describe("getMetricsOverview", () => {
       previousWhatsapp: 4,
       previousInstagram: 1,
       past: 55,
+      // El pasado tampoco suma conversaciones.
+      conversations: {
+        total: 3,
+        whatsapp: 2,
+        instagram: 1,
+        previous: 2,
+        previousWhatsapp: 1,
+        previousInstagram: 1,
+      },
     });
-    expect(o.agentSent).toEqual({ total: 6, previous: 4, allSent: 8 });
+    expect(o.agentSent).toEqual({
+      total: 6,
+      whatsapp: 5,
+      instagram: 1,
+      previous: 4,
+      allSent: 8,
+      conversations: { total: 3, whatsapp: 2, instagram: 1, previous: 2 },
+    });
     expect(o.responseTime).toEqual({
       medianMs: 24000,
       avgMs: 31500.5,
@@ -117,10 +150,76 @@ describe("getMetricsOverview", () => {
       replyDelayMs: 20_000,
     });
     expect(o.series).toHaveLength(30);
-    expect(o.series[29]).toEqual({ key: "2026-09-26", whatsapp: 4, instagram: 2, past: 0 });
-    expect(o.series[23]).toEqual({ key: "2026-09-20", whatsapp: 3, instagram: 0, past: 25 });
-    expect(o.series[4]).toEqual({ key: "2026-09-01", whatsapp: 0, instagram: 0, past: 30 });
-    expect(o.series[0]).toEqual({ key: "2026-08-28", whatsapp: 0, instagram: 0, past: 0 });
+    expect(o.series[29]).toEqual({ key: "2026-09-26", whatsapp: 4, instagram: 2, past: 0, conversations: 3 });
+    expect(o.series[23]).toEqual({ key: "2026-09-20", whatsapp: 3, instagram: 0, past: 25, conversations: 1 });
+    expect(o.series[4]).toEqual({ key: "2026-09-01", whatsapp: 0, instagram: 0, past: 30, conversations: 0 });
+    expect(o.series[0]).toEqual({ key: "2026-08-28", whatsapp: 0, instagram: 0, past: 0, conversations: 0 });
+  });
+
+  it("una conversación con muchos mensajes cuenta una vez", async () => {
+    state.totals = {
+      ...DEFAULT_TOTALS,
+      receivedWhatsapp: "40",
+      receivedInstagram: "0",
+      convWhatsapp: "1",
+      convInstagram: "0",
+    };
+    state.series = [{ bucket: "2026-09-26", channel: "whatsapp", past: false, count: "40", conversations: "1" }];
+    const o = await getMetricsOverview("org_a", "day", "America/Argentina/Buenos_Aires", NOW);
+    expect(o.received.total).toBe(40);
+    expect(o.received.conversations.total).toBe(1);
+    expect(o.series[29]?.conversations).toBe(1);
+  });
+
+  it("una conversación que cruza dos semanas cuenta en ambas barras y una sola vez en el total", async () => {
+    // Postgres: count(distinct) por barra da 1 y 1; el de la tarjeta, 1.
+    state.totals = {
+      ...DEFAULT_TOTALS,
+      receivedWhatsapp: "5",
+      receivedInstagram: "0",
+      convWhatsapp: "1",
+      convInstagram: "0",
+    };
+    state.series = [
+      { bucket: "2026-09-14", channel: "whatsapp", past: false, count: "3", conversations: "1" },
+      { bucket: "2026-09-21", channel: "whatsapp", past: false, count: "2", conversations: "1" },
+    ];
+    const o = await getMetricsOverview("org_a", "week", "America/Argentina/Buenos_Aires", NOW);
+    const byKey = Object.fromEntries(o.series.map((p) => [p.key, p.conversations]));
+    expect(byKey["2026-09-14"]).toBe(1);
+    expect(byKey["2026-09-21"]).toBe(1);
+    // El total sale de la consulta del período, no de sumar las barras.
+    expect(o.received.conversations.total).toBe(1);
+    expect(o.series.reduce((sum, p) => sum + p.conversations, 0)).toBe(2);
+  });
+
+  it("las conversaciones se cuentan DISTINTAS y con el mismo filtro que sus mensajes", async () => {
+    await getMetricsOverview("org_a", "day", "America/Argentina/Buenos_Aires", NOW);
+    const totals = state.queries.find(
+      (q) => q.sql.includes("count(distinct") && !q.sql.includes("date_trunc")
+    )!;
+    const recv = `("message"."direction" = 'in' and "message"."type" <> 'reaction')`;
+    const agent = `(("message"."direction" = 'out' and "message"."status" <> 'failed') and "message"."ai_generated" = true)`;
+    const current = `"message"."created_at" >= $`;
+    for (const [what, ch] of [
+      [recv, "whatsapp"],
+      [recv, "instagram"],
+      [agent, "whatsapp"],
+      [agent, "instagram"],
+    ] as const) {
+      expect(totals.sql).toContain(
+        `count(distinct "message"."conversation_id") filter (where ${what} and ${current}`
+      );
+      expect(totals.sql).toContain(`and "conversation"."kind" = '${ch}')`);
+    }
+    expect(totals.sql).toContain(`count(distinct "message"."conversation_id") filter (where ${agent} and not`);
+    // Misma consulta que los mensajes: sin historial, sin sandbox.
+    expect(totals.sql).toContain("\"message\".\"source\" <> 'history'");
+    expect(totals.sql).toContain('"conversation"."is_test" = false');
+    // La serie: distintas por (barra, canal, pasado).
+    const series = state.queries.find((q) => q.sql.includes("date_trunc"))!;
+    expect(series.sql).toContain('count(distinct "message"."conversation_id") as conversations');
+    expect(series.sql).toContain("group by 1, 2, 3");
   });
 
   it("toda consulta va scoped a la empresa y deja afuera sandbox e historial (la serie: salvo el de WhatsApp)", async () => {

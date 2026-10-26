@@ -28,6 +28,9 @@ import { resolveReplyDelayMs } from "@/lib/agent-timing";
  *   teléfono. El de Instagram no (son 20 mensajes por conversación).
  * - Recibidos sin las reacciones con emoji de Instagram (`type='reaction'`).
  * - Salientes sin los fallidos: el cliente no los recibió.
+ * - «En cuántas conversaciones»: `count(distinct conversation_id)` con
+ *   EXACTAMENTE el mismo filtro que los mensajes que acompaña (el pasado del
+ *   celular no suma conversaciones).
  *
  * Los `timestamp` de la BD son UTC sin zona (convención del repo); las
  * fechas viajan como texto ISO con cast, nunca como `Date` crudo dentro de
@@ -70,6 +73,11 @@ const IS_RECEIVED = sql`(${m.direction} = 'in' and ${m.type} <> 'reaction')`;
 const IS_SENT = sql`(${m.direction} = 'out' and ${m.status} <> 'failed')`;
 const IS_AGENT = sql`(${IS_SENT} and ${m.aiGenerated} = true)`;
 const IS_PAST = sql`(${m.source} = 'history')`;
+
+/** Conversaciones distintas entre los mensajes que cumplen `where`. */
+function distinctConversations(where: SQL) {
+  return sql<string>`count(distinct ${m.conversationId}) filter (where ${where})`;
+}
 
 /**
  * Cuánto le lleva al cliente desde que la conversación queda esperando
@@ -199,8 +207,16 @@ export async function overviewForWindow(
         receivedPrevious: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent})`,
         receivedPreviousWhatsapp: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'whatsapp')`,
         receivedPreviousInstagram: sql<string>`count(*) filter (where ${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'instagram')`,
-        agent: sql<string>`count(*) filter (where ${IS_AGENT} and ${isCurrent})`,
+        convWhatsapp: distinctConversations(sql`${IS_RECEIVED} and ${isCurrent} and ${c.kind} = 'whatsapp'`),
+        convInstagram: distinctConversations(sql`${IS_RECEIVED} and ${isCurrent} and ${c.kind} = 'instagram'`),
+        convPreviousWhatsapp: distinctConversations(sql`${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'whatsapp'`),
+        convPreviousInstagram: distinctConversations(sql`${IS_RECEIVED} and not ${isCurrent} and ${c.kind} = 'instagram'`),
+        agentWhatsapp: sql<string>`count(*) filter (where ${IS_AGENT} and ${isCurrent} and ${c.kind} = 'whatsapp')`,
+        agentInstagram: sql<string>`count(*) filter (where ${IS_AGENT} and ${isCurrent} and ${c.kind} = 'instagram')`,
         agentPrevious: sql<string>`count(*) filter (where ${IS_AGENT} and not ${isCurrent})`,
+        agentConvWhatsapp: distinctConversations(sql`${IS_AGENT} and ${isCurrent} and ${c.kind} = 'whatsapp'`),
+        agentConvInstagram: distinctConversations(sql`${IS_AGENT} and ${isCurrent} and ${c.kind} = 'instagram'`),
+        agentConvPrevious: distinctConversations(sql`${IS_AGENT} and not ${isCurrent}`),
         allSent: sql<string>`count(*) filter (where ${IS_SENT} and ${isCurrent})`,
       })
       .from(m)
@@ -211,7 +227,8 @@ export async function overviewForWindow(
         to_char(date_trunc(${w.unit}, (${m.createdAt} at time zone 'UTC') at time zone ${timeZone}), 'YYYY-MM-DD') as bucket,
         ${c.kind} as channel,
         ${IS_PAST} as past,
-        count(*) as count
+        count(*) as count,
+        count(distinct ${m.conversationId}) as conversations
       from ${m}
       inner join ${c} on ${c.id} = ${m.conversationId}
       where ${realMessages(organizationId, w.start, w.end, { withWhatsAppHistory: true })} and ${IS_RECEIVED}
@@ -231,8 +248,18 @@ export async function overviewForWindow(
       channel: String(r.channel),
       count: Number(r.count),
       past: r.past === true || r.past === "t" || r.past === "true",
+      conversations: Number(r.conversations ?? 0),
     }))
   );
+  const n = (v: string | undefined) => Number(v ?? 0);
+  const convWhatsapp = n(t?.convWhatsapp);
+  const convInstagram = n(t?.convInstagram);
+  const convPreviousWhatsapp = n(t?.convPreviousWhatsapp);
+  const convPreviousInstagram = n(t?.convPreviousInstagram);
+  const agentWhatsapp = n(t?.agentWhatsapp);
+  const agentInstagram = n(t?.agentInstagram);
+  const agentConvWhatsapp = n(t?.agentConvWhatsapp);
+  const agentConvInstagram = n(t?.agentConvInstagram);
 
   return {
     timeZone,
@@ -245,10 +272,26 @@ export async function overviewForWindow(
       previousWhatsapp: Number(t?.receivedPreviousWhatsapp ?? 0),
       previousInstagram: Number(t?.receivedPreviousInstagram ?? 0),
       past: pastTotal(series),
+      conversations: {
+        total: convWhatsapp + convInstagram,
+        whatsapp: convWhatsapp,
+        instagram: convInstagram,
+        previous: convPreviousWhatsapp + convPreviousInstagram,
+        previousWhatsapp: convPreviousWhatsapp,
+        previousInstagram: convPreviousInstagram,
+      },
     },
     agentSent: {
-      total: Number(t?.agent ?? 0),
+      total: agentWhatsapp + agentInstagram,
+      whatsapp: agentWhatsapp,
+      instagram: agentInstagram,
       previous: Number(t?.agentPrevious ?? 0),
+      conversations: {
+        total: agentConvWhatsapp + agentConvInstagram,
+        whatsapp: agentConvWhatsapp,
+        instagram: agentConvInstagram,
+        previous: n(t?.agentConvPrevious),
+      },
       allSent: Number(t?.allSent ?? 0),
     },
     responseTime: { ...rt, replyDelayMs },
