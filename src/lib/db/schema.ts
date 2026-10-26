@@ -537,7 +537,7 @@ export const kbEntry = pgTable(
     content: text("content"),
     /** 015: origen de la entrada (chip en Agente): manual, sugerencia del
      * Laboratorio o enseñanza por chat del entrenador. */
-    source: text("source", { enum: ["manual", "lab", "trainer"] })
+    source: text("source", { enum: ["manual", "lab", "trainer", "assistant"] })
       .notNull()
       .default("manual"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -566,7 +566,7 @@ export const agentChange = pgTable(
     messageId: text("message_id").references(() => message.id, {
       onDelete: "set null",
     }),
-    source: text("source", { enum: ["trainer", "manual", "lab"] })
+    source: text("source", { enum: ["trainer", "manual", "lab", "assistant"] })
       .notNull()
       .default("trainer"),
     op: text("op", {
@@ -1827,7 +1827,7 @@ export const assistantAccessLog = pgTable(
     summary: text("summary").notNull(),
     outcome: text("outcome", { enum: ["ok", "denied", "error"] }).notNull(),
     reason: text("reason", {
-      enum: ["not_authorized", "disabled", "not_owner", "invalid_args", "not_found", "rate_limited", "internal"],
+      enum: ["not_authorized", "disabled", "not_owner", "invalid_args", "not_found", "rate_limited", "internal", "rejected"],
     }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

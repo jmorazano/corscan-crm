@@ -12,7 +12,7 @@ import { renderKb } from "@/server/ai/prompts";
  */
 
 export type KbEntry = typeof schema.kbEntry.$inferSelect;
-export type KbSource = "manual" | "lab" | "trainer";
+export type KbSource = "manual" | "lab" | "trainer" | "assistant";
 
 type Db = ReturnType<typeof getDb>;
 export type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];

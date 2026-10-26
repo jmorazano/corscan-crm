@@ -17,7 +17,9 @@ export type AccessReason =
   | "invalid_args"
   | "not_found"
   | "rate_limited"
-  | "internal";
+  | "internal"
+  /** 041: una enseñanza en la que las protecciones rechazaron todo. */
+  | "rejected";
 
 export const LOG_RETENTION_DAYS = 90;
 const MAX_SUMMARY_CHARS = 200;

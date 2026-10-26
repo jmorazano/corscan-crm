@@ -26,6 +26,20 @@ export type ToolOutput = {
   data: Record<string, unknown>;
   /** Descripción para el registro cuando depende del resultado. */
   summary?: string;
+  /**
+   * 041: la llamada salió bien pero no cambió nada (todo rechazado por las
+   * protecciones). Se registra como `denied`/`rejected`; al asistente le
+   * llega el resultado completo, sin `isError`.
+   */
+  rejected?: boolean;
+};
+
+/** Anotaciones MCP de una herramienta (041: las de escritura las declaran). */
+export type ToolAnnotations = {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
 };
 
 export type AssistantTool = {
@@ -34,6 +48,8 @@ export type AssistantTool = {
   description: string;
   input: z.ZodObject;
   needsWorkspace: boolean;
+  /** Sin declarar = solo lectura (las 12 de la 040). */
+  annotations?: ToolAnnotations;
   /** Descripción en lenguaje claro para el registro (sin el contenido devuelto). */
   describe: (args: Record<string, unknown>) => string;
   run: (ctx: ToolContext, args: Record<string, unknown>) => Promise<ToolOutput>;

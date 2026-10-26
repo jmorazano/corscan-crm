@@ -3,7 +3,7 @@ import { toolError, toolResult, type ToolCallResult } from "@/lib/mcp-server/jso
 import type { GrantWorkspace } from "@/lib/assistants/authorize";
 import { authorizeWorkspace, type AssistantCall } from "../access";
 import { logAssistantCall, type AccessReason } from "../log";
-import { ToolInputError, ToolNotFoundError, type AssistantTool } from "./common";
+import { ToolInputError, ToolNotFoundError, type AssistantTool, type ToolAnnotations } from "./common";
 import { listWorkspacesTool } from "./workspaces";
 import { metricsTools } from "./metrics";
 import { campaignTools } from "./campaigns";
@@ -12,19 +12,20 @@ import { contactTools } from "./contacts";
 import { pipelineTools } from "./pipeline";
 
 /**
- * Catálogo de herramientas de SOLO LECTURA del servidor MCP de los
- * asistentes (040, specs/040-crm-mcp-server/contracts/mcp-tools.md).
+ * Catálogo de herramientas del servidor MCP de los asistentes (040 de solo
+ * lectura, specs/040-crm-mcp-server/contracts/mcp-tools.md; 041 suma las de
+ * enseñarle al agente, specs/041-assistant-teaching/contracts/mcp-tools.md).
  *
  * Toda herramienta con `workspace` pasa por `authorizeWorkspace` ANTES de
  * correr (FR-007) y queda en el registro de la empresa (FR-025).
  */
 
-const READ_ONLY_ANNOTATIONS = {
+const READ_ONLY_ANNOTATIONS: ToolAnnotations = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
   openWorldHint: false,
-} as const;
+};
 
 export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   listWorkspacesTool,
@@ -48,7 +49,7 @@ export function listToolsForMcp() {
       title: t.title,
       description: t.description,
       inputSchema,
-      annotations: { title: t.title, ...READ_ONLY_ANNOTATIONS },
+      annotations: { title: t.title, ...(t.annotations ?? READ_ONLY_ANNOTATIONS) },
     };
   });
 }
@@ -112,7 +113,8 @@ export async function callTool(
   const summary = safeDescribe(tool, args);
   try {
     const out = await tool.run({ call, workspace, now }, args);
-    log(orgIds, out.summary ?? summary, "ok");
+    if (out.rejected) log(orgIds, out.summary ?? summary, "denied", "rejected");
+    else log(orgIds, out.summary ?? summary, "ok");
     return toolResult(out.data);
   } catch (err) {
     if (err instanceof ToolNotFoundError) {

@@ -137,6 +137,20 @@ describe("applyTrainerChanges", () => {
     expect(kb?.values).toMatchObject({ source: "trainer", question: "¿Precio?" });
   });
 
+  it("con source assistant (041) la entrada y la auditoría quedan con origen Claude", async () => {
+    const { applyTrainerChanges } = await import("@/server/trainer/changes");
+    const { getDb } = await import("@/lib/db");
+    const out = await applyTrainerChanges(
+      getDb(),
+      { organizationId: "org_1", conversationId: null, messageId: null, source: "assistant" },
+      [{ op: "kb_add", kind: "block", content: "Check-in desde las 14 h." }]
+    );
+    expect(out.applied[0]).toMatchObject({ op: "kb_add", source: "assistant" });
+    const audit = inserts.find((i) => i.table === "agentChange")!;
+    expect(audit.values).toMatchObject({ source: "assistant", conversationId: null, messageId: null });
+    expect(inserts.find((i) => i.table === "kbEntry")?.values).toMatchObject({ source: "assistant" });
+  });
+
   it("kb_update restaura coherencia: content sobre una P/R → rechazado", async () => {
     const { applyTrainerChanges } = await import("@/server/trainer/changes");
     const { getDb } = await import("@/lib/db");

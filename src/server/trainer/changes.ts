@@ -11,6 +11,7 @@ import {
   updateEntry,
   type DbOrTx,
   type KbEntry,
+  type KbSource,
 } from "@/server/kb/service";
 import {
   getProfile,
@@ -32,9 +33,14 @@ import {
 
 export type ChangeOp = "kb_add" | "kb_update" | "kb_delete" | "profile_update";
 
+/** Quién hizo el cambio: el Entrenador de la Bandeja o Claude por MCP (041). */
+export type ChangeSource = "trainer" | "assistant";
+
 export type ChangeDto = {
   id: string;
   op: ChangeOp;
+  /** `trainer`/`assistant` (y `manual`/`lab` en filas viejas). */
+  source: ChangeRow["source"];
   targetId: string | null;
   summary: string;
   before: unknown;
@@ -74,7 +80,7 @@ export type KbSnapshot = {
   question: string | null;
   answer: string | null;
   content: string | null;
-  source: "manual" | "lab" | "trainer";
+  source: KbSource;
   createdAt: string;
 };
 
@@ -143,6 +149,7 @@ export function serializeChange(row: ChangeRow): ChangeDto {
   return {
     id: row.id,
     op: row.op,
+    source: row.source,
     targetId: row.targetId,
     summary: row.summary,
     before: row.before,
@@ -157,6 +164,8 @@ type ApplyCtx = {
   organizationId: string;
   conversationId: string | null;
   messageId: string | null;
+  /** Default `trainer`; `assistant` cuando enseña Claude por MCP (041). */
+  source?: ChangeSource;
 };
 
 async function recordChange(
@@ -174,7 +183,7 @@ async function recordChange(
       organizationId: ctx.organizationId,
       conversationId: ctx.conversationId,
       messageId: ctx.messageId,
-      source: "trainer",
+      source: ctx.source ?? "trainer",
       op,
       targetId,
       before,
@@ -229,7 +238,7 @@ async function applyOne(
       if (input.kind === "block" && !input.content) {
         throw new KbError("invalid", "un bloque necesita contenido");
       }
-      const entry = await createEntry(org, input, "trainer", db);
+      const entry = await createEntry(org, input, ctx.source ?? "trainer", db);
       return recordChange(db, ctx, "kb_add", entry.id, null, snapshotKb(entry));
     }
     case "kb_update": {

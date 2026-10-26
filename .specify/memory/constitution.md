@@ -1,7 +1,29 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.12.1 → 1.13.0
+Versión: 1.13.0 → 1.14.0
+
+Cambios (feature 041-assistant-teaching, 26-oct-2026) — MINOR:
+  - Principio I, regla «Acceso entrante de asistentes del usuario»: la
+    condición (c) deja de ser «solo lectura» absoluta y admite UNA escritura
+    acotada: ENSEÑAR AL AGENTE de la empresa (perfil y conocimiento, las
+    mismas operaciones del Entrenador), aplicada en el acto con auditoría
+    antes/después y deshacer, origen «Claude» visible, guardas deterministas
+    del CRM (enlaces, teléfonos y correos que el agente no conocía, datos de
+    contactos, marcadores internos, repetidos), tope por hora por empresa y
+    herramientas declaradas de escritura para que el cliente confirme.
+    Cualquier otra escritura sigue exigiendo otra enmienda.
+  - (g) se precisa: leer el perfil y el conocimiento del agente está
+    permitido (es configuración del negocio); la conversación del
+    Entrenador y el Laboratorio siguen fuera.
+  - Motivación: pedido del dueño (26-oct-2026) — que lo que descubre con
+    Claude se convierta en conocimiento del agente sin abrir el CRM.
+    Decisiones cerradas: en el acto con deshacer, alcance = Entrenador,
+    mismo switch que la lectura.
+  - Plantillas: sin cambios. CLAUDE.md: mapa del código y feature activa
+    (041).
+
+Versión anterior: 1.12.1 → 1.13.0
 
 Cambios (feature 040-crm-mcp-server, 26-oct-2026) — MINOR:
   - Principio I: regla nueva «Acceso entrante de asistentes del usuario».
@@ -342,15 +364,23 @@ velocidad de entrega o conveniencia de desarrollo.
   instalador no configura nada. Condiciones NO negociables: (a) apagado por defecto:
   un switch por empresa que solo el propietario cambia, y apagado ninguna conexión
   obtiene datos de esa empresa; (b) consentimiento explícito empresa por empresa, en
-  una pantalla del propio CRM con la sesión del usuario; (c) SOLO LECTURA: ninguna
-  herramienta envía mensajes, cambia datos ni toca las APIs de Meta, el agente o los
-  conectores de terceros —habilitar escritura exige otra enmienda—; (d) tokens y
+  una pantalla del propio CRM con la sesión del usuario; (c) SOLO LECTURA, con UNA
+  excepción (desde 1.14.0): ENSEÑAR AL AGENTE de la empresa —las mismas operaciones
+  del Entrenador sobre el perfil y el conocimiento—, aplicada en el acto con
+  auditoría antes/después y deshacer, origen visible, guardas deterministas del CRM
+  que no dependen de la confirmación del asistente (rechazan enlaces, teléfonos y
+  correos que el agente no conocía, datos de contactos y marcadores internos), tope
+  de cambios por hora por empresa y herramientas declaradas de escritura; ninguna
+  herramienta envía mensajes, cambia otros datos ni toca las APIs de Meta, los
+  conectores de terceros, la configuración de IA ni el Laboratorio —cualquier otra
+  escritura exige otra enmienda—; (d) tokens y
   códigos guardados solo como hash, de vida corta, rotativos y revocables; cambiar o
   restablecer la contraseña revoca todas las conexiones de la persona; (e) en CADA
   llamada se revalidan la conexión, la empresa autorizada, el switch y el rol
   propietario, sin caché; (f) registro de consultas por empresa, visible para el
   propietario, sin el contenido devuelto, conservado 90 días; (g) jamás datos del
-  Laboratorio ni del Entrenador, credenciales, secretos ni binarios de adjuntos, y
+  Laboratorio ni la conversación del Entrenador (el perfil y el conocimiento del
+  agente sí se pueden leer), credenciales, secretos ni binarios de adjuntos, y
   todo texto escrito por terceros viaja saneado y marcado como dato, nunca como
   instrucción.
 
@@ -689,4 +719,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.13.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-26
+**Version**: 1.14.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-26
