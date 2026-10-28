@@ -10,7 +10,8 @@ import { toLocalParts } from "@/lib/time";
  * origen de un anuncio (035) vive en la conversación. Para poder retomar «a
  * los que llegaron por el anuncio de octubre», el origen deja además una
  * etiqueta canal + mes en el contacto:
- * - anuncio Click-to-WhatsApp de Meta → `meta-ads-AAAA-MM` (mes del clic);
+ * - anuncio Click-to-WhatsApp de Meta → `meta-ads-AAAA-MM` (mes del clic) y,
+ *   además, una etiqueta POR ANUNCIO con su título (`adTag`);
  * - regla por frase de la empresa («vi el anuncio en Google» → `google-ads`),
  *   con el mes por defecto: Google no manda `referral`, solo llega el texto
  *   precargado del enlace `wa.me`.
@@ -32,6 +33,36 @@ export const MAX_ORIGIN_RULES = 20;
 
 /** Una charla se «abre» si el cliente no escribía hace 24 h (o nunca). */
 export const OPENING_GAP_MS = 24 * 60 * 60_000;
+
+/** Prefijo de la etiqueta por anuncio (`meta-suite-premium-para-parejas`). */
+export const META_AD_TAG_PREFIX = "meta-";
+const AD_SLUG_MAX = MAX_TAG_LENGTH - META_AD_TAG_PREFIX.length;
+
+/**
+ * Etiqueta POR ANUNCIO: el título que vio la persona, abreviado
+ * (`meta-suite-premium-para-parejas`). Sin título, los últimos dígitos del id
+ * del anuncio (`meta-anuncio-31180427`). Un anuncio con varias creatividades
+ * comparte el id pero no el título: cada título es su propio segmento, que es
+ * lo que sirve para retomar con el mensaje que corresponde. `null` si el
+ * origen no trae ni título ni id.
+ */
+export function adTag(origin: { detail?: string | null; ref?: string | null }): string | null {
+  const slug = origin.detail ? slugForTag(origin.detail, AD_SLUG_MAX) : null;
+  if (slug && !/^ads-\d{4}-\d{2}$/.test(slug)) return `${META_AD_TAG_PREFIX}${slug}`;
+  const id = origin.ref?.replace(/[^0-9a-z]/gi, "").toLowerCase().slice(-8);
+  return id ? `${META_AD_TAG_PREFIX}anuncio-${id}` : null;
+}
+
+/** Abrevia sin cortar una palabra al medio (si la primera ya no entra, la corta). */
+function slugForTag(text: string, max: number): string | null {
+  const full = sanitizeRuleTag(text, Number.MAX_SAFE_INTEGER);
+  if (!full) return null;
+  if (full.length <= max) return full;
+  const cut = full.slice(0, max + 1);
+  const lastDash = cut.lastIndexOf("-");
+  const slug = (lastDash > 0 ? cut.slice(0, lastDash) : full.slice(0, max)).replace(/[-_]+$/g, "");
+  return slug || null;
+}
 
 /** `AAAA-MM` del instante en la zona dada. */
 export function originMonth(at: Date, timeZone: string = ORIGIN_TIMEZONE): string {
@@ -55,7 +86,7 @@ export function originTag(
  * solo `[a-z0-9-_]`, sin guiones sueltos en los bordes. `null` si no queda
  * nada.
  */
-export function sanitizeRuleTag(raw: string): string | null {
+export function sanitizeRuleTag(raw: string, max: number = ORIGIN_TAG_BASE_MAX): string | null {
   const tag = raw
     .toLowerCase()
     .normalize("NFD")
@@ -65,7 +96,7 @@ export function sanitizeRuleTag(raw: string): string | null {
     .replace(/[^a-z0-9_-]/g, "")
     .replace(/-{2,}/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "")
-    .slice(0, ORIGIN_TAG_BASE_MAX)
+    .slice(0, max)
     .replace(/[-_]+$/g, "");
   return tag || null;
 }

@@ -11,6 +11,10 @@ export async function register(): Promise<void> {
       "./server/contacts-backfill"
     );
     await backfillContactPhones();
+    // 043: etiqueta por anuncio de los contactos que ya llegaron por uno
+    // (re-ejecutable, solo suma lo que falta; en segundo plano).
+    const { backfillAdTags } = await import("./server/contact-origin");
+    void backfillAdTags();
     // 004: las campañas en curso retoman solas (at-most-once) y el ticker
     // reanuda las pausadas por cupo cuando la ventana móvil libera.
     const { reviveCampaigns } = await import("./server/campaigns/runner");

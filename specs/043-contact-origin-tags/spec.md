@@ -77,3 +77,19 @@ anuncio en Google…»).
    vista previa cuenta solo a los que llegaron antes de hace 15 días, y al
    lanzar congela esos mismos.
 4. Un miembro no ve la pestaña ni puede escribir reglas (403).
+
+## Ampliación (28-oct-2026): etiqueta por anuncio
+
+Pedido del dueño tras ver que en Altos 709 de 1.117 contactos llegaron por
+UN solo anuncio: la etiqueta del mes no separa dos anuncios del mismo mes.
+
+- **FR-009** Además de `meta-ads-AAAA-MM`, un anuncio aplicado suma
+  `meta-<título abreviado>` (saneo de las reglas, ≤ 40 sin cortar palabras;
+  `meta-suite-premium-para-parejas`). Sin título utilizable, `meta-anuncio-<8
+  últimos del id>`. Un anuncio con varias creatividades comparte el id pero
+  no el título: cada título es su propia etiqueta.
+- **FR-010** Backfill al arrancar (`backfillAdTags` desde `instrumentation.ts`,
+  en segundo plano): los contactos de conversaciones con origen de anuncio de
+  WhatsApp reciben las etiquetas que les falten; re-ejecutable, respeta el
+  tope de 20 y nunca tumba el arranque. Va en TS (no en SQL) porque necesita
+  el mismo saneo que la ingesta.

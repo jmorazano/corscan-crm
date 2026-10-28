@@ -328,14 +328,14 @@ export async function ingestInboundMessage(input: {
       );
       return null;
     });
-    // 043: el contacto se lleva `meta-ads-AAAA-MM` (las campañas eligen por
-    // etiquetas del CONTACTO). Solo si el origen se aplicó: una reentrega o
-    // un clic viejo no tocan nada.
+    // 043: el contacto se lleva `meta-ads-AAAA-MM` y la etiqueta del
+    // anuncio (las campañas eligen por etiquetas del CONTACTO). Solo si el
+    // origen se aplicó: una reentrega o un clic viejo no tocan nada.
     if (applied) {
       await tagMetaAdContact({
         organizationId,
         contactId: contact.id,
-        at: new Date(applied.at),
+        origin: applied,
       }).catch((err) =>
         console.warn(
           "[webhook] no se pudo etiquetar el contacto del anuncio:",

@@ -60,3 +60,13 @@ Conducción: script Node (entrantes por `POST /api/dev/wa-mock/inbound` con
 
 Resultado 28-oct-2026: 30/30 del script (el miembro, aparte: 403/403/307) y
 UI conducida en escritorio y móvil.
+
+## Ampliación: etiqueta por anuncio (28-oct-2026)
+
+1. Contacto sembrado con origen «🌲 Suite Premium para Parejas» y solo
+   `meta-ads-2026-10` → al arrancar ✔ log `[boot] etiquetas por anuncio: 1
+   contacto(s)` y ✔ `meta-suite-premium-para-parejas`.
+2. Entrante con ese anuncio → ✔ `meta-ads-2026-10` + `meta-suite-premium-para-parejas`;
+   ✔ reentrega sin duplicar; ✔ otra creatividad del mismo id («🍃 Descanso en
+   las Sierras de Córdoba») suma `meta-descanso-en-las-sierras-de-cordoba`;
+   ✔ referral sin título → `meta-anuncio-31180427`. 4/4.

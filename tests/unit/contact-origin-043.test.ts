@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   META_ADS_TAG,
+  adTag,
   matchOriginRules,
   opensConversation,
   originMonth,
@@ -99,5 +100,32 @@ describe("043 · días del filtro de campaña", () => {
     for (const v of [0, -1, 366, 1.5, "", "abc", null, undefined]) {
       expect(normalizeArrivedMinDays(v)).toBeNull();
     }
+  });
+});
+
+describe("043 · etiqueta por anuncio", () => {
+  it("título abreviado, sin emojis ni tildes", () => {
+    expect(adTag({ detail: "🌲 Suite Premium para Parejas", ref: "120254979031180427" })).toBe(
+      "meta-suite-premium-para-parejas"
+    );
+    expect(adTag({ detail: "🍃 Descanso en las Sierras de Córdoba", ref: "120254979031180427" })).toBe(
+      "meta-descanso-en-las-sierras-de-cordoba"
+    );
+  });
+
+  it("entra en 40 caracteres sin cortar una palabra al medio", () => {
+    const tag = adTag({ detail: "Relevamiento con dron y fotogrametría para obras en Córdoba capital", ref: "1" })!;
+    expect(tag.length).toBeLessThanOrEqual(MAX_TAG_LENGTH);
+    expect(tag).toBe("meta-relevamiento-con-dron-y");
+  });
+
+  it("sin título (o solo emojis), el id; sin nada, null", () => {
+    expect(adTag({ detail: null, ref: "120254979031180427" })).toBe("meta-anuncio-31180427");
+    expect(adTag({ detail: "🌲🌲", ref: "120254979031180427" })).toBe("meta-anuncio-31180427");
+    expect(adTag({ detail: null, ref: null })).toBeNull();
+  });
+
+  it("un título que imitaría la del mes cae al id", () => {
+    expect(adTag({ detail: "ADS 2026 10", ref: "999" })).toBe("meta-anuncio-999");
   });
 });

@@ -224,6 +224,7 @@ describe("043 · anuncio de Meta → etiqueta en el contacto", () => {
     expect(updates).toHaveLength(1);
     const u = updates[0]!;
     expect(u.tags).toContain(`meta-ads-${CLICK_AT.toISOString().slice(0, 7)}`);
+    expect(u.tags).toContain("meta-relevamiento-con-dron-en-cordoba");
     expect(u.originAt).toContain(CLICK_AT.toISOString());
     expect(u.where.sql).toContain('"contact"."organization_id"');
     expect(u.where.sql).toContain('"contact"."is_test"');

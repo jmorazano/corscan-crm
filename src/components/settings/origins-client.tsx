@@ -107,8 +107,11 @@ export function OriginsSettingsClient() {
         <h3 className="text-sm font-medium">Anuncios de Meta (automático)</h3>
         <p className="text-sm text-muted-foreground">
           Quien toca «Enviar mensaje de WhatsApp» en un anuncio de Facebook o
-          Instagram queda con la etiqueta del mes del clic, sin configurar
-          nada.
+          Instagram queda con dos etiquetas, sin configurar nada: la del mes
+          del clic y la del anuncio, con su título abreviado (por ejemplo{" "}
+          <code className="rounded bg-subtle px-1 text-xs">meta-suite-premium-para-parejas</code>
+          ). Si un anuncio tiene varias versiones con títulos distintos, cada
+          título es su propia etiqueta.
         </p>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Este mes:</span>
