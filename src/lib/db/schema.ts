@@ -791,8 +791,15 @@ export const campaignRecipient = pgTable(
       enum: ["opted_out", "ineligible", "cancelled"],
     }),
     error: text("error"),
-    conversationId: text("conversation_id").references(() => conversation.id),
-    messageId: text("message_id").references(() => message.id),
+    // Borrar la conversación desde la Bandeja suelta el vínculo y conserva
+    // el destinatario (y los números de la campaña); sin esto el borrado
+    // fallaba por la FK.
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    messageId: text("message_id").references(() => message.id, {
+      onDelete: "set null",
+    }),
     waMessageId: text("wa_message_id"),
     sentAt: timestamp("sent_at"),
     repliedAt: timestamp("replied_at"),

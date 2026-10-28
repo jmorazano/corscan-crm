@@ -368,8 +368,8 @@ export async function updateConversation(
 
 /**
  * Borra una conversación (los mensajes caen por cascada; los casos del
- * Laboratorio quedan con conversation_id en null). Devuelve false si no
- * existe en la organización.
+ * Laboratorio y los destinatarios de campañas quedan con conversation_id
+ * en null). Devuelve false si no existe en la organización.
  */
 export async function deleteConversation(
   organizationId: string,
