@@ -286,6 +286,7 @@ const getCampaign: AssistantTool = {
           status: campaign.status,
           paused_reason: campaign.pausedReason,
           tag_filter: campaign.tagFilter,
+          arrived_min_days: campaign.arrivedMinDays ?? null,
           created_at: isoInZone(campaign.createdAt, timeZone),
           launched_at: isoInZone(campaign.launchedAt, timeZone),
           completed_at: isoInZone(campaign.completedAt, timeZone),

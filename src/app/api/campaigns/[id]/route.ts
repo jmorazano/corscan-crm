@@ -83,7 +83,11 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
 
   const eligibleNow =
     campaign.status === "draft"
-      ? await previewSegment(session.organizationId, campaign.tagFilter)
+      ? await previewSegment(
+          session.organizationId,
+          campaign.tagFilter,
+          campaign.arrivedMinDays
+        )
       : null;
   const quota = await getQuotaUsage(session.organizationId);
 
@@ -97,6 +101,7 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
       templateName:
         row.templateName ?? row.campaign.templateName ?? "(plantilla borrada)",
       tagFilter: campaign.tagFilter,
+      arrivedMinDays: campaign.arrivedMinDays,
       variableMode: campaign.variableMode,
       variableText: campaign.variableText,
       createdAt: campaign.createdAt.toISOString(),

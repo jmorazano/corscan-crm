@@ -67,7 +67,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
         return apiError(
           422,
           "segment_empty",
-          "El segmento elegible está vacío: nadie con consentimiento (y sin baja) matchea esas etiquetas"
+          "El segmento elegible está vacío: nadie con consentimiento (y sin baja) matchea esas etiquetas ni la antigüedad pedida"
         );
       }
       const launched = await db

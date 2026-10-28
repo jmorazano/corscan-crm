@@ -183,6 +183,12 @@ export const contact = pgTable(
      * son amigos, familia y conocidos del dueño, no leads nuevos.
      */
     knownFromPhoneAt: timestamp("known_from_phone_at"),
+    /**
+     * 043: cuándo llegó por su último origen registrado (anuncio de Meta o
+     * regla por frase). Lo usa el filtro «llegaron hace al menos N días» de
+     * las campañas; sin origen, cuenta la fecha de alta del contacto.
+     */
+    originAt: timestamp("origin_at"),
     notes: text("notes"),
     /** Etiquetas de segmentación (004): saneadas (trim, lower, únicas). */
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
@@ -214,6 +220,28 @@ export const contact = pgTable(
     index("contact_org_name_idx").on(t.organizationId, t.name),
     index("contact_tags_gin_idx").using("gin", t.tags),
   ]
+);
+
+/**
+ * 043: reglas por frase de la empresa. Si el mensaje con el que la persona
+ * abre la charla contiene la frase, el contacto se lleva la etiqueta (con el
+ * mes, salvo que la regla diga lo contrario). Sirve para lo que no trae
+ * `referral`: anuncios de Google, QR, el enlace de la bio…
+ */
+export const contactOriginRule = pgTable(
+  "contact_origin_rule",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    phrase: text("phrase").notNull(),
+    tag: text("tag").notNull(),
+    appendMonth: boolean("append_month").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("contact_origin_rule_org_idx").on(t.organizationId, t.createdAt)]
 );
 
 export const pipelineStage = pgTable(
@@ -789,6 +817,9 @@ export const campaign = pgTable(
     templateName: text("template_name"),
     /** Vacío = todos los elegibles; si no, contactos con AL MENOS una. */
     tagFilter: text("tag_filter").array().notNull().default(sql`'{}'::text[]`),
+    /** 043: solo contactos que llegaron hace al menos N días (origen o alta).
+     * NULL = sin filtro. */
+    arrivedMinDays: integer("arrived_min_days"),
     variableMode: text("variable_mode", {
       enum: ["contact_name", "fixed"],
     })

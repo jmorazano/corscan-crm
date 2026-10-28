@@ -21,6 +21,7 @@ import {
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 import { parseWhatsAppReferral, type WhatsAppReferral } from "@/lib/whatsapp-ad-origin";
 import { applyWhatsAppAdOrigin } from "@/server/inbox/ad-origin";
+import { applyOriginRules, tagMetaAdContact } from "@/server/contact-origin";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -313,15 +314,49 @@ export async function ingestInboundMessage(input: {
   // 035: origen + etiqueta ANTES del mensaje, como Instagram (030): así el
   // turno del agente que dispara este mensaje ya ve de qué anuncio llegó.
   // Un fallo acá jamás bloquea la ingesta.
+  const at = toDate(input.timestamp);
   if (input.referral) {
-    await applyWhatsAppAdOrigin({
+    const applied = await applyWhatsAppAdOrigin({
       organizationId,
       conversation,
       referral: input.referral,
-      at: toDate(input.timestamp),
-    }).catch((err) =>
+      at,
+    }).catch((err) => {
       console.warn(
         "[webhook] no se pudo registrar el origen del anuncio:",
+        err instanceof Error ? err.message : err
+      );
+      return null;
+    });
+    // 043: el contacto se lleva `meta-ads-AAAA-MM` (las campañas eligen por
+    // etiquetas del CONTACTO). Solo si el origen se aplicó: una reentrega o
+    // un clic viejo no tocan nada.
+    if (applied) {
+      await tagMetaAdContact({
+        organizationId,
+        contactId: contact.id,
+        at: new Date(applied.at),
+      }).catch((err) =>
+        console.warn(
+          "[webhook] no se pudo etiquetar el contacto del anuncio:",
+          err instanceof Error ? err.message : err
+        )
+      );
+    }
+  }
+
+  // 043: reglas por frase de la empresa sobre el mensaje que abre la charla
+  // (Google Ads, QR, bio…: lo que no trae `referral`). Jamás bloquea.
+  if (!conversation.isTest) {
+    await applyOriginRules({
+      organizationId,
+      contactId: contact.id,
+      previousInboundAt: conversation.lastInboundAt,
+      text: input.text,
+      at,
+    }).catch((err) =>
+      console.warn(
+        "[webhook] no se pudieron aplicar las reglas de origen:",
         err instanceof Error ? err.message : err
       )
     );
@@ -341,7 +376,7 @@ export async function ingestInboundMessage(input: {
           fileName: input.mediaFileName ?? null,
         }
       : null,
-    at: toDate(input.timestamp),
+    at,
   });
 }
 

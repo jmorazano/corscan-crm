@@ -75,6 +75,10 @@ vi.mock("@/lib/db", async (importOriginal) => {
               limit: () => Promise.resolve(state.existingConversation ? [state.existingConversation] : []),
             };
           }
+          // 043: sin reglas por frase en esta prueba.
+          if (table === schema.contactOriginRule) {
+            return { orderBy: () => Promise.resolve([]) };
+          }
           if (table === schema.pipelineStage) {
             return { orderBy: () => ({ limit: () => Promise.resolve([{ id: "stg_1" }]) }) };
           }

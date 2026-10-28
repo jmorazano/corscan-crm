@@ -13,6 +13,8 @@ const TABS = [
   { href: "/settings/instagram", label: "Instagram" },
   { href: "/settings/ai", label: "Inteligencia artificial" },
   { href: "/settings/sending", label: "Envíos y campañas" },
+  // 043: etiquetas de origen (anuncios de Meta + reglas por frase).
+  { href: "/settings/origins", label: "Origen de contactos" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
   { href: "/settings/team", label: "Equipo" },

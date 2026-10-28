@@ -46,6 +46,7 @@ const prefixes = {
   assistantGrant: "agr",
   assistantAccessLog: "alog",
   agentFollowUp: "fu",
+  contactOriginRule: "orr",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

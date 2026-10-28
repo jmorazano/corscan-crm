@@ -25,6 +25,7 @@ const base = {
   igUsername: null as string | null,
   nameEditedAt: null,
   knownFromPhoneAt: null,
+  originAt: null,
   notes: null,
   tags: ["vip"],
   email: null,

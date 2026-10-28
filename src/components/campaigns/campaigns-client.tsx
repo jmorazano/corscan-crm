@@ -65,6 +65,7 @@ type CampaignListItem = {
   pausedReason: string | null;
   templateName: string;
   tagFilter: string[];
+  arrivedMinDays: number | null;
   createdAt: string;
   launchedAt: string | null;
   completedAt: string | null;
@@ -137,6 +138,17 @@ function formatDuration(ms: number): string {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem ? `${h} h ${rem} min` : `${h} h`;
+}
+
+/** 043: el filtro «llegaron hace al menos N días», en una línea. */
+function arrivedLabel(days: number): string {
+  return `llegaron hace ${days} día${days === 1 ? "" : "s"} o más`;
+}
+
+/** 043: el campo del alta → días válidos (1–365) o null. */
+function parseArrivedDays(raw: string): number | null {
+  const n = Number(raw);
+  return raw.trim() && Number.isInteger(n) && n >= 1 && n <= 365 ? n : null;
 }
 
 function formatDate(iso: string | null): string {
@@ -335,6 +347,7 @@ export function CampaignsClient() {
                       {c.tagFilter.length > 0
                         ? ` · #${c.tagFilter.join(" #")}`
                         : " · todos los elegibles"}
+                      {c.arrivedMinDays ? ` · ${arrivedLabel(c.arrivedMinDays)}` : ""}
                       {c.status === "draft" && ` · creada ${formatDate(c.createdAt)}`}
                       {c.launchedAt && ` · lanzada ${formatDate(c.launchedAt)}`}
                     </p>
@@ -771,6 +784,8 @@ function NewCampaignDialog({
   const [templates, setTemplates] = useState<TemplateDto[] | null>(null);
   const [templateId, setTemplateId] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  // 043: «llegaron hace al menos N días» (vacío = sin filtro).
+  const [arrivedDays, setArrivedDays] = useState("");
   const [variableMode, setVariableMode] = useState<"contact_name" | "fixed">(
     "contact_name"
   );
@@ -793,9 +808,12 @@ function NewCampaignDialog({
 
   // Vista previa del segmento elegible (FR-013).
   const tagsKey = tags.join(",");
+  const days = parseArrivedDays(arrivedDays);
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/campaigns/segment-preview?tags=${encodeURIComponent(tagsKey)}`)
+    const qs = new URLSearchParams({ tags: tagsKey });
+    if (days !== null) qs.set("days", String(days));
+    fetch(`/api/campaigns/segment-preview?${qs.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { eligible: number } | null) => {
         if (!cancelled) setEligible(d?.eligible ?? null);
@@ -804,7 +822,7 @@ function NewCampaignDialog({
     return () => {
       cancelled = true;
     };
-  }, [tagsKey]);
+  }, [tagsKey, days]);
 
   const options = useMemo(
     () => facets.filter((f) => !tags.includes(f.tag)),
@@ -838,6 +856,7 @@ function NewCampaignDialog({
         name: name.trim(),
         templateId,
         tagFilter: tags,
+        arrivedMinDays: days,
         ...(bindings !== null
           ? { freeTexts: freeTextSlots.map((s) => freeTexts[s.index] ?? "") }
           : {
@@ -966,8 +985,34 @@ function NewCampaignDialog({
             data-testid="cmp-eligible"
           >
             {tags.length === 0 ? "Sin etiquetas = todos los elegibles. " : "Con AL MENOS una de esas etiquetas. "}
+            {days !== null && `Que llegaron hace ${days} día(s) o más. `}
             {eligible !== null &&
               `${eligible} contacto(s) elegible(s) hoy (con consentimiento, sin baja).`}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="cmp-arrived-days">
+            Llegaron hace al menos
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="cmp-arrived-days"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={365}
+              value={arrivedDays}
+              placeholder="—"
+              onChange={(e) => setArrivedDays(e.target.value)}
+              className="w-24"
+              data-testid="cmp-arrived-days"
+            />
+            <span className="text-sm text-muted-foreground">días</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Opcional. Cuenta desde que llegaron por un anuncio o una regla de
+            Ajustes → Origen de contactos (si no, desde que se cargó el
+            contacto). Sirve para retomar a los que no avanzaron.
           </p>
         </div>
         {bindings !== null && bindings.length > 0 && (
@@ -1062,6 +1107,7 @@ type CampaignDetailData = {
     pausedReason: string | null;
     templateName: string;
     tagFilter: string[];
+    arrivedMinDays: number | null;
     variableMode: string;
     variableText: string | null;
     createdAt: string;
@@ -1236,6 +1282,7 @@ function CampaignDetail({
             {campaign.tagFilter.length > 0
               ? ` · segmento #${campaign.tagFilter.join(" #")}`
               : " · todos los elegibles"}
+            {campaign.arrivedMinDays ? ` · ${arrivedLabel(campaign.arrivedMinDays)}` : ""}
             {campaign.variableMode === "fixed" && campaign.variableText
               ? ` · {{1}} = «${campaign.variableText}»`
               : ""}

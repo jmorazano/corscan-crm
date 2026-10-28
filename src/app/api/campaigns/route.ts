@@ -11,7 +11,7 @@ import {
   parseCampaignFilters,
 } from "@/server/campaigns/manage";
 import { getQuotaUsage } from "@/server/campaigns/quota";
-import { previewSegment } from "@/server/campaigns/recipients";
+import { ARRIVED_MIN_DAYS_MAX, previewSegment } from "@/server/campaigns/recipients";
 import { countVariables } from "@/server/whatsapp/templates";
 import { freeTextCount } from "@/lib/template-body";
 
@@ -59,7 +59,7 @@ export const GET = withAuth(async (session, req: Request) => {
       .map(async ({ campaign: c }) => {
         eligibleNow.set(
           c.id,
-          await previewSegment(session.organizationId, c.tagFilter)
+          await previewSegment(session.organizationId, c.tagFilter, c.arrivedMinDays)
         );
       })
   );
@@ -134,6 +134,7 @@ export const GET = withAuth(async (session, req: Request) => {
         pausedReason: c.pausedReason,
         templateName: templateName ?? c.templateName ?? "(plantilla borrada)",
         tagFilter: c.tagFilter,
+        arrivedMinDays: c.arrivedMinDays,
         variableMode: c.variableMode,
         createdAt: c.createdAt.toISOString(),
         launchedAt: c.launchedAt?.toISOString() ?? null,
@@ -164,6 +165,8 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
   templateId: z.string().min(1),
   tagFilter: z.array(z.string().max(80)).max(30).default([]),
+  /** 043: solo los que llegaron hace al menos N días (origen o alta). */
+  arrivedMinDays: z.number().int().min(1).max(ARRIVED_MIN_DAYS_MAX).nullish(),
   variableMode: z.enum(["contact_name", "fixed"]).default("contact_name"),
   variableText: z.string().trim().max(500).optional(),
   /** 009: un valor por binding free_text (plantillas con bindings). */
@@ -240,6 +243,7 @@ export const POST = withAuth(async (session, req: Request) => {
       templateId: template.id,
       templateName: template.name,
       tagFilter: sanitizeTags(body.data.tagFilter),
+      arrivedMinDays: body.data.arrivedMinDays ?? null,
       variableMode: body.data.variableMode,
       variableText: body.data.variableText?.trim() || null,
       variableValues,
