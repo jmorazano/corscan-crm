@@ -129,6 +129,8 @@ export async function applyOptOut(input: {
       .update(schema.lead)
       .set({
         stageId: lostStage[0].id,
+        // 044: la baja no es «días sin respuesta»: no vuelve sola.
+        staleLostAt: null,
         updatedAt: new Date(),
         lastActivityAt: input.at,
       })

@@ -31,5 +31,9 @@ export async function register(): Promise<void> {
     // encendieron).
     const { startFollowUpTicker } = await import("./server/follow-up/sweep");
     startFollowUpTicker();
+    // 044: leads de etapas abiertas → perdido tras N días sin respuesta
+    // (cada 15 minutos; solo empresas que lo encendieron).
+    const { startStaleTicker } = await import("./server/inbox/lead-stale");
+    startStaleTicker();
   }
 }

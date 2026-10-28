@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import type { StageDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+
+type StaleSettings = {
+  staleLostDays: number | null;
+  options: number[];
+  preview: Record<string, number>;
+  canEdit: boolean;
+};
 
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
@@ -24,6 +31,48 @@ export function StageManager({
   const [deleting, setDeleting] = useState<StageDto | null>(null);
   const [moveTo, setMoveTo] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // 044: «pasar a perdido tras N días sin respuesta».
+  const [stale, setStale] = useState<StaleSettings | null>(null);
+  const [savingStale, setSavingStale] = useState(false);
+  const [staleNote, setStaleNote] = useState<string | null>(null);
+
+  const loadStale = useCallback(async () => {
+    const res = await fetch("/api/pipeline/settings").catch(() => null);
+    if (res?.ok) setStale((await res.json()) as StaleSettings);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      setStaleNote(null);
+      void loadStale();
+    }
+  }, [open, loadStale]);
+
+  async function saveStale(value: string) {
+    const days = value ? Number(value) : null;
+    setSavingStale(true);
+    setStaleNote(null);
+    const res = await fetch("/api/pipeline/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staleLostDays: days }),
+    }).catch(() => null);
+    setSavingStale(false);
+    if (!res?.ok) {
+      setStaleNote("No se pudo guardar. Probá de nuevo.");
+      return;
+    }
+    const data = (await res.json()) as { moved?: number };
+    setStaleNote(
+      days
+        ? data.moved
+          ? `Listo: ${data.moved} ${data.moved === 1 ? "lead pasó" : "leads pasaron"} a Perdido.`
+          : "Listo: se aplica sola a partir de ahora."
+        : "Apagada: nadie pasa a Perdido por días sin respuesta."
+    );
+    await loadStale();
+    onChanged();
+  }
 
   async function rename(stage: StageDto, name: string) {
     if (!name.trim() || name === stage.name) return;
@@ -197,6 +246,37 @@ export function StageManager({
           Agregar
         </Button>
       </div>
+
+      {stale && (
+        <div className="mt-4 border-t pt-4" data-testid="stale-setting">
+          <label htmlFor="stale-days" className="text-sm font-medium">
+            Pasar a Perdido por días sin respuesta
+          </label>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            Los leads de las etapas abiertas pasan solos a Perdido cuando el cliente no escribe en
+            ese tiempo. Si vuelve a escribir, regresan a la etapa de conversación. A los clientes
+            nunca los toca.
+          </p>
+          <select
+            id="stale-days"
+            value={stale.staleLostDays ?? ""}
+            disabled={!stale.canEdit || savingStale}
+            onChange={(e) => void saveStale(e.target.value)}
+            className="mt-2 h-11 w-full rounded-md border border-input bg-card px-3 text-sm disabled:opacity-60 md:h-9"
+          >
+            <option value="">Apagado</option>
+            {stale.options.map((d) => (
+              <option key={d} value={d}>
+                {d} días sin respuesta — hoy {stale.preview[d] === 1 ? "pasaría 1 lead" : `pasarían ${stale.preview[d] ?? 0} leads`}
+              </option>
+            ))}
+          </select>
+          {!stale.canEdit && (
+            <p className="mt-1.5 text-[12px] text-muted-foreground">Lo cambia el propietario de la cuenta.</p>
+          )}
+          {staleNote && <p className="mt-1.5 text-[12.5px] text-text-2">{staleNote}</p>}
+        </div>
+      )}
     </Dialog>
   );
 }

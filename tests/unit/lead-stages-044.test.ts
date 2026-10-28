@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { canAutoMove, renderStageSection, stageRoles, type StageLike } from "@/lib/lead-stages";
+import {
+  canAutoMove,
+  isStaleDays,
+  renderStageSection,
+  stageAfterReply,
+  staleCutoff,
+  stageRoles,
+  type StageLike,
+} from "@/lib/lead-stages";
+import { eventText } from "@/lib/conversation-events";
 import { AgentAction, isConcreteAvailabilityQuery } from "@/server/ai/actions";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 
@@ -160,5 +169,58 @@ describe("044 · la etapa viaja con la acción", () => {
       isConcreteAvailabilityQuery(AgentAction.parse({ action: "use_tool", tool: "show-property", args: { property: "AC-004" } }))
     ).toBe(false);
     expect(isConcreteAvailabilityQuery(AgentAction.parse({ action: "reply", text: "hola" }))).toBe(false);
+  });
+});
+
+describe("044 · días sin respuesta", () => {
+  const roles = stageRoles(STAGES);
+
+  it("respondió desde la primera etapa → conversación", () => {
+    expect(stageAfterReply(nuevo, roles)?.id).toBe("s1");
+  });
+
+  it("perdido por días sin respuesta que vuelve → conversación", () => {
+    expect(stageAfterReply(perdido, roles, { staleLost: true })?.id).toBe("s1");
+  });
+
+  it("perdido porque dijo que no (o de baja) que escribe «gracias» → se queda", () => {
+    expect(stageAfterReply(perdido, roles)).toBeNull();
+    expect(stageAfterReply(perdido, roles, { staleLost: true, optedOut: true })).toBeNull();
+  });
+
+  it("desde interesado o cliente, responder no cambia la etapa", () => {
+    expect(stageAfterReply(interesado, roles)).toBeNull();
+    expect(stageAfterReply(cliente, roles)).toBeNull();
+  });
+
+  it("sin etapa de conversación, no hay a dónde volver", () => {
+    const r = stageRoles([
+      { id: "a", name: "Consulta", kind: "open", position: 0 },
+      { id: "z", name: "Perdido", kind: "lost", position: 1 },
+    ]);
+    expect(stageAfterReply({ id: "z", name: "Perdido", kind: "lost", position: 1 }, r, { staleLost: true })).toBeNull();
+  });
+
+  it("solo valen 7, 14, 30 o 60 días", () => {
+    expect(isStaleDays(7)).toBe(true);
+    expect(isStaleDays(60)).toBe(true);
+    expect(isStaleDays(10)).toBe(false);
+    expect(isStaleDays(null)).toBe(false);
+  });
+
+  it("el corte es N días antes de ahora", () => {
+    const now = new Date("2026-10-28T12:00:00.000Z");
+    expect(staleCutoff(now, 7).toISOString()).toBe("2026-10-21T12:00:00.000Z");
+  });
+
+  it("la línea del hilo dice cuántos días y que vuelve si escribe", () => {
+    const { text, tone } = eventText(
+      { kind: "lead_stale", reason: null, actorName: null, details: { days: 14, stage: "Perdido" } },
+      (iso) => iso
+    );
+    expect(text).toBe(
+      "Pasó a Perdido: 14 días sin respuesta. Si vuelve a escribir, pasa solo a la etapa de conversación."
+    );
+    expect(tone).toBe("neutral");
   });
 });

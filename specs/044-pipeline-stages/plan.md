@@ -15,7 +15,12 @@
 - Tablero: `windowClosesAt` en `/api/pipeline/board`; marca por tarjeta y
   filtro `?ventana=1` en `pipeline-client.tsx`.
 - `scripts/reclassify-leads.ts`: informe por defecto, `--apply` con el OK.
-- Sin migración (la 0032 la usa la rama 043 de otra sesión).
+- Días sin respuesta: `src/server/inbox/lead-stale.ts` (ajuste, vista
+  previa, barrido CAS + línea `lead_stale`, ticker 15 min en
+  `instrumentation.ts`), `GET/PUT /api/pipeline/settings`, sección en
+  «Gestionar etapas», `stageAfterReply` (vuelta solo desde la primera etapa
+  o desde perdido por silencio), ruta dev `/api/dev/lead-stale`.
+- Migración 0033 (la 0032 es de la 043).
 
 ## Tareas
 
@@ -26,5 +31,7 @@
 - [x] Tablero: marca + filtro de ventana
 - [x] Script de reclasificación (dry-run sobre Altos)
 - [x] Gate + E2E (A 18/18, B 11/11, UI)
+- [x] Días sin respuesta → Perdido (regla general, apagada) + vuelta si escribe
+- [x] E2E C 21/21 + UI del diálogo
 - [ ] Merge + deploy (con OK del dueño)
 - [ ] Aplicar la reclasificación en Altos (con OK del dueño)

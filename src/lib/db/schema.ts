@@ -277,6 +277,13 @@ export const lead = pgTable(
       .references(() => pipelineStage.id),
     position: integer("position").notNull().default(0),
     lastActivityAt: timestamp("last_activity_at"),
+    /**
+     * 044: pasó a perdido SOLO por días sin respuesta (la regla de la
+     * empresa). Si vuelve a escribir, sale solo a «en conversación»; un
+     * perdido por decisión del cliente o del equipo no. Cualquier otro
+     * movimiento la limpia.
+     */
+    staleLostAt: timestamp("stale_lost_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -443,7 +450,18 @@ export const conversationEvent = pgTable(
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error", "ai_tool_write", "ai_follow_up", "ai_opt_out"],
+      enum: [
+        "ai_toggled",
+        "ai_silent",
+        "ai_resumed",
+        "ai_handoff",
+        "ai_error",
+        "ai_tool_write",
+        "ai_follow_up",
+        "ai_opt_out",
+        // 044: el lead pasó a perdido por días sin respuesta.
+        "lead_stale",
+      ],
     }).notNull(),
     reason: text("reason"),
     actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -953,6 +971,25 @@ export const historyImport = pgTable("history_import", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * 044: ajustes del pipeline por empresa. `stale_lost_days` = pasar a perdido
+ * los leads de etapas abiertas tras N días sin que el cliente escriba;
+ * NULL = apagado (el default: cada negocio tiene sus tiempos).
+ */
+export const pipelineSettings = pgTable(
+  "pipeline_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    staleLostDays: integer("stale_lost_days"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("pipeline_settings_org_uq").on(t.organizationId)]
+);
 
 export const sendSettings = pgTable(
   "send_settings",

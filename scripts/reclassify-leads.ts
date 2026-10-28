@@ -100,8 +100,10 @@ async function main(): Promise<void> {
   if (!apply) return;
   let done = 0;
   for (const p of plan) {
+    // Sin tocar updated_at: es una corrección del historial, no actividad, y
+    // reiniciaría el reloj de «días sin respuesta».
     const res = await sql`
-      update lead set stage_id = ${p.to.id}, updated_at = now()
+      update lead set stage_id = ${p.to.id}
       where id = ${p.leadId} and organization_id = ${org} and stage_id = ${p.from.id}`;
     done += res.count;
   }

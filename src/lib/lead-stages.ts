@@ -64,6 +64,38 @@ export function canAutoMove(
   return target.position > current.position;
 }
 
+/**
+ * El cliente escribió después de un mensaje del negocio: ¿a qué etapa pasa?
+ * Desde la primera, a la de conversación. Desde perdido, SOLO si llegó ahí
+ * por días sin respuesta (y no se dio de baja): volvió. Un perdido porque
+ * dijo que no, que escribe «gracias, chau», se queda donde está.
+ */
+export function stageAfterReply<T extends StageLike>(
+  current: StageLike | null,
+  roles: Partial<Record<StageRole, T>>,
+  opts: { staleLost?: boolean; optedOut?: boolean } = {}
+): T | null {
+  if (!current) return null;
+  const target = roles.talking ?? null;
+  if (!target) return null;
+  if (current.id === roles.first?.id) return target;
+  if (current.kind === "lost" && opts.staleLost && !opts.optedOut) return target;
+  return null;
+}
+
+/** 044: opciones de «pasar a perdido tras N días sin respuesta». */
+export const STALE_DAYS_OPTIONS = [7, 14, 30, 60] as const;
+export type StaleDays = (typeof STALE_DAYS_OPTIONS)[number];
+
+export function isStaleDays(v: unknown): v is StaleDays {
+  return typeof v === "number" && (STALE_DAYS_OPTIONS as readonly number[]).includes(v);
+}
+
+/** Límite: lo que el cliente escribió por última vez antes de esto está vencido. */
+export function staleCutoff(now: Date, days: number): Date {
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
+
 const ROLE_MEANING: Record<StageRole, string> = {
   first: "escribió y todavía no hubo charla",
   talking: "respondió y está consultando, sin intención clara de comprar o reservar",

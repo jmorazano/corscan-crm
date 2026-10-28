@@ -63,4 +63,21 @@ filtro «Ventana abierta» en el tablero.
 - **FR-009** Reclasificación de los leads existentes: script con informe
   primero (dry-run por defecto) y aplicación solo con el OK del dueño.
 
-Sin migración.
+- **FR-010** Regla GENERAL por empresa «pasar a Perdido tras N días sin
+  respuesta» (7, 14, 30 o 60; APAGADA por defecto). Datos de producción
+  (28-oct-2026): tras 14 días callado volvía el 1,4 % en Altos, el 3,4 % en
+  Granate Viajes y el 22 % en Distrito Inmobiliario — no hay un plazo que
+  sirva a todos. Solo etapas abiertas, nunca clientes. El reloj arranca en lo
+  último entre el último mensaje del cliente y el último movimiento del lead.
+  Línea en el hilo («Pasó a Perdido: N días sin respuesta…»).
+- **FR-011** Si el que pasó a Perdido POR SILENCIO vuelve a escribir, sale
+  solo a «en conversación». El que pasó a Perdido porque dijo que no (o se
+  dio de baja) se queda aunque escriba «gracias, chau». Cualquier movimiento
+  (persona, agente, baja) limpia la marca.
+- **FR-012** Vista previa: al elegir los días se ve cuántos leads pasarían
+  HOY; al guardar se aplica en el acto (lo que dijo la vista previa es lo que
+  pasa). Lo cambia solo el propietario; barrido cada 15 minutos.
+- Descartado: «perdido cuando vencen las fechas pedidas» — solo servía a
+  alojamientos.
+
+Migración **0033** (`pipeline_settings` + `lead.stale_lost_at`).

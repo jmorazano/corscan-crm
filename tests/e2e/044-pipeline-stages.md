@@ -35,12 +35,35 @@ acción vieja `move_stage` con respuesta.
 3. Datos del huésped → `set-guest-details` → sigue Interesado.
 4. «Sí, confirmo» → `confirm-booking` registrada → **Cliente**.
 
+## C — días sin respuesta (21/21)
+
+Guion con `fetch` + `postgres`; el reloj de cada contacto se corre para
+atrás en la BD (`last_inbound_at`, `lead.updated_at`) y el barrido se
+dispara con `POST /api/dev/lead-stale`. Guarda y restaura las etapas de la
+empresa (la regla barre también sus leads viejos).
+
+1. Apagado → el barrido no mueve nada.
+2. `GET /api/pipeline/settings` trae la vista previa (7: 35, 14: 34, 30: 14,
+   60: 0) y `canEdit=false` para el miembro; el miembro → 403; 10 días → 422.
+3. El propietario prende 7 días → se aplican en el acto 35 = lo que decía
+   la vista previa.
+4. Callado 8 días → Perdido con `stale_lost_at` y línea `lead_stale` (7
+   días); cliente callado 40 días → no se toca; callado 3 días → sigue.
+5. Segundo barrido → nada nuevo.
+6. El callado vuelve a escribir → En conversación, sin marca. El que dijo
+   que no escribe «gracias, chau» → se queda en Perdido.
+7. Una persona lo mueve hoy a Interesado (callado hace 10 días) → el
+   barrido no lo pierde.
+
 ## UI (Browser pane, 1400 px y 375 px)
 
 Botón «Ventana abierta (N)» en el encabezado del tablero; al tocarlo queda
 `?ventana=1` y solo se ven las tarjetas con ventana, con conteos por
 columna; cada tarjeta con ventana muestra «Ventana · quedan 23 h». En móvil
-«Gestionar etapas» queda como ícono (con `aria-label`).
+«Gestionar etapas» queda como ícono (con `aria-label`). En «Gestionar
+etapas», sección «Pasar a Perdido por días sin respuesta»: Apagado / «7 días
+sin respuesta — hoy pasarían 34 leads»…; para un miembro, deshabilitada con
+«Lo cambia el propietario de la cuenta».
 
 ## Reclasificación (dry-run sobre producción, Altos, 28-oct-2026)
 

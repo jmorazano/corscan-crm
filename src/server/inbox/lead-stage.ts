@@ -16,6 +16,8 @@ export type LeadStageState = {
   leadId: string | null;
   current: StageLike | null;
   optedOut: boolean;
+  /** Perdido por días sin respuesta (vuelve solo si escribe). */
+  staleLost: boolean;
 };
 
 export async function loadLeadStageState(
@@ -37,6 +39,7 @@ export async function loadLeadStageState(
     .select({
       id: schema.lead.id,
       stageId: schema.lead.stageId,
+      staleLostAt: schema.lead.staleLostAt,
       optedOutAt: schema.contact.optedOutAt,
     })
     .from(schema.lead)
@@ -49,6 +52,7 @@ export async function loadLeadStageState(
     leadId: row?.id ?? null,
     current: row ? (stages.find((s) => s.id === row.stageId) ?? null) : null,
     optedOut: Boolean(row?.optedOutAt),
+    staleLost: Boolean(row?.staleLostAt),
   };
 }
 
@@ -74,7 +78,7 @@ export async function advanceLeadStage(
     if (!to || !canAutoMove(s.current, to, { optedOut: s.optedOut })) return null;
     const moved = await getDb()
       .update(schema.lead)
-      .set({ stageId: to.id, updatedAt: new Date(), lastActivityAt: new Date() })
+      .set({ stageId: to.id, staleLostAt: null, updatedAt: new Date(), lastActivityAt: new Date() })
       .where(
         and(
           scoped(schema.lead.organizationId, organizationId, eq(schema.lead.id, s.leadId)),
@@ -85,6 +89,7 @@ export async function advanceLeadStage(
     if (moved.length === 0) return null;
     // Quien siga usando este estado (el mismo turno) ve la etapa nueva.
     s.current = to;
+    s.staleLost = false;
     return to;
   } catch (err) {
     console.error("[pipeline] no se pudo mover el lead:", err instanceof Error ? err.message : err);

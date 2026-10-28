@@ -232,6 +232,13 @@
       "when": 1793218147970,
       "tag": "0032_contact_origin_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793225912978,
+      "tag": "0033_lead_stale",
+      "breakpoints": true
     }
   ]
 }

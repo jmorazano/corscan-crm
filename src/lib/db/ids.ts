@@ -23,6 +23,7 @@ const prefixes = {
   campaignRecipient: "cr",
   initiatedSend: "isnd",
   sendSettings: "ss",
+  pipelineSettings: "pls",
   calendarIntegration: "cint",
   appointment: "apt",
   apiKey: "ak",

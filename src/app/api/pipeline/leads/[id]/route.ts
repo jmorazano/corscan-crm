@@ -38,6 +38,8 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     .set({
       stageId: body.data.stageId,
       position: body.data.position,
+      // 044: lo movió una persona: deja de ser «perdido por días sin respuesta».
+      staleLostAt: null,
       updatedAt: new Date(),
     })
     .where(

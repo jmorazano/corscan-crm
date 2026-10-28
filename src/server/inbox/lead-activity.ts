@@ -2,7 +2,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { advanceLeadStage } from "@/server/inbox/lead-stage";
+import { stageAfterReply, stageRoles } from "@/lib/lead-stages";
+import { advanceLeadStage, loadLeadStageState } from "@/server/inbox/lead-stage";
 
 /**
  * Actividad de lead al recibir un mensaje (US2): si el contacto no tiene lead,
@@ -11,7 +12,8 @@ import { advanceLeadStage } from "@/server/inbox/lead-stage";
  *
  * 044: con `conversationId`, si el cliente escribe DESPUÉS de un mensaje del
  * negocio (le contestó al agente, al equipo o a una campaña), el lead pasa de
- * la primera etapa a la de conversación.
+ * la primera etapa —o de perdido por días sin respuesta— a la de
+ * conversación.
  */
 export async function onLeadActivity(
   organizationId: string,
@@ -49,7 +51,7 @@ export async function onLeadActivity(
           eq(schema.lead.id, existing[0].id)
         )
       );
-    if (replied) await advanceLeadStage(organizationId, contactId, { role: "talking" });
+    if (replied) await moveAfterReply(organizationId, contactId);
     return;
   }
 
@@ -87,7 +89,21 @@ export async function onLeadActivity(
       lastActivityAt: at,
     })
     .onConflictDoNothing({ target: [schema.lead.contactId] });
-  if (replied) await advanceLeadStage(organizationId, contactId, { role: "talking" });
+  if (replied) await moveAfterReply(organizationId, contactId);
+}
+
+/**
+ * 044: el cliente respondió. De la primera etapa pasa a la de conversación;
+ * de perdido solo si llegó ahí por días sin respuesta (`stageAfterReply`).
+ */
+async function moveAfterReply(organizationId: string, contactId: string): Promise<void> {
+  try {
+    const state = await loadLeadStageState(organizationId, contactId);
+    const target = stageAfterReply(state.current, stageRoles(state.stages), state);
+    if (target) await advanceLeadStage(organizationId, contactId, { stageId: target.id }, state);
+  } catch (err) {
+    console.error("[pipeline] no se pudo mover el lead tras la respuesta:", err instanceof Error ? err.message : err);
+  }
 }
 
 /** ¿El negocio ya le escribió en esta conversación? */

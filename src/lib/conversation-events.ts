@@ -18,7 +18,9 @@ export type ConversationEventKind =
   /** 042: un seguimiento automático que no salió (omitido o fallido). */
   | "ai_follow_up"
   /** 042: el agente dio de baja al contacto («no me interesa»). */
-  | "ai_opt_out";
+  | "ai_opt_out"
+  /** 044: el lead pasó a perdido por días sin respuesta (regla de la empresa). */
+  | "lead_stale";
 
 export type HandoffReason = "cliente" | "modelo" | "error" | "ventana" | "visita";
 
@@ -50,6 +52,9 @@ export type ConversationEventDetails = {
   text?: string;
   /** 042: qué seguimiento (1 o 2). */
   step?: number;
+  /** 044: días sin respuesta de la regla y etapa a la que pasó. */
+  days?: number;
+  stage?: string;
 };
 
 export type ConversationEventDto = {
@@ -122,6 +127,11 @@ export function eventText(
       return {
         text: "La IA dio de baja al contacto: no recibe seguimientos ni campañas. Si vuelve a escribir, la IA le responde.",
         tone: "warning",
+      };
+    case "lead_stale":
+      return {
+        text: `Pasó a ${d.stage ?? "Perdido"}: ${d.days ?? "varios"} días sin respuesta. Si vuelve a escribir, pasa solo a la etapa de conversación.`,
+        tone: "neutral",
       };
   }
 }
