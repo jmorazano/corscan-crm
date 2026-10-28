@@ -27,5 +27,9 @@ export async function register(): Promise<void> {
     // conexiones sin uso, registro de más de 90 días).
     const { startAssistantsSweepTicker } = await import("./server/assistants/grants");
     startAssistantsSweepTicker();
+    // 042: seguimientos automáticos (cada minuto; solo empresas que lo
+    // encendieron).
+    const { startFollowUpTicker } = await import("./server/follow-up/sweep");
+    startFollowUpTicker();
   }
 }

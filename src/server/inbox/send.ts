@@ -18,6 +18,7 @@ export { SendError } from "@/server/inbox/send-error";
 import { SendError } from "@/server/inbox/send-error";
 import { sendInstagramConversationText } from "@/server/instagram/send";
 import { fallbackText, hasInteractive, type Interactive } from "@/lib/instagram/interactive";
+import type { MessageDetails } from "@/lib/instagram/types";
 
 type SendResult = { messageId: string };
 
@@ -39,6 +40,11 @@ export async function sendText(input: {
   interactive?: Interactive | null;
   /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
   sentByUserId?: string | null;
+  /**
+   * 042: marcas del agente para el seguimiento automático (`awaitingReply`)
+   * o el paso del seguimiento (`followUp`). Solo WhatsApp en esta versión.
+   */
+  details?: Pick<MessageDetails, "awaitingReply" | "followUp"> | null;
 }): Promise<SendResult> {
   const db = getDb();
 
@@ -135,6 +141,7 @@ export async function sendText(input: {
         status: "pending",
         aiGenerated: input.aiGenerated ?? false,
         sentByUserId: input.sentByUserId ?? null,
+        details: input.details && Object.keys(input.details).length > 0 ? input.details : null,
       })
       .returning();
   } catch (err) {

@@ -102,6 +102,24 @@ export function renderKb(entries: KbEntry[]): string {
 }
 
 /**
+ * 042: SEGUIMIENTO automático. El CRM le manda al cliente hasta dos
+ * recordatorios si se calla, pero SOLO cuando la última respuesta del agente
+ * quedó marcada como esperando respuesta. El agente es quien sabe si la
+ * charla quedó abierta: lo dice en cada respuesta.
+ */
+export const FOLLOW_UP_SECTION_MARKER = "SEGUIMIENTO AUTOMÁTICO:";
+
+export function followUpSection(): string {
+  return [
+    `${FOLLOW_UP_SECTION_MARKER} si el cliente deja de contestar, el sistema le manda hasta dos recordatorios breves dentro de las 24 h. Para eso, en CADA respuesta indicá:`,
+    '- "awaiting_reply":true cuando quedaste esperando que el cliente conteste: le pediste fechas o datos, le pasaste precio o disponibilidad, le hiciste una pregunta, o dijo «lo pienso» / «después te digo».',
+    '- "awaiting_reply":false cuando no hay nada que esperar: reservó o compró, se despidió, solo agradeció, ya derivaste a una persona, o la consulta quedó resuelta.',
+    '- "opt_out":true SOLO si el cliente pidió claramente que no le escriban más o dijo que no le interesa como cierre («no me interesa, gracias», «no me escriban más»). Respondé con una despedida amable y breve, sin insistir. Una duda sobre una opción («esa no me interesa, ¿tienen otra?») NO es opt_out.',
+    "- Si reservó o compró, además mové el lead a la etapa que corresponda.",
+  ].join("\n");
+}
+
+/**
  * System prompt del agente (v1: inyecta el KB completo — el límite se
  * documenta con el contador de tamaño en la UI).
  */
@@ -182,6 +200,12 @@ export function buildAgentSystemPrompt(input: {
   sheetsSearchable?: boolean;
   /** 034: los comprobantes se anotan solos en la planilla de conciliación. */
   receiptsToSheet?: boolean;
+  /**
+   * 042: la empresa encendió el seguimiento automático. Pide la marca
+   * "awaiting_reply" en cada respuesta y ofrece "opt_out". Sin el
+   * interruptor el prompt queda intacto.
+   */
+  followUp?: boolean;
 }): string {
   const { profile } = input;
   const sheetsSearch = Boolean(input.sheetsSection && input.sheetsSearchable);
@@ -224,6 +248,7 @@ export function buildAgentSystemPrompt(input: {
     input.teamIntervened ? teamInterventionSection() : null,
     input.teamResume ? teamResumeSection(input.teamResume.minutesWaiting) : null,
     input.sharedPersonalNumber ? personalNumberSection() : null,
+    input.followUp ? followUpSection() : null,
     privacyRules(),
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
@@ -243,6 +268,11 @@ export function buildAgentSystemPrompt(input: {
           ]
         : []),
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
+      ...(input.followUp
+        ? [
+            '- `reply`, `update_lead` y `move_stage` llevan SIEMPRE "awaiting_reply":true|false (ver SEGUIMIENTO AUTOMÁTICO) y, solo si corresponde, "opt_out":true.',
+          ]
+        : []),
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
       ...(input.mcpSection
         ? input.mcpActionMenu

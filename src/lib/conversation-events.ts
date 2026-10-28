@@ -14,7 +14,11 @@ export type ConversationEventKind =
   | "ai_handoff"
   | "ai_error"
   /** 032: el agente ejecutó una herramienta que ESCRIBE en el sistema del tercero. */
-  | "ai_tool_write";
+  | "ai_tool_write"
+  /** 042: un seguimiento automático que no salió (omitido o fallido). */
+  | "ai_follow_up"
+  /** 042: el agente dio de baja al contacto («no me interesa»). */
+  | "ai_opt_out";
 
 export type HandoffReason = "cliente" | "modelo" | "error" | "ventana" | "visita";
 
@@ -44,6 +48,8 @@ export type ConversationEventDetails = {
   handoffReason?: HandoffReason;
   /** Lo que la IA iba a decir y no salió. */
   text?: string;
+  /** 042: qué seguimiento (1 o 2). */
+  step?: number;
 };
 
 export type ConversationEventDto = {
@@ -110,6 +116,41 @@ export function eventText(
       // `detail` lo arma el servidor con el rótulo del conector y el título
       // de la herramienta, ya saneados (nunca texto libre del tercero).
       return { text: `El agente registró en ${d.detail ?? "el sistema del cliente"}.`, tone: "brand" };
+    case "ai_follow_up":
+      return followUpText(ev.reason, d);
+    case "ai_opt_out":
+      return {
+        text: "La IA dio de baja al contacto: no recibe seguimientos ni campañas. Si vuelve a escribir, la IA le responde.",
+        tone: "warning",
+      };
+  }
+}
+
+/** 042: solo las omisiones que conviene ver en el hilo (el resto, en el registro). */
+function followUpText(reason: string | null, d: ConversationEventDetails): { text: string; tone: EventTone } {
+  const n = d.step === 2 ? "2" : "1";
+  switch (reason) {
+    case "failed":
+      return { text: `El seguimiento ${n} no salió: ${d.detail ?? "falló el envío"}.`, tone: "error" };
+    case "refusal":
+      return {
+        text: "No se mandan seguimientos en esta charla: el cliente pidió que no le escriban (filtro de seguridad).",
+        tone: "neutral",
+      };
+    case "no_slot":
+      return {
+        text: `El seguimiento ${n} se omitió: no quedaba horario permitido antes de que cierre la ventana de 24 h.`,
+        tone: "neutral",
+      };
+    case "agent_none":
+      return {
+        text: d.detail
+          ? `La IA decidió no mandar el seguimiento ${n}: ${d.detail}`
+          : `La IA decidió no mandar el seguimiento ${n}.`,
+        tone: "neutral",
+      };
+    default:
+      return { text: `El seguimiento ${n} se omitió.`, tone: "neutral" };
   }
 }
 

@@ -50,6 +50,8 @@ import {
   resolveTeamSilenceMs,
 } from "@/lib/agent-presence";
 import { withSendRetry } from "@/lib/send-retry";
+import type { MessageDetails } from "@/lib/instagram/types";
+import { applyOptOut } from "@/server/inbox/side-effects";
 import {
   clipReason,
   friendlyProviderError,
@@ -371,7 +373,11 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     await recordSilence({ organizationId, conversationId, reason, details });
   };
 
-  if (contactRow?.optedOutAt) {
+  // 042 (decisión del dueño): la baja que declaró el AGENTE bloquea lo que
+  // inicia la empresa (seguimientos, campañas), pero si el cliente vuelve a
+  // escribir se le responde: fue él quien escribió. «BAJA»/«STOP» siguen
+  // callando al agente como en 011.
+  if (contactRow?.optedOutAt && contactRow.optedOutSource !== "agent") {
     await silence("opted_out");
     return;
   }
@@ -637,12 +643,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   const say = async (
     raw: string,
-    extrasRaw?: { quick_replies?: unknown; buttons?: unknown; cards?: unknown } | null
+    extrasRaw?: {
+      quick_replies?: unknown;
+      buttons?: unknown;
+      cards?: unknown;
+      awaiting_reply?: boolean;
+      opt_out?: boolean;
+    } | null
   ): Promise<void> => {
     const text = guardPrivacy(raw);
     const interactive = extrasFor(extrasRaw);
+    // 042: la marca viaja con el mensaje (sin marca = sin seguimiento).
+    const details = extrasRaw?.awaiting_reply === undefined ? null : { awaitingReply: extrasRaw.awaiting_reply };
+    const afterDelivery = async (delivered: boolean): Promise<void> => {
+      if (delivered && extrasRaw?.opt_out === true) await agentOptOut();
+    };
     if (!mcp) {
-      await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive);
+      await afterDelivery(
+        await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive, details)
+      );
       return;
     }
     // 032: con reservas habilitadas el agente PUEDE ofrecer y hacer la
@@ -683,7 +702,28 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       }
       finalText = priced.text;
     }
-    await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback, interactive);
+    await afterDelivery(
+      await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback, interactive, details)
+    );
+  };
+
+  // 042: el agente declaró la baja («no me interesa, no me escribas»). Solo
+  // con el seguimiento encendido (es la única sección del prompt que la
+  // ofrece) y nunca en el Laboratorio.
+  const agentOptOut = async (): Promise<void> => {
+    if (conversation.isTest || !profile.followUpEnabled) return;
+    const fresh = await applyOptOut({
+      organizationId,
+      contactId: conversation.contactId,
+      at: new Date(),
+      source: "agent",
+    });
+    if (!fresh) return;
+    await recordConversationEvent({ organizationId, conversationId, kind: "ai_opt_out", reason: "agent" });
+    publish(organizationId, {
+      type: "conversation.updated",
+      data: { conversation: { id: conversationId } },
+    });
   };
 
   const messages: ChatMessage[] = [
@@ -705,6 +745,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         sheetsSearchable,
         receiptsToSheet: sheets?.receiptsEnabled ?? false,
         sharedPersonalNumber: profile.sharedPersonalNumber,
+        // 042: pide la marca «espera respuesta» (y ofrece la baja).
+        followUp: profile.followUpEnabled,
         // 030: Instagram · 035: también el anuncio Click-to-WhatsApp. El
         // canal de la conversación decide el encabezado (el Entrenador no
         // llega acá: tiene su propio turno).
@@ -1269,7 +1311,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
       if (action.reply) {
-        await say(action.reply);
+        await say(action.reply, action);
       }
       return;
     }
@@ -1457,6 +1499,8 @@ async function loadContact(
   name: string;
   phone: string;
   optedOutAt: Date | null;
+  /** 042: `agent` = la puso el agente; no lo deja mudo si el cliente vuelve. */
+  optedOutSource: "keyword" | "agent" | null;
   /** 021: los tres campos que deciden si el agente puede renombrar. */
   consentSource: string | null;
   nameEditedAt: Date | null;
@@ -1471,6 +1515,7 @@ async function loadContact(
       name: schema.contact.name,
       phone: schema.contact.phone,
       optedOutAt: schema.contact.optedOutAt,
+      optedOutSource: schema.contact.optedOutSource,
       knownFromPhoneAt: schema.contact.knownFromPhoneAt,
       consentSource: schema.contact.consentSource,
       nameEditedAt: schema.contact.nameEditedAt,
@@ -1591,8 +1636,10 @@ async function deliverConversationalReply(
    */
   fallbackOnDuplicate: string | null = null,
   /** 030: extras de Instagram (botones, tarjetas, respuestas rápidas). */
-  interactive: Interactive | null = null
-): Promise<void> {
+  interactive: Interactive | null = null,
+  /** 042: marca «espera respuesta» del agente. */
+  details: SendDetails = null
+): Promise<boolean> {
   if (!conversation.isTest) {
     const db = getDb();
     const recent = await db
@@ -1617,7 +1664,7 @@ async function deliverConversationalReply(
     if (decision === "stale") {
       // Regenerar con todo lo nuevo; el debounce vuelve a esperar la ráfaga.
       scheduleAgentTurn(conversation.id);
-      return;
+      return false;
     }
     if (decision === "duplicate") {
       const lastOut = recent.find((m) => m.direction === "out")?.text ?? null;
@@ -1625,8 +1672,7 @@ async function deliverConversationalReply(
         console.warn(
           `[agente] respuesta idéntica en ${conversation.id}: se manda la alternativa`
         );
-        await deliverReply(conversation, fallbackOnDuplicate);
-        return;
+        return deliverReply(conversation, fallbackOnDuplicate, null, details);
       }
       console.warn(
         `[agente] respuesta idéntica suprimida en ${conversation.id}`
@@ -1636,21 +1682,25 @@ async function deliverConversationalReply(
         conversationId: conversation.id,
         reason: "duplicate",
       });
-      return;
+      return false;
     }
   }
-  await deliverReply(conversation, text, interactive);
+  return deliverReply(conversation, text, interactive, details);
 }
+
+/** 042: lo que el agente le agrega al mensaje para el seguimiento. */
+type SendDetails = Pick<MessageDetails, "awaitingReply" | "followUp"> | null;
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(
   conversation: Conversation,
   text: string,
-  interactive: Interactive | null = null
-): Promise<void> {
+  interactive: Interactive | null = null,
+  details: SendDetails = null
+): Promise<boolean> {
   if (conversation.isTest) {
     await persistTestOutbound(conversation, text);
-    return;
+    return true;
   }
   try {
     // 036: un 5xx, un corte de red o un timeout de Meta se reintentan antes
@@ -1663,6 +1713,7 @@ async function deliverReply(
           text,
           aiGenerated: true,
           interactive,
+          details,
         }),
       {
         codeOf: (err) => (err instanceof SendError ? err.code : null),
@@ -1673,7 +1724,7 @@ async function deliverReply(
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
-      return;
+      return false;
     }
     if (err instanceof SendError) {
       // 031: la respuesta no salió (Meta caído, token vencido…). Antes solo
@@ -1687,10 +1738,11 @@ async function deliverReply(
         reason: "send",
         details: { detail: friendlySendError(err.code, err.message), text: text.slice(0, 1500) },
       });
-      return;
+      return false;
     }
     throw err;
   }
+  return true;
 }
 
 /** Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031). */

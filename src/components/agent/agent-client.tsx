@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FollowUpSection } from "@/components/agent/follow-up-section";
 import {
   REPLY_DELAY_MAX_MS,
   replyDelayMsToSeconds,
@@ -155,6 +156,7 @@ export function AgentClient() {
             onSave={saveProfile}
           />
           <VideoReadingSection enabled={profile.readVideos} onSave={saveProfile} />
+          <FollowUpSection />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>

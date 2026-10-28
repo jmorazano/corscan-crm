@@ -23,6 +23,12 @@ const profile = {
   teamSilenceMs: null,
   sharedPersonalNumber: false,
   readVideos: false,
+  followUpEnabled: false,
+  followUpTimezone: "America/Argentina/Cordoba",
+  followUpStartHour: 9,
+  followUpEndHour: 21,
+  followUpText1: null,
+  followUpText2: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

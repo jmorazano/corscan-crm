@@ -1187,6 +1187,15 @@ function Bubble({
             {ig ? "Desde Instagram" : "Desde el celular"}
           </span>
         )}
+        {out && typeof m.details?.followUp?.step === "number" && (
+          <span
+            data-testid="message-follow-up"
+            className="mt-1.5 block clear-both border-t border-brand-soft/60 pt-1 text-[11px] leading-snug text-text-3"
+            title="Recordatorio que mandó el agente porque el cliente dejó de contestar"
+          >
+            Seguimiento automático {m.details.followUp.step === 2 ? "2" : "1"}/2
+          </span>
+        )}
         {out && wa && m.via?.kind === "api" && (
           <span
             data-testid="message-via-api"

@@ -30,6 +30,33 @@ const LEAD_NOTE_FIELD = {
 };
 
 /**
+ * 042: marcas para el seguimiento automático. Viajan con la respuesta (como
+ * el nombre en 021) y son LAXAS: «true», "si" o 1 valen; cualquier otra cosa
+ * queda como «sin marca» (sin marca no hay seguimiento — el error seguro).
+ */
+const looseBool = z
+  .unknown()
+  .optional()
+  .transform((v): boolean | undefined => {
+    if (typeof v === "boolean") return v;
+    if (v === 1 || v === "1") return true;
+    if (v === 0 || v === "0") return false;
+    if (typeof v === "string") {
+      const t = v.trim().toLowerCase();
+      if (["true", "si", "sí", "yes"].includes(t)) return true;
+      if (["false", "no"].includes(t)) return false;
+    }
+    return undefined;
+  });
+
+const FOLLOW_UP_FIELDS = {
+  /** Quedaste esperando que el cliente conteste (pediste fechas, pasaste precio…). */
+  awaiting_reply: looseBool,
+  /** El cliente pidió claramente que no le escriban más / no le interesa. */
+  opt_out: looseBool,
+};
+
+/**
  * Acción tipada del agente: exactamente UNA por turno (FR-021).
  * El servidor valida cada acción contra sus allowlists (etapas de la org);
  * lo que no valida se degrada, nunca se ejecuta a ciegas.
@@ -51,6 +78,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     contact_name: z.string().trim().optional(),
     ...CONTACT_DATA_FIELDS,
     ...INTERACTIVE_FIELDS,
+    ...FOLLOW_UP_FIELDS,
   }),
   /**
    * `note` es OPCIONAL a propósito: en producción (14-oct-2026, Altos) el
@@ -65,11 +93,13 @@ export const AgentAction = z.discriminatedUnion("action", [
     contact_name: z.string().trim().optional(),
     ...CONTACT_DATA_FIELDS,
     ...INTERACTIVE_FIELDS,
+    ...FOLLOW_UP_FIELDS,
   }),
   z.object({
     action: z.literal("move_stage"),
     stage: z.string().min(1),
     reply: z.string().optional(),
+    ...FOLLOW_UP_FIELDS,
   }),
   z.object({
     action: z.literal("handoff"),
@@ -280,7 +310,12 @@ export function resolveStage(
 export function degradeAction(action: AgentActionType): AgentActionType {
   if (action.action === "move_stage") {
     return action.reply
-      ? { action: "reply", text: action.reply }
+      ? {
+          action: "reply",
+          text: action.reply,
+          awaiting_reply: action.awaiting_reply,
+          opt_out: action.opt_out,
+        }
       : { action: "none" };
   }
   return action;

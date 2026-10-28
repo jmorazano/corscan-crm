@@ -62,6 +62,14 @@ export type MessageDetails = {
   reactionTo?: string;
   /** 039: este video lo está mirando la IA (la empresa activó la lectura). */
   videoRead?: boolean;
+  /**
+   * 042: respuesta del agente que quedó ESPERANDO que el cliente conteste
+   * (pidió fechas, pasó precio, hizo una pregunta). Ausente = «sin marca»:
+   * sin marca no hay seguimiento.
+   */
+  awaitingReply?: boolean;
+  /** 042: este mensaje es un seguimiento automático (1 o 2). */
+  followUp?: { step: number };
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */

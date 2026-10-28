@@ -26,6 +26,7 @@ export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
     .update(schema.contact)
     .set({
       optedOutAt: null,
+      optedOutSource: null,
       optOutRevertedAt: new Date(),
       optOutRevertedBy: session.userId,
       updatedAt: new Date(),

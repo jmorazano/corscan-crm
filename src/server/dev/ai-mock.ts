@@ -1,4 +1,10 @@
-import { JUDGE_MARKER, TEAM_RESUME_MARKER, TRANSACTIONAL_MARKER } from "@/server/ai/prompts";
+import {
+  FOLLOW_UP_SECTION_MARKER,
+  JUDGE_MARKER,
+  TEAM_RESUME_MARKER,
+  TRANSACTIONAL_MARKER,
+} from "@/server/ai/prompts";
+import { FOLLOW_UP_MARKER } from "@/server/ai/follow-up";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
 import {
   LISTINGS_MARKER,
@@ -131,6 +137,72 @@ function mockReceiptExtraction(system: string, file: string): string {
 }
 
 export function aiMockCompletion(messages: InMessage[]): string {
+  const system = textOf(messages.find((m) => m.role === "system")?.content);
+  // 042: el turno que redacta un seguimiento.
+  if (system.startsWith(FOLLOW_UP_MARKER)) return dispatchFollowUp(messages, system);
+  const raw = aiMockCompletionCore(messages);
+  return system.includes(FOLLOW_UP_SECTION_MARKER) ? withFollowUpMarks(messages, raw) : raw;
+}
+
+/**
+ * 042: perillas del seguimiento. El último mensaje del CLIENTE manda:
+ * «[E2E_SEG_NADA]» → el modelo decide no mandar el recordatorio;
+ * «[E2E_SEG_ROTO]» → JSON inválido (sale el texto de respaldo);
+ * «[E2E_SEG_PRECIO]» → el texto trae un importe (la guarda → respaldo).
+ */
+function dispatchFollowUp(messages: InMessage[], system: string): string {
+  const client = messages
+    .filter((m) => m.role === "user")
+    .map((m) => textOf(m.content))
+    .join("\n");
+  const step = /seguimiento 2 de 2/.test(system) ? 2 : 1;
+  if (client.includes("[E2E_SEG_NADA]")) {
+    return JSON.stringify({ action: "none", reason: "el cliente ya resolvió su consulta" });
+  }
+  if (client.includes("[E2E_SEG_ROTO]")) return "esto no es JSON";
+  if (client.includes("[E2E_SEG_PRECIO]")) {
+    return JSON.stringify({ action: "reply", text: "¡Hola! Te recuerdo que la cabaña sale $85.000 la noche." });
+  }
+  const name = /Saludalo por su nombre: ([^.]+)\./.exec(system)?.[1];
+  return JSON.stringify({
+    action: "reply",
+    text:
+      step === 1
+        ? `¡Hola${name ? `, ${name}` : ""}! ¿Pudiste ver lo que te pasé? (recordatorio 1 de la IA)`
+        : `¡Hola${name ? `, ${name}` : ""}! Te dejo el contacto por si más adelante querés consultar (recordatorio 2 de la IA)`,
+  });
+}
+
+/**
+ * 042: con el seguimiento encendido, el modelo marca cada respuesta. Por
+ * defecto «espera respuesta»; «[E2E_CIERRE]» → no espera; «[E2E_SIN_MARCA]»
+ * → sin marca; «[E2E_NO_INTERESA]» → se despide y da de baja.
+ */
+function withFollowUpMarks(messages: InMessage[], raw: string): string {
+  const lastClient = [...messages]
+    .reverse()
+    .find((m) => m.role === "user" && !textOf(m.content).startsWith("[HERRAMIENTA]"));
+  const said = textOf(lastClient?.content);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return raw;
+  }
+  if (said.includes("[E2E_NO_INTERESA]")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¡Entendido! No te escribo más. Cualquier cosa, acá estoy.",
+      awaiting_reply: false,
+      opt_out: true,
+    });
+  }
+  if (!["reply", "update_lead", "move_stage"].includes(String(parsed.action))) return raw;
+  if (said.includes("[E2E_SIN_MARCA]")) return raw;
+  return JSON.stringify({ ...parsed, awaiting_reply: !said.includes("[E2E_CIERRE]") });
+}
+
+function aiMockCompletionCore(messages: InMessage[]): string {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   // 034: lectura completa del comprobante (antes que imagen/PDF: también trae archivo).
   const sys0 = textOf(messages.find((m) => m.role === "system")?.content);

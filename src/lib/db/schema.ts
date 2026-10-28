@@ -195,6 +195,10 @@ export const contact = pgTable(
     /** Baja (004): set-si-null desde la ingesta (BAJA/STOP); excluye de todo
      * envío iniciado por la empresa. Reversión solo explícita, auditada. */
     optedOutAt: timestamp("opted_out_at"),
+    /** 042: quién la puso. `agent` = la declaró el agente («no me
+     * interesa»): bloquea lo que inicia la empresa pero el agente responde si
+     * el cliente vuelve a escribir. NULL (filas viejas) = `keyword`. */
+    optedOutSource: text("opted_out_source", { enum: ["keyword", "agent"] }),
     optOutRevertedAt: timestamp("opt_out_reverted_at"),
     optOutRevertedBy: text("opt_out_reverted_by"),
     /** Contacto del Laboratorio (004): jamás elegible para envíos reales ni
@@ -411,7 +415,7 @@ export const conversationEvent = pgTable(
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error", "ai_tool_write"],
+      enum: ["ai_toggled", "ai_silent", "ai_resumed", "ai_handoff", "ai_error", "ai_tool_write", "ai_follow_up", "ai_opt_out"],
     }).notNull(),
     reason: text("reason"),
     actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -518,10 +522,61 @@ export const agentProfile = pgTable(
      * más tokens que una foto, así que lo decide cada empresa.
      */
     readVideos: boolean("read_videos").notNull().default(false),
+    /**
+     * 042: seguimiento automático — hasta dos recordatorios dentro de la
+     * ventana de 24 h cuando el cliente deja de contestar. Apagado por
+     * defecto: ninguna empresa cambia hasta que la encienden.
+     */
+    followUpEnabled: boolean("follow_up_enabled").notNull().default(false),
+    /** 042: horario permitido (hora local, fin excluido) y su zona. */
+    followUpTimezone: text("follow_up_timezone").notNull().default("America/Argentina/Cordoba"),
+    followUpStartHour: integer("follow_up_start_hour").notNull().default(9),
+    followUpEndHour: integer("follow_up_end_hour").notNull().default(21),
+    /** 042: textos de respaldo (si el modelo falla); NULL = los del CRM. */
+    followUpText1: text("follow_up_text_1"),
+    followUpText2: text("follow_up_text_2"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("agent_profile_org_uq").on(t.organizationId)]
+);
+
+/**
+ * 042: registro de los seguimientos automáticos, enviados u omitidos. La
+ * fila se RESERVA antes de enviar: el UNIQUE por conversación + ciclo + paso
+ * hace que un reinicio o dos réplicas nunca manden el mismo dos veces.
+ * El ciclo lo abre el último mensaje del cliente (`cycle_message_id`).
+ */
+export const agentFollowUp = pgTable(
+  "agent_follow_up",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    cycleMessageId: text("cycle_message_id").notNull(),
+    step: integer("step").notNull(),
+    status: text("status", { enum: ["reserved", "sent", "skipped", "failed"] }).notNull(),
+    reason: text("reason"),
+    text: text("text"),
+    source: text("source", { enum: ["agent", "fallback"] }),
+    messageId: text("message_id"),
+    /** Etapa del lead al decidir (open/won/lost), para el registro. */
+    stageKind: text("stage_kind"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    sentAt: timestamp("sent_at"),
+    repliedAt: timestamp("replied_at"),
+  },
+  (t) => [
+    uniqueIndex("agent_follow_up_cycle_uq").on(t.conversationId, t.cycleMessageId, t.step),
+    index("agent_follow_up_org_created_idx").on(t.organizationId, t.createdAt),
+  ]
 );
 
 export const kbEntry = pgTable(

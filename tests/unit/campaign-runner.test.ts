@@ -32,6 +32,7 @@ const base = {
   consentSource: "import" as const,
   consentAt: new Date(),
   optedOutAt: null,
+  optedOutSource: null,
   optOutRevertedAt: null,
   optOutRevertedBy: null,
   isTest: false,
