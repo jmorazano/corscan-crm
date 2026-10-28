@@ -467,7 +467,7 @@ export async function ingestInboundCore(input: {
     })
     .where(eq(schema.conversation.id, conversation.id));
 
-  await onLeadActivity(organizationId, contact.id, waTimestamp);
+  await onLeadActivity(organizationId, contact.id, waTimestamp, { conversationId: conversation.id });
 
   // 004: consentimiento inbound + baja automática + "respondió" de campañas
   // (post-gate de dedup: exactamente una vez por wamid).

@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/core";
 import {
   ArrowRightLeft,
+  Clock,
   MessageSquareText,
   Settings2,
   Trophy,
@@ -27,7 +28,8 @@ import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { ActionSheet, type SheetAction } from "@/components/ui/action-sheet";
-import { formatTime } from "@/components/inbox/helpers";
+import { formatRemaining, formatTime } from "@/components/inbox/helpers";
+import { useQueryFilters } from "@/components/use-query-filters";
 import { StageManager } from "./stage-manager";
 
 export type BoardLead = {
@@ -37,7 +39,15 @@ export type BoardLead = {
   lastActivityAt: string | null;
   contact: { id: string; name: string; phone: string };
   conversationId: string | null;
+  /** 044: hasta cuándo se le puede escribir sin plantilla (null = cerrada). */
+  windowClosesAt: string | null;
 };
+
+/** 044: ms que le quedan a la ventana de 24 h (0 = cerrada). */
+function windowLeftMs(lead: BoardLead, now: number): number {
+  if (!lead.windowClosesAt) return 0;
+  return Math.max(0, new Date(lead.windowClosesAt).getTime() - now);
+}
 
 export function PipelineClient() {
   const router = useRouter();
@@ -50,6 +60,23 @@ export function PipelineClient() {
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const justDragged = useRef(false);
+  // 044: filtro «Ventana abierta» en la URL (?ventana=1) y un reloj de un
+  // minuto para que la marca de cada tarjeta se descuente sola.
+  const { params, set: setQuery } = useQueryFilters();
+  const onlyOpenWindow = params.get("ventana") === "1";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const openWindowCount = useMemo(
+    () => leads.filter((l) => windowLeftMs(l, now) > 0).length,
+    [leads, now]
+  );
+  const visibleLeads = useMemo(
+    () => (onlyOpenWindow ? leads.filter((l) => windowLeftMs(l, now) > 0) : leads),
+    [leads, now, onlyOpenWindow]
+  );
 
   // Mouse: 6 px de recorrido. Táctil: mantener 250 ms (como WhatsApp), así
   // el scroll de la columna y el arrastre no compiten (FR-012).
@@ -182,9 +209,44 @@ export function PipelineClient() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-2 border-b px-4 py-3 md:px-6 md:py-4">
         <h2 className="font-semibold">Pipeline</h2>
-        <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
-          <Settings2 className="h-4 w-4" /> Gestionar etapas
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={onlyOpenWindow}
+            data-testid="window-filter"
+            title="Personas a las que todavía podés escribirles sin plantilla (escribieron en las últimas 24 h)"
+            onClick={() => setQuery({ ventana: onlyOpenWindow ? null : "1" })}
+            className={cn(
+              "flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors",
+              onlyOpenWindow
+                ? "border-brand bg-brand text-white"
+                : "bg-background text-text-2 hover:bg-accent"
+            )}
+          >
+            <span
+              className={cn("h-2 w-2 rounded-full", onlyOpenWindow ? "bg-white" : "bg-brand")}
+              aria-hidden
+            />
+            Ventana abierta
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-[11px]",
+                onlyOpenWindow ? "bg-white/20" : "bg-secondary text-text-3"
+              )}
+            >
+              {openWindowCount}
+            </span>
+          </button>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Gestionar etapas"
+            onClick={() => setManaging(true)}
+          >
+            <Settings2 className="h-4 w-4" />
+            <span className="hidden sm:inline">Gestionar etapas</span>
+          </Button>
+        </div>
       </header>
 
       {/* Tira de etapas (solo móvil): salto directo + conteo. */}
@@ -197,7 +259,7 @@ export function PipelineClient() {
         >
           {sortedStages.map((s) => {
             const active = s.id === activeStageId;
-            const count = leads.filter((l) => l.stageId === s.id).length;
+            const count = visibleLeads.filter((l) => l.stageId === s.id).length;
             return (
               <button
                 key={s.id}
@@ -242,15 +304,16 @@ export function PipelineClient() {
               <StageColumn
                 key={stage.id}
                 stage={stage}
-                leads={leads
+                leads={visibleLeads
                   .filter((l) => l.stageId === stage.id)
                   .sort((a, b) => a.position - b.position)}
+                now={now}
                 onOpen={openSheet}
               />
             ))}
           </div>
           <DragOverlay>
-            {activeLead ? <LeadCard lead={activeLead} overlay /> : null}
+            {activeLead ? <LeadCard lead={activeLead} now={now} overlay /> : null}
           </DragOverlay>
         </DndContext>
       </div>
@@ -277,10 +340,12 @@ export function PipelineClient() {
 function StageColumn({
   stage,
   leads,
+  now,
   onOpen,
 }: {
   stage: StageDto;
   leads: BoardLead[];
+  now: number;
   onOpen: (lead: BoardLead) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
@@ -308,7 +373,7 @@ function StageColumn({
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto p-2">
         {leads.map((lead) => (
-          <DraggableLead key={lead.id} lead={lead} onOpen={onOpen} />
+          <DraggableLead key={lead.id} lead={lead} now={now} onOpen={onOpen} />
         ))}
       </div>
     </div>
@@ -317,9 +382,11 @@ function StageColumn({
 
 function DraggableLead({
   lead,
+  now,
   onOpen,
 }: {
   lead: BoardLead;
+  now: number;
   onOpen: (lead: BoardLead) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -333,12 +400,21 @@ function DraggableLead({
       onClick={() => onOpen(lead)}
       className={cn("touch-manipulation", isDragging && "opacity-40")}
     >
-      <LeadCard lead={lead} />
+      <LeadCard lead={lead} now={now} />
     </div>
   );
 }
 
-function LeadCard({ lead, overlay = false }: { lead: BoardLead; overlay?: boolean }) {
+function LeadCard({
+  lead,
+  now,
+  overlay = false,
+}: {
+  lead: BoardLead;
+  now: number;
+  overlay?: boolean;
+}) {
+  const left = windowLeftMs(lead, now);
   return (
     <div
       data-testid="lead-card"
@@ -356,6 +432,16 @@ function LeadCard({ lead, overlay = false }: { lead: BoardLead; overlay?: boolea
               ? `Actividad: ${formatTime(lead.lastActivityAt)}`
               : "Sin actividad"}
           </p>
+          {left > 0 && (
+            <p
+              data-testid="lead-window"
+              title="Ventana de 24 h abierta: podés escribirle sin plantilla"
+              className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-brand"
+            >
+              <Clock className="h-3 w-3 shrink-0" aria-hidden />
+              Ventana · quedan {left >= 3_600_000 ? `${Math.floor(left / 3_600_000)} h` : formatRemaining(left)}
+            </p>
+          )}
         </div>
         {lead.conversationId && (
           <Link

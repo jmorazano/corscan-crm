@@ -21,12 +21,23 @@ const INTERACTIVE_FIELDS = {
 };
 
 /**
+ * 044: la etapa del lead viaja CON la acción. Con una acción por turno,
+ * `move_stage` competía con responder o consultar y casi siempre perdía: en
+ * Altos quedaron 846 leads conversados en «Nuevo». Laxa: lo que no resuelve
+ * contra las etapas de la empresa se ignora (nunca tumba el turno).
+ */
+const STAGE_FIELD = {
+  stage: z.string().trim().max(80).optional().catch(undefined),
+};
+
+/**
  * 031: la nota del lead puede viajar CON una consulta. Antes el modelo que
  * quería anotar «consulta para 10 personas del 27 al 29» elegía `update_lead`
  * —que es terminal—, mandaba «busco opciones…» y nunca buscaba.
  */
 const LEAD_NOTE_FIELD = {
   lead_note: z.string().trim().max(500).optional(),
+  ...STAGE_FIELD,
 };
 
 /**
@@ -76,6 +87,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     action: z.literal("reply"),
     text: z.string().min(1),
     contact_name: z.string().trim().optional(),
+    ...STAGE_FIELD,
     ...CONTACT_DATA_FIELDS,
     ...INTERACTIVE_FIELDS,
     ...FOLLOW_UP_FIELDS,
@@ -91,6 +103,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     note: z.string().optional(),
     reply: z.string().optional(),
     contact_name: z.string().trim().optional(),
+    ...STAGE_FIELD,
     ...CONTACT_DATA_FIELDS,
     ...INTERACTIVE_FIELDS,
     ...FOLLOW_UP_FIELDS,
@@ -105,6 +118,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     action: z.literal("handoff"),
     reason: z.string().optional(),
     farewell: z.string().optional(),
+    ...STAGE_FIELD,
   }),
   /**
    * Acciones "herramienta" de la agenda (005, research D6): el servidor las
@@ -123,6 +137,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     start: z.string().trim().min(1),
     note: z.string().trim().max(500).optional(),
     reply: z.string().optional(),
+    ...STAGE_FIELD,
   }),
   /**
    * Acciones-herramienta del CONECTOR MCP (016): el servidor las ejecuta
@@ -236,6 +251,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     when: z.string().trim().max(200).optional(),
     reply: z.string().optional(),
     contact_name: z.string().trim().optional(),
+    ...STAGE_FIELD,
   }),
 ]);
 
@@ -265,6 +281,25 @@ export function isGenericToolAction(
   action: AgentActionType
 ): action is Extract<AgentActionType, { action: "use_tool" }> {
   return action.action === "use_tool";
+}
+
+/**
+ * 044: ¿el agente pidió disponibilidad CONCRETA? Fechas de entrada y salida
+ * en el conector (también en una herramienta del servidor), o horarios de
+ * la agenda. Eso ya es interés: el lead pasa a
+ * la etapa de interesados sin depender de que el modelo lo diga.
+ */
+export function isConcreteAvailabilityQuery(action: AgentActionType): boolean {
+  if (action.action === "check_availability") return true;
+  // 032: herramientas del servidor (en Altos, `start-booking` y
+  // `check-availability`) con entrada y salida.
+  if (action.action === "use_tool") {
+    const a = action.args ?? {};
+    return Boolean(a.check_in && a.check_out);
+  }
+  if (action.action !== "search_stays") return false;
+  if (action.check_in && action.check_out) return true;
+  return (action.ranges ?? []).some((r) => r.check_in && r.check_out);
 }
 
 /** Acciones-herramienta de la agenda (005). */

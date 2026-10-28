@@ -1,4 +1,5 @@
 import type { schema } from "@/lib/db";
+import { renderStageSection, type StageLike } from "@/lib/lead-stages";
 import {
   LISTINGS_MARKER,
   PERSONAL_NUMBER_MARKER,
@@ -126,7 +127,10 @@ export function followUpSection(): string {
 export function buildAgentSystemPrompt(input: {
   profile: AgentProfile;
   kb: KbEntry[];
-  stages: { name: string }[];
+  /** 044: con id/kind/position se arma la sección ETAPA DEL LEAD. */
+  stages: { name: string; id?: string; kind?: StageLike["kind"]; position?: number }[];
+  /** 044: etapa actual del lead del contacto (null = sin lead). */
+  currentStageId?: string | null;
   /**
    * Sección "AGENDA DE TURNOS" (005, FR-016): solo cuando la empresa tiene
    * calendario conectado. Habilita las acciones-herramienta de la agenda.
@@ -213,6 +217,10 @@ export function buildAgentSystemPrompt(input: {
     input.mcpSection || input.listingsSection || input.calendarSection || sheetsSearch
   );
   const stageNames = input.stages.map((s) => s.name).join(" | ");
+  const fullStages = input.stages.every((s) => s.id && s.kind && typeof s.position === "number")
+    ? (input.stages as StageLike[])
+    : null;
+  const stageSection = fullStages ? renderStageSection(fullStages, input.currentStageId ?? null) : null;
   const calendar = input.calendarSection ?? null;
   const transactional = input.transactionalNotice
     ? [
@@ -238,7 +246,7 @@ export function buildAgentSystemPrompt(input: {
     input.mcpOverridesKb
       ? `CONOCIMIENTO DEL NEGOCIO (lo general del negocio: cómo funciona, políticas, formas de pago, cómo llegar). NO inventes lo que no esté acá. OJO: los precios, la disponibilidad y las características de cada propiedad NO salen de este texto sino de la consulta EN VIVO al sistema de reservas — si algo de acá contradice lo que te devuelve la herramienta, MANDA la herramienta, porque este texto puede estar desactualizado:\n${renderKb(input.kb)}`
       : `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
-    `Etapas del pipeline disponibles: ${stageNames}`,
+    stageSection ?? `Etapas del pipeline disponibles: ${stageNames}`,
     calendar,
     input.mcpSection ?? null,
     input.listingsSection ?? null,
@@ -267,7 +275,7 @@ export function buildAgentSystemPrompt(input: {
             '- En Instagram, `reply` acepta además extras que se ven en el celular de la persona: "quick_replies":["Sí","Ver fechas"] (hasta 4 respuestas rápidas de 20 letras; "email" o "teléfono" muestran un botón que le completa su dato), "buttons":[{"title":"Ver la cabaña","url":"https://…"}] (hasta 3 botones de enlace, título de 20 letras) o "cards":[{"title":"…","subtitle":"…","url":"https://…","image_url":"https://…"}] (carrusel de hasta 10, cuando ofrecés varias opciones). Usá SOLO enlaces e imágenes que aparezcan tal cual en esta conversación, el conocimiento o los resultados de herramientas; si no tenés el enlace, no pongas botón. El texto tiene que entenderse solo, sin los extras.',
           ]
         : []),
-      '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
+      '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional). Mejor: sumá "stage" a la acción que igual ibas a hacer.',
       ...(input.followUp
         ? [
             '- `reply`, `update_lead` y `move_stage` llevan SIEMPRE "awaiting_reply":true|false (ver SEGUIMIENTO AUTOMÁTICO) y, solo si corresponde, "opt_out":true.',
@@ -345,7 +353,7 @@ export function buildAgentSystemPrompt(input: {
       input.mcpOverridesKb
         ? "- Si la pregunta es de precios, disponibilidad o características de una propiedad → consultá el sistema en vivo, NO escales. Solo si la pregunta no la cubre ni el conocimiento ni la herramienta: no inventes, decí que lo confirmás con el equipo o escala."
         : "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
-      "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      "- Si detectas intención clara de compra → sumá \"stage\" con la etapa de interesados a tu respuesta o consulta.",
       ...(input.listingsSection
         ? [
             "- Si el cliente busca una propiedad → PRIMERO search_listings; jamás ofrezcas propiedades, precios ni características que no te haya devuelto la herramienta.",

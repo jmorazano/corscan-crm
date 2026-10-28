@@ -2,12 +2,14 @@ import { and, asc, eq } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { WINDOW_MS } from "@/server/inbox/window";
 
 export const dynamic = "force-dynamic";
 
 /** Datos completos del kanban: etapas ordenadas + tarjetas con su contacto. */
 export const GET = withAuth(async (session) => {
   const db = getDb();
+  const now = Date.now();
 
   const stages = await db
     .select()
@@ -20,6 +22,7 @@ export const GET = withAuth(async (session) => {
       lead: schema.lead,
       contact: schema.contact,
       conversationId: schema.conversation.id,
+      lastInboundAt: schema.conversation.lastInboundAt,
     })
     .from(schema.lead)
     .innerJoin(schema.contact, eq(schema.lead.contactId, schema.contact.id))
@@ -51,6 +54,14 @@ export const GET = withAuth(async (session) => {
         phone: r.contact.phone,
       },
       conversationId: r.conversationId,
+      // 044: hasta cuándo se le puede escribir sin plantilla (null = cerrada).
+      windowClosesAt: windowClosesAt(r.lastInboundAt, now),
     })),
   });
 });
+
+function windowClosesAt(lastInboundAt: Date | null, now: number): string | null {
+  if (!lastInboundAt) return null;
+  const closes = lastInboundAt.getTime() + WINDOW_MS;
+  return closes > now ? new Date(closes).toISOString() : null;
+}

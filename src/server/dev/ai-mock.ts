@@ -564,6 +564,20 @@ function aiMockCompletionCore(messages: InMessage[]): string {
   const waOriginTurn = fromClient ? dispatchWhatsAppOrigin(system, text) : null;
   if (waOriginTurn) return waOriginTurn;
 
+  // 044: perillas del E2E de etapas, antes que cualquier herramienta.
+  // «[E2E_ETAPA:Perdido]» → respuesta con la etapa a bordo;
+  // «[E2E_MOVER:Interesado]» → la acción vieja `move_stage`.
+  const stageKnob = /\[e2e_(etapa|mover):([^\]]+)\]/.exec(text);
+  if (stageKnob) {
+    const stage = stageKnob[2]?.trim() ?? "";
+    const reply = `¡Anotado! (${stage}, ${lastUser.length})`;
+    return JSON.stringify(
+      stageKnob[1] === "mover"
+        ? { action: "move_stage", stage, reply }
+        : { action: "reply", text: reply, stage }
+    );
+  }
+
   // Conector MCP (016): VA ANTES QUE LA AGENDA a propósito. El regex de
   // `mentionsCalendar` incluye "disponibilidad" y "reservar", así que una
   // empresa con agenda Y conector le ofrecería un turno de 30 minutos a

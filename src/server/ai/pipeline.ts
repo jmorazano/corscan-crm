@@ -18,6 +18,7 @@ import {
   isSheetsAction,
   isFormatArtifactReason,
   isMcpAction,
+  isConcreteAvailabilityQuery,
   resolveStage,
   type AgentActionType,
 } from "@/server/ai/actions";
@@ -52,6 +53,7 @@ import {
 import { withSendRetry } from "@/lib/send-retry";
 import type { MessageDetails } from "@/lib/instagram/types";
 import { applyOptOut } from "@/server/inbox/side-effects";
+import { advanceLeadStage, loadLeadStageState, type StageTarget } from "@/server/inbox/lead-stage";
 import {
   clipReason,
   friendlyProviderError,
@@ -505,11 +507,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .from(schema.kbEntry)
     .where(scoped(schema.kbEntry.organizationId, organizationId))
     .orderBy(asc(schema.kbEntry.createdAt));
-  const stages = await db
-    .select({ id: schema.pipelineStage.id, name: schema.pipelineStage.name })
-    .from(schema.pipelineStage)
-    .where(scoped(schema.pipelineStage.organizationId, organizationId))
-    .orderBy(asc(schema.pipelineStage.position));
+  // 044: las etapas con su tipo y orden, y dónde está el lead hoy.
+  const stageState = await loadLeadStageState(organizationId, conversation.contactId);
+  const stages = stageState.stages;
 
   // Agenda (005): la sección solo existe si la empresa conectó calendario.
   // Un fallo al cargarla NO tumba el turno: el agente opera sin agenda.
@@ -733,6 +733,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         profile,
         kb,
         stages,
+        currentStageId: stageState.current?.id ?? null,
         calendarSection: calendar ? renderCalendarSection(calendar) : null,
         calendarBookingEnabled: calendar?.integration.rules.agentBookingEnabled ?? false,
         transactionalNotice: transactional?.notice ?? null,
@@ -822,6 +823,28 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const toolsAvailable =
     mcpSection !== null || calendar !== null || listingsSection !== null || sheetsSearchable;
 
+  // 044: la etapa que el modelo mandó con su acción, o la que corresponde
+  // por una regla fija. Pasa por las reglas de `canAutoMove` (solo avanza);
+  // un nombre que no existe se ignora. El Laboratorio nunca mueve leads.
+  const applyStage = async (target: string | StageTarget | undefined): Promise<void> => {
+    if (conversation.isTest || !target) return;
+    let resolved: StageTarget;
+    if (typeof target === "string") {
+      const st = resolveStage(target, stages);
+      if (!st) return;
+      resolved = { stageId: st.id };
+    } else {
+      resolved = target;
+    }
+    const moved = await advanceLeadStage(organizationId, conversation.contactId, resolved, stageState);
+    if (moved) {
+      publish(organizationId, {
+        type: "conversation.updated",
+        data: { conversation: { id: conversationId } },
+      });
+    }
+  };
+
   // Loop de herramienta de la agenda (D6): el servidor ejecuta, el modelo
   // vuelve a decidir con el resultado; acotado a MAX_TOOL_ROUNDS.
   let lastAvailabilityText: string | null = null;
@@ -866,6 +889,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
       // 031: la nota del lead que vino con la herramienta.
       await saveLeadNote((action as { lead_note?: string }).lead_note);
+      // 044: la etapa que vino con la herramienta, y consultar disponibilidad
+      // con fechas concretas ya es interés.
+      await applyStage((action as { stage?: string }).stage);
+      if (isConcreteAvailabilityQuery(action)) await applyStage({ role: "interested" });
 
       // ---- Planillas de consulta (034) ----------------------------------
       if (isSheetsAction(action)) {
@@ -966,6 +993,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
                 conversation.contactId,
                 `El agente registró en ${what.slice(0, 160)}.`
               );
+              // 044: quedó registrado en el sistema del negocio → cliente.
+              await applyStage({ role: "won" });
             }
           }
         }
@@ -1193,6 +1222,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     break;
   }
 
+  // 044: la etapa que vino con la acción final (reply, update_lead, handoff…).
+  await applyStage((action as { stage?: string }).stage);
+
   // 031 (AC2.3): insistió en prometer sin consultar. Sale (callarlo sería
   // peor) y pasa a atención humana con aviso, para que una persona consulte.
   if (
@@ -1275,7 +1307,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         visitNote(listing, action.when ?? null, action.listing ?? null)
       );
       const stage = visitStageFor(stages);
-      if (stage) await moveLeadToStage(organizationId, conversation.contactId, stage.id);
+      if (stage) await applyStage({ stageId: stage.id });
       publish(organizationId, {
         type: "conversation.updated",
         data: { conversation: { id: conversationId } },
@@ -1305,11 +1337,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     if (!stage) {
       action = degradeAction(action);
     } else {
-      await moveLeadToStage(organizationId, conversation.contactId, stage.id);
-      publish(organizationId, {
-        type: "conversation.updated",
-        data: { conversation: { id: conversationId } },
-      });
+      // 044: ya se aplicó arriba con las reglas (solo avanza); acá queda la
+      // respuesta que lo acompaña.
       if (action.reply) {
         await say(action.reply, action);
       }

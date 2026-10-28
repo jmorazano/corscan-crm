@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { scoped } from "@/lib/db/tenant";
+import { advanceLeadStage } from "@/server/inbox/lead-stage";
 import { getEnv } from "@/lib/env";
 import { extractPaymentReceipt } from "@/lib/ai/receipt";
 import {
@@ -121,7 +122,12 @@ export async function recordReceiptFromMedia(input: {
       return existing.status;
     }
 
-    return await runReceipt(receipt, input.media);
+    const outcome = await runReceipt(receipt, input.media);
+    // 044: un comprobante anotado es un pago: el lead pasa a cliente.
+    if (outcome === "recorded") {
+      await advanceLeadStage(input.organizationId, conv.contactId, { role: "won" });
+    }
+    return outcome;
   } catch (err) {
     console.error(
       "[planillas] fallo inesperado anotando un comprobante:",
@@ -337,6 +343,7 @@ export async function retryReceipt(orgId: string, receiptId: string): Promise<Re
       decryptSecret({ cipher: receipt.valuesCipher, iv: receipt.valuesIv, tag: receipt.valuesTag })
     ) as string[];
     const status = await appendStored(receipt.id, orgId, receipt.spreadsheetId, receipt.sheetTitle, row);
+    if (status === "recorded" && receipt.contactId) await advanceLeadStage(orgId, receipt.contactId, { role: "won" });
     return { ok: true, status };
   }
 
@@ -358,6 +365,7 @@ export async function retryReceipt(orgId: string, receiptId: string): Promise<Re
     { ...receipt, ...target },
     { bytes: media[0].data, mimeType: media[0].mimeType, fileName: media[0].fileName }
   );
+  if (status === "recorded" && receipt.contactId) await advanceLeadStage(orgId, receipt.contactId, { role: "won" });
   return { ok: true, status: status ?? "not_receipt" };
 }
 
