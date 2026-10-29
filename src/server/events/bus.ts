@@ -35,6 +35,11 @@ export type SseEvent =
    * OTRA empresa del usuario cambia algo que mueve su no leído.
    */
   | { type: "workspace.unread"; data: { organizationId: string } }
+  /**
+   * 045: alguien dejó de ser parte de la empresa. No llega al navegador: el
+   * route SSE cierra el stream de esa persona (y lo descarta para el resto).
+   */
+  | { type: "team.member_removed"; data: { userId: string } }
   /** 030: un comentario de Instagram procesado (refresca la actividad). */
   | { type: "instagram.comments"; data: { commentId: string } }
   | {

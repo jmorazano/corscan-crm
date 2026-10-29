@@ -1,41 +1,27 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withAuth, withOwner } from "@/lib/api";
 import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { scoped } from "@/lib/db/tenant";
 import { isEmailReservedForOperator } from "@/server/auth/super-admin";
 import {
   attachExistingUser,
   findUserIdByEmail,
   isMemberOf,
 } from "@/server/auth/membership";
+import { listTeam } from "@/server/team";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
-  const db = getDb();
-  const members = await db
-    .select({
-      id: schema.member.id,
-      role: schema.member.role,
-      createdAt: schema.member.createdAt,
-      name: schema.user.name,
-      email: schema.user.email,
-    })
-    .from(schema.member)
-    .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
-    .where(scoped(schema.member.organizationId, session.organizationId));
-  return Response.json({
-    members: members.map((m) => ({
-      id: m.id,
-      role: m.role,
-      name: m.name,
-      email: m.email,
-      createdAt: m.createdAt.toISOString(),
-    })),
-  });
+/**
+ * 045: el equipo con lo que el propietario puede hacer sobre cada persona
+ * (`actions`, con el motivo cuando no puede). Lectura de configuración:
+ * solo el propietario, como la página.
+ */
+export const GET = withOwner(async (session) => {
+  const members = await listTeam(session.organizationId, session.userId);
+  return Response.json({ members });
 });
 
 const createSchema = z.object({

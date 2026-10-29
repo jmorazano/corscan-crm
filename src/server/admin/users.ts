@@ -300,6 +300,17 @@ export async function removeOrganizationUser(
   }
 
   await db.delete(schema.member).where(eq(schema.member.id, membership.id));
+  // 045: sus dispositivos dejan de recibir avisos de ESTA empresa (las
+  // suscripciones son por empresa y usuario; sin esto le seguían llegando
+  // los entrantes aunque ya no tuviera acceso).
+  await db
+    .delete(schema.pushSubscription)
+    .where(
+      and(
+        eq(schema.pushSubscription.organizationId, input.organizationId),
+        eq(schema.pushSubscription.userId, input.userId)
+      )
+    );
 
   const remaining = memberships.length - 1;
   if (remaining === 0 && !targetIsSuperAdmin) {

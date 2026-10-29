@@ -73,6 +73,11 @@ export async function GET(req: Request) {
       send(`: conectado\n\n`);
 
       const unsubscribe = subscribe(organizationId, (event) => {
+        if (event.type === "team.member_removed") {
+          // 045: quitado de la empresa → se corta ya, sin esperar el tope.
+          if (event.data.userId === session.userId) cleanup?.();
+          return;
+        }
         send(
           `event: ${event.type}\n` +
             `id: ${Date.now()}\n` +

@@ -1,5 +1,6 @@
 import { apiError, withSuperAdmin } from "@/lib/api";
 import { removeOrganizationUser } from "@/server/admin/users";
+import { announceMemberRemoved } from "@/server/team";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export const DELETE = withSuperAdmin(
             : 404;
       return apiError(status, result.code, result.message);
     }
+    announceMemberRemoved(id, userId);
     return Response.json({ ok: true, accountDeleted: result.accountDeleted });
   }
 );

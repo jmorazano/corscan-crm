@@ -12,7 +12,13 @@ import { removeOrganizationUser } from "@/server/admin/users";
  */
 
 type Row = Record<string, unknown>;
-type State = { organization: Row[]; member: Row[]; user: Row[]; session: Row[] };
+type State = {
+  organization: Row[];
+  member: Row[];
+  user: Row[];
+  session: Row[];
+  pushSubscription: Row[];
+};
 let state: State;
 
 vi.mock("@/server/auth/super-admin", () => ({
@@ -38,6 +44,7 @@ function tableKey(table: unknown): keyof State {
   if (table === schema.member) return "member";
   if (table === schema.user) return "user";
   if (table === schema.session) return "session";
+  if (table === schema.pushSubscription) return "pushSubscription";
   throw new Error("tabla inesperada en el stub");
 }
 
@@ -106,6 +113,11 @@ beforeEach(() => {
       { id: "s1", userId: "u_solo" },
       { id: "s2", userId: "u_dos" },
     ],
+    pushSubscription: [
+      { id: "p1", organizationId: "org_a", userId: "u_dos" },
+      { id: "p2", organizationId: "org_b", userId: "u_dos" },
+      { id: "p3", organizationId: "org_a", userId: "u_owner" },
+    ],
   };
 });
 
@@ -131,6 +143,8 @@ describe("removeOrganizationUser", () => {
       { id: "m5", organizationId: "org_b", userId: "u_dos", role: "owner" },
     ]);
     expect(state.user.some((u) => u.id === "u_dos")).toBe(true);
+    // 045: deja de recibir avisos de ESTA empresa; los de la otra siguen.
+    expect(state.pushSubscription.map((p) => p.id)).toEqual(["p2", "p3"]);
   });
 
   it("último propietario → 409 last_owner y nada cambia", async () => {
