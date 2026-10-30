@@ -21,3 +21,8 @@ de pila que encuentre en la sección `CONTACTO` (`dispatchContactName`).
 Unitarios: `tests/unit/agent-contact-name.test.ts` (saneo, teléfono/`ig:` sin
 sección, rótulo perfil/Instagram/guardado por el negocio, Laboratorio sin
 sección, prompt sin contacto intacto).
+
+## Emojis y diminutivos (30-oct-2026)
+
+- [x] Entrante de «Niko 🐨🐨🐨» con «hola, cómo me llamo?» → el prompt lleva
+  `CONTACTO: …: «Niko»` y el agente (ai-mock) responde «¡Hola, Niko!» ✔

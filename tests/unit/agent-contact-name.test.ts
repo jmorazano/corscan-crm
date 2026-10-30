@@ -51,8 +51,23 @@ describe("contactNameForPrompt", () => {
   it("deja pasar el nombre del perfil tal cual", () => {
     expect(contactNameForPrompt("Gerardo Agustín", "549341")).toBe("Gerardo Agustín");
     expect(contactNameForPrompt("Rosalía Szekieta")).toBe("Rosalía Szekieta");
-    // Emojis y usuarios pasan: decide el modelo con la regla de la sección.
-    expect(contactNameForPrompt("caro😁")).toBe("caro😁");
+    // Usuarios pasan: decide el modelo con la regla de la sección.
+    expect(contactNameForPrompt("marianper03")).toBe("marianper03");
+  });
+
+  it("quita los emojis: lo que queda es el nombre (pedido de Altos, 30-oct)", () => {
+    expect(contactNameForPrompt("caro😁")).toBe("caro");
+    expect(contactNameForPrompt("Niko 🐨🐨🐨")).toBe("Niko");
+    expect(contactNameForPrompt("Alee😀")).toBe("Alee");
+    expect(contactNameForPrompt("Sol 🩷")).toBe("Sol");
+    expect(contactNameForPrompt("👩🏽‍💻 Ana 🇦🇷")).toBe("Ana");
+    expect(contactNameForPrompt("Eterna 9/12/18")).toBe("Eterna 9/12/18");
+  });
+
+  it("solo emojis o signos → sin nombre", () => {
+    expect(contactNameForPrompt("😎")).toBeNull();
+    expect(contactNameForPrompt(":)")).toBeNull();
+    expect(contactNameForPrompt("❤️🔥")).toBeNull();
   });
 
   it("sin nombre real no hay nada que citar", () => {
@@ -102,10 +117,12 @@ describe("sección CONTACTO en el prompt", () => {
     expect(p.indexOf(CONTACT_SECTION_MARKER + ":")).toBeGreaterThan(p.indexOf("Saludá con el nombre"));
   });
 
-  it("dice cuándo NO usarlo", () => {
-    const s = contactSection("😎", "instagram_profile");
-    expect(s).toContain("Nombre del perfil de Instagram de la persona: «😎»");
+  it("dice cuándo NO usarlo y que los diminutivos valen", () => {
+    const s = contactSection("marianper03", "instagram_profile");
+    expect(s).toContain("Nombre del perfil de Instagram de la persona: «marianper03»");
     expect(s).toContain("saludá sin nombre");
+    expect(s).toContain("diminutivos");
+    expect(s).not.toContain("apodo");
   });
 
   it("sin contacto el prompt queda como antes", () => {
