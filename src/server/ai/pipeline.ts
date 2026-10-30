@@ -63,7 +63,7 @@ import {
   type SilentReason,
 } from "@/lib/conversation-events";
 import { announcesLookup } from "@/lib/lookup-promise";
-import { buildAgentSystemPrompt, renderOriginSection } from "@/server/ai/prompts";
+import { buildAgentSystemPrompt, promptContact, renderOriginSection } from "@/server/ai/prompts";
 import {
   executeBookAppointment,
   executeCheckAvailability,
@@ -755,6 +755,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           conversation.igOrigin ?? null,
           conversation.kind === "instagram" ? "instagram" : "whatsapp"
         ),
+        // El nombre del perfil (o el que le guardó el negocio): sin esto el
+        // agente no podía saludar por el nombre aunque se lo pidieran.
+        contact: promptContact(contactRow, conversation.kind),
         teamIntervened,
         teamResume: resuming
           ? { minutesWaiting: Math.max(1, Math.round((Date.now() - lastInbound.createdAt.getTime()) / 60_000)) }

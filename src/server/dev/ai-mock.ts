@@ -564,6 +564,11 @@ function aiMockCompletionCore(messages: InMessage[]): string {
   const waOriginTurn = fromClient ? dispatchWhatsAppOrigin(system, text) : null;
   if (waOriginTurn) return waOriginTurn;
 
+  // «¿cómo me llamo?» → el E2E prueba que el turno recibió la sección
+  // CONTACTO con el nombre del perfil (y saluda solo con el de pila).
+  const nameTurn = fromClient ? dispatchContactName(system, text) : null;
+  if (nameTurn) return nameTurn;
+
   // 044: perillas del E2E de etapas, antes que cualquier herramienta.
   // «[E2E_ETAPA:Perdido]» → respuesta con la etapa a bordo;
   // «[E2E_MOVER:Interesado]» → la acción vieja `move_stage`.
@@ -694,6 +699,15 @@ function dispatchWhatsAppOrigin(system: string, text: string): string | null {
   return JSON.stringify({
     action: "reply",
     text: title ? `Llegaste por el anuncio «${title}».` : "Llegaste por un anuncio de Facebook o Instagram.",
+  });
+}
+
+function dispatchContactName(system: string, text: string): string | null {
+  if (!/c[oó]mo me llamo/.test(text)) return null;
+  const name = /^CONTACTO: [^:\n]+: «([^»\n]+)»/m.exec(system)?.[1];
+  return JSON.stringify({
+    action: "reply",
+    text: name ? `¡Hola, ${name.split(" ")[0]}!` : "¡Hola! No sé cómo te llamás.",
   });
 }
 
