@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import { DEFAULT_METRICS_TIMEZONE } from "@/lib/metrics";
 import { foldAccents } from "@/lib/assistants/format";
+import { visibleLength } from "@/lib/text-length";
 import {
   checkTeachChange,
   extractContactKeys,
@@ -246,7 +247,7 @@ const FIELD_LIMIT: Record<ProfileField, number> = {
   greeting: PROFILE_LIMITS.greeting,
 };
 
-/** Topes de largo por campo (el motor del Entrenador confía en su Zod; acá se verifica el resultado). */
+/** Topes de largo por campo (el motor del Entrenador confía en su Zod; acá se verifica el resultado). Los del perfil cuentan caracteres visibles. */
 function lengthProblem(change: TrainerChangeType, profile: AgentProfile | null): string | null {
   const over = (text: string | null | undefined, max: number) => (text?.length ?? 0) > max;
   switch (change.op) {
@@ -258,12 +259,12 @@ function lengthProblem(change: TrainerChangeType, profile: AgentProfile | null):
       return null;
     case "profile_set": {
       const max = FIELD_LIMIT[change.field];
-      return over(change.value, max) ? `Supera el tope de ${max} caracteres del campo.` : null;
+      return visibleLength(change.value ?? "") > max ? `Supera el tope de ${max} caracteres del campo.` : null;
     }
     case "profile_append": {
       const max = FIELD_LIMIT[change.field];
       const next = appendToField((profile?.[change.field] as string | null | undefined) ?? null, change.text);
-      return next.length > max ? `Con esta regla el campo superaría el tope de ${max} caracteres: resumilo o corregí el campo con edit_agent.` : null;
+      return visibleLength(next) > max ? `Con esta regla el campo superaría el tope de ${max} caracteres: resumilo o corregí el campo con edit_agent.` : null;
     }
     case "kb_delete":
       return null;

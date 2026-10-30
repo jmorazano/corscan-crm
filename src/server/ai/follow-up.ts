@@ -44,7 +44,7 @@ export function buildFollowUpPrompt(input: {
   return [
     `${FOLLOW_UP_MARKER} Eres "${profile.name}" y atendés el WhatsApp de este negocio. El cliente dejó de contestar después de tu último mensaje y vas a escribirle un RECORDATORIO breve (seguimiento ${step} de 2).`,
     profile.tone ? `Tono: ${profile.tone}` : null,
-    profile.instructions ? `Instrucciones del negocio (para el tono y el contexto):\n${profile.instructions.slice(0, 4000)}` : null,
+    profile.instructions ? `Instrucciones del negocio (para el tono y el contexto):\n${profile.instructions}` : null,
     step === 1
       ? "Objetivo: retomar la charla desde donde quedó. Si le pediste datos (fechas, cantidad de personas…), recordáselo; si ya le pasaste opciones o precio, preguntale si pudo verlo o si le queda alguna duda."
       : "Objetivo: el último recordatorio. Dejale el contacto a disposición para más adelante, sin presionar, y despedite con calidez.",

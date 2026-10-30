@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { KB_LIMITS } from "@/server/kb/service";
+import { visibleMax } from "@/lib/text-length";
 import { PROFILE_LIMITS } from "@/server/ai/profile";
 
 /**
@@ -44,7 +45,7 @@ export const TrainerChange = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("profile_set"),
     field: z.enum(PROFILE_FIELDS),
-    value: z.string().max(PROFILE_LIMITS.instructions).nullable(),
+    value: visibleMax(z.string(), PROFILE_LIMITS.instructions).nullable(),
   }),
   z.object({
     op: z.literal("profile_append"),

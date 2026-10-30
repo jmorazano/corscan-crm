@@ -72,7 +72,8 @@ const editChange = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("profile_set"),
     field: SETTABLE,
-    value: z.string().max(20_000).nullable().describe("Texto completo del campo; null lo vacía (salvo name)."),
+    // Tope holgado de transporte (UTF-16); el real, en caracteres visibles, lo pone teach.ts.
+    value: z.string().max(60_000).nullable().describe("Texto completo del campo; null lo vacía (salvo name)."),
   }),
 ]);
 

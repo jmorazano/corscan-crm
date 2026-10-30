@@ -2,6 +2,8 @@ import { z } from "zod";
 import { REPLY_DELAY_MAX_MS, REPLY_DELAY_MIN_MS } from "@/lib/agent-timing";
 import { TEAM_SILENCE_MAX_MS, TEAM_SILENCE_MIN_MS } from "@/lib/agent-presence";
 import { getDb, schema } from "@/lib/db";
+import { PROFILE_LIMITS } from "@/lib/agent-profile-limits";
+import { visibleMax } from "@/lib/text-length";
 import { scoped } from "@/lib/db/tenant";
 import type { DbOrTx } from "@/server/kb/service";
 import { syncTrainerContactName } from "@/server/trainer/conversation";
@@ -14,21 +16,15 @@ import { syncTrainerContactName } from "@/server/trainer/conversation";
 
 export type AgentProfile = typeof schema.agentProfile.$inferSelect;
 
-export const PROFILE_LIMITS = {
-  name: 60,
-  tone: 500,
-  instructions: 8000,
-  escalationRules: 4000,
-  greeting: 1000,
-} as const;
+export { PROFILE_LIMITS };
 
 export const profileUpdateSchema = z.object({
   enabled: z.boolean().optional(),
-  name: z.string().trim().min(1).max(PROFILE_LIMITS.name).optional(),
-  tone: z.string().max(PROFILE_LIMITS.tone).nullable().optional(),
-  instructions: z.string().max(PROFILE_LIMITS.instructions).nullable().optional(),
-  escalationRules: z.string().max(PROFILE_LIMITS.escalationRules).nullable().optional(),
-  greeting: z.string().max(PROFILE_LIMITS.greeting).nullable().optional(),
+  name: visibleMax(z.string().trim().min(1), PROFILE_LIMITS.name).optional(),
+  tone: visibleMax(z.string(), PROFILE_LIMITS.tone).nullable().optional(),
+  instructions: visibleMax(z.string(), PROFILE_LIMITS.instructions).nullable().optional(),
+  escalationRules: visibleMax(z.string(), PROFILE_LIMITS.escalationRules).nullable().optional(),
+  greeting: visibleMax(z.string(), PROFILE_LIMITS.greeting).nullable().optional(),
   /** 022: espera antes de responder (ms); null = default de instancia. */
   replyDelayMs: z
     .number()

@@ -51,7 +51,7 @@ const entries = [
 let currentProfile: typeof profile | null = profile;
 vi.mock("@/server/ai/profile", () => ({
   getProfile: vi.fn(async () => currentProfile),
-  PROFILE_LIMITS: { name: 60, tone: 500, instructions: 8000, escalationRules: 4000, greeting: 1000 },
+  PROFILE_LIMITS: { name: 60, tone: 500, instructions: 15000, escalationRules: 6000, greeting: 1000 },
 }));
 vi.mock("@/server/kb/service", () => ({
   listEntries: vi.fn(async () => entries),
@@ -158,6 +158,21 @@ describe("applyAssistantChanges", () => {
       { op: "profile_append", field: "tone", text: "x".repeat(600) },
     ]);
     expect(out.rejected[0]!.reason).toContain("500");
+  });
+
+  it("topes de largo: un emoji cuenta como UN carácter (no dos, como en UTF-16)", async () => {
+    const { applyAssistantChanges } = await import("@/server/assistants/teach");
+    queueFor({ contacts: [] });
+    // 500 caracteres visibles = 1.000 unidades UTF-16: entra justo en el tope del tono.
+    const out = await applyAssistantChanges("org_1", "edit", [
+      { op: "profile_set", field: "tone", value: "🌲".repeat(500) },
+    ]);
+    expect(out.rejected).toEqual([]);
+    queueFor({ contacts: [] });
+    const over = await applyAssistantChanges("org_1", "edit", [
+      { op: "profile_set", field: "tone", value: "🌲".repeat(501) },
+    ]);
+    expect(over.rejected[0]!.reason).toContain("Supera el tope de 500");
   });
 });
 

@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FollowUpSection } from "@/components/agent/follow-up-section";
+import { PROFILE_LIMITS } from "@/lib/agent-profile-limits";
+import { visibleLength } from "@/lib/text-length";
 import {
   REPLY_DELAY_MAX_MS,
   replyDelayMsToSeconds,
@@ -57,6 +59,7 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -86,11 +89,17 @@ export function AgentClient() {
   }
 
   async function saveProfile(patch: Partial<Profile>) {
-    await fetch("/api/agent/profile", {
+    const res = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
+    // Sin refetch: el formulario conserva lo que escribió la persona.
+    if (!res?.ok) {
+      setSaveError(true);
+      return;
+    }
+    setSaveError(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     void refetch();
@@ -102,6 +111,11 @@ export function AgentClient() {
         <h2 className="font-semibold">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
+          {saveError && (
+            <span className="text-xs text-destructive" data-testid="profile-save-error">
+              No se guardó: revisá los topes de cada campo.
+            </span>
+          )}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
@@ -173,6 +187,12 @@ function ProfileSection({
 }) {
   const [form, setForm] = useState(profile);
   useEffect(() => setForm(profile), [profile]);
+  const overLimit =
+    visibleLength(form.name) > PROFILE_LIMITS.name ||
+    visibleLength(form.tone ?? "") > PROFILE_LIMITS.tone ||
+    visibleLength(form.instructions ?? "") > PROFILE_LIMITS.instructions ||
+    visibleLength(form.escalationRules ?? "") > PROFILE_LIMITS.escalationRules ||
+    visibleLength(form.greeting ?? "") > PROFILE_LIMITS.greeting;
 
   return (
     <Card>
@@ -209,6 +229,7 @@ function ProfileSection({
             value={form.instructions ?? ""}
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
           />
+          <CharCount id="agent-instructions-count" value={form.instructions} max={PROFILE_LIMITS.instructions} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-escalation">Reglas de escalado</Label>
@@ -219,6 +240,7 @@ function ProfileSection({
             value={form.escalationRules ?? ""}
             onChange={(e) => setForm({ ...form, escalationRules: e.target.value })}
           />
+          <CharCount id="agent-escalation-count" value={form.escalationRules} max={PROFILE_LIMITS.escalationRules} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-greeting">Saludo</Label>
@@ -229,9 +251,25 @@ function ProfileSection({
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
           />
         </div>
-        <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
+        <Button disabled={overLimit} onClick={() => void onSave(form)}>
+          Guardar comportamiento
+        </Button>
       </CardContent>
     </Card>
+  );
+}
+
+/** «7.990 / 15.000», en caracteres visibles (un emoji = 1, como cuenta el servidor). */
+function CharCount({ id, value, max }: { id: string; value: string | null; max: number }) {
+  const n = visibleLength(value ?? "");
+  return (
+    <p
+      data-testid={id}
+      className={`text-right text-xs ${n > max ? "text-destructive" : "text-muted-foreground"}`}
+    >
+      {n.toLocaleString("es-AR")} / {max.toLocaleString("es-AR")}
+      {n > max && " · supera el tope"}
+    </p>
   );
 }
 
