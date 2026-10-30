@@ -11,10 +11,11 @@ describe("listToolsForMcp", () => {
     teach_agent: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     edit_agent: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     undo_agent_change: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    tag_contacts: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   } as const;
 
-  it("publica 17 herramientas: las 12 de la 040 de solo lectura y las 5 del agente (041)", () => {
-    expect(tools).toHaveLength(17);
+  it("publica 18 herramientas: las 12 de la 040 de solo lectura, las 5 del agente (041) y tag_contacts (046)", () => {
+    expect(tools).toHaveLength(18);
     expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "list_workspaces",
@@ -27,6 +28,7 @@ describe("listToolsForMcp", () => {
         "edit_agent",
         "list_agent_changes",
         "undo_agent_change",
+        "tag_contacts",
       ])
     );
     for (const t of tools) {
@@ -47,6 +49,14 @@ describe("listToolsForMcp", () => {
       JSON.stringify(tools.find((t) => t.name === name)!.inputSchema).match(/"const":"(\w+)"/g)?.map((m) => m.slice(9, -1));
     expect(ops("teach_agent")?.sort()).toEqual(["kb_add", "profile_append"]);
     expect(ops("edit_agent")?.sort()).toEqual(["kb_delete", "kb_update", "profile_set"]);
+  });
+
+  it("tag_contacts acepta los mismos filtros que search_contacts", () => {
+    const props = (name: string) => tools.find((t) => t.name === name)!.inputSchema.properties as Record<string, unknown>;
+    const filter = props("tag_contacts").filter as { properties: Record<string, unknown> };
+    const search = Object.keys(props("search_contacts")).filter((k) => !["workspace", "timezone", "cursor", "limit"].includes(k));
+    expect(Object.keys(filter.properties).sort()).toEqual(search.sort());
+    expect(props("tag_contacts")).toHaveProperty("expected_count");
   });
 
   it("las herramientas con empresa piden `workspace` y los períodos sus enums", () => {

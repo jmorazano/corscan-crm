@@ -66,6 +66,8 @@ export type BulkTagsResult = {
   /** Filas cuyo juego de etiquetas cambió. */
   updated: number;
   updatedIds: string[];
+  /** 046: cada fila encontrada con sus etiquetas antes y después. */
+  rows: { id: string; before: string[]; after: string[] }[];
 };
 
 /**
@@ -80,7 +82,7 @@ async function bulkUpdateTags(
   ops: TagOps
 ): Promise<BulkTagsResult> {
   const uniqueIds = [...new Set(ids)].slice(0, BULK_MAX_IDS);
-  if (uniqueIds.length === 0) return { matched: 0, updated: 0, updatedIds: [] };
+  if (uniqueIds.length === 0) return { matched: 0, updated: 0, updatedIds: [], rows: [] };
 
   const db = getDb();
   return db.transaction(async (tx) => {
@@ -91,9 +93,8 @@ async function bulkUpdateTags(
         scoped(table.organizationId, organizationId, inArray(table.id, uniqueIds))
       );
 
-    const changes = rows
-      .map((r) => ({ id: r.id, tags: applyTagOps(r.tags, ops), before: r.tags }))
-      .filter((c) => !sameTagSet(c.before, c.tags));
+    const all = rows.map((r) => ({ id: r.id, tags: applyTagOps(r.tags, ops), before: r.tags }));
+    const changes = all.filter((c) => !sameTagSet(c.before, c.tags));
 
     // Un UPDATE por juego de etiquetas resultante (033): las filas que
     // terminan igual —el caso típico de «todos los que coinciden»— van juntas.
@@ -124,6 +125,7 @@ async function bulkUpdateTags(
       matched: rows.length,
       updated: changes.length,
       updatedIds: changes.map((c) => c.id),
+      rows: all.map((c) => ({ id: c.id, before: c.before, after: c.tags })),
     };
   });
 }

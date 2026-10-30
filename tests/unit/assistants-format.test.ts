@@ -76,7 +76,7 @@ describe("foreign (texto de terceros)", () => {
 });
 
 describe("catálogo completo", () => {
-  it("publica las 12 herramientas de lectura de la 040 y las 5 del agente de la 041", () => {
+  it("publica las 12 herramientas de lectura de la 040, las 5 del agente de la 041 y tag_contacts (046)", () => {
     expect(listToolsForMcp().map((t) => t.name).sort()).toEqual(
       [
         "get_agent_activity",
@@ -96,6 +96,7 @@ describe("catálogo completo", () => {
         "search_contacts",
         "search_conversations",
         "search_messages",
+        "tag_contacts",
       ].sort()
     );
   });

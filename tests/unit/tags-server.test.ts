@@ -128,7 +128,10 @@ describe("bulkUpdateContactTags", () => {
     const result = await bulkUpdateContactTags("org_1", ["ct_1"], {
       remove: ["cordoba"],
     });
-    expect(result).toEqual({ matched: 1, updated: 0, updatedIds: [] });
+    expect(result).toMatchObject({ matched: 1, updated: 0, updatedIds: [] });
+    // 046: la fila viaja con su antes y después (iguales: no cambió).
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.after).toEqual(result.rows[0]!.before);
     expect(updateCalls).toHaveLength(0);
   });
 
@@ -144,7 +147,7 @@ describe("bulkUpdateContactTags", () => {
   it("lista vacía → no toca la BD", async () => {
     const { bulkUpdateContactTags } = await import("@/server/tags");
     const result = await bulkUpdateContactTags("org_1", [], { add: ["x"] });
-    expect(result).toEqual({ matched: 0, updated: 0, updatedIds: [] });
+    expect(result).toEqual({ matched: 0, updated: 0, updatedIds: [], rows: [] });
     expect(selectCalls).toHaveLength(0);
   });
 });

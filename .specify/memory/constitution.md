@@ -1,7 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.13.0 → 1.14.0
+Versión: 1.14.0 → 1.15.0
+
+Cambios (feature 046-assistant-tag-contacts, 29-oct-2026) — MINOR:
+  - Principio I, regla «Acceso entrante de asistentes del usuario»,
+    condición (c): suma una SEGUNDA escritura acotada: ETIQUETAR CONTACTOS
+    (agregar o quitar etiquetas; ningún otro campo de la ficha), solo
+    contactos reales de la empresa (jamás Laboratorio ni el contacto del
+    Entrenador), selección por ids o por el mismo filtro de la búsqueda con
+    la cantidad confirmada (si cambió, no se toca nada), guarda determinista
+    del CRM que rechaza etiquetas con pinta de dato de cliente (correo,
+    teléfono, documento), topes por llamada y por hora por empresa,
+    resultado que dice qué contactos cambiaron para deshacer exacto, y
+    herramienta declarada de escritura. Cualquier otra escritura sigue
+    exigiendo otra enmienda.
+  - Motivación: pedido del dueño (29-oct-2026) — segmentar desde Claude lo
+    que descubre consultando, sin abrir el CRM.
+  - Plantillas: sin cambios. CLAUDE.md: mapa del código (046).
+
+Versión anterior: 1.13.0 → 1.14.0
 
 Cambios (feature 041-assistant-teaching, 26-oct-2026) — MINOR:
   - Principio I, regla «Acceso entrante de asistentes del usuario»: la
@@ -370,7 +388,11 @@ velocidad de entrega o conveniencia de desarrollo.
   auditoría antes/después y deshacer, origen visible, guardas deterministas del CRM
   que no dependen de la confirmación del asistente (rechazan enlaces, teléfonos y
   correos que el agente no conocía, datos de contactos y marcadores internos), tope
-  de cambios por hora por empresa y herramientas declaradas de escritura; ninguna
+  de cambios por hora por empresa y herramientas declaradas de escritura; y (desde
+  1.15.0) ETIQUETAR CONTACTOS —agregar o quitar etiquetas y nada más de la ficha—,
+  solo contactos reales de la empresa, por ids o por el filtro de la búsqueda con la
+  cantidad confirmada, rechazando etiquetas con pinta de dato de cliente, con topes
+  por llamada y por hora y un resultado que permite deshacer exacto; ninguna
   herramienta envía mensajes, cambia otros datos ni toca las APIs de Meta, los
   conectores de terceros, la configuración de IA ni el Laboratorio —cualquier otra
   escritura exige otra enmienda—; (d) tokens y
@@ -719,4 +741,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.14.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-26
+**Version**: 1.15.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-29

@@ -11,11 +11,13 @@ import { conversationTools } from "./conversations";
 import { contactTools } from "./contacts";
 import { pipelineTools } from "./pipeline";
 import { agentTools } from "./agent";
+import { taggingTools } from "./tagging";
 
 /**
  * Catálogo de herramientas del servidor MCP de los asistentes (040 de solo
  * lectura, specs/040-crm-mcp-server/contracts/mcp-tools.md; 041 suma las de
- * enseñarle al agente, specs/041-assistant-teaching/contracts/mcp-tools.md).
+ * enseñarle al agente, specs/041-assistant-teaching/contracts/mcp-tools.md;
+ * 046 suma `tag_contacts`).
  *
  * Toda herramienta con `workspace` pasa por `authorizeWorkspace` ANTES de
  * correr (FR-007) y queda en el registro de la empresa (FR-025).
@@ -36,6 +38,7 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   ...contactTools,
   ...pipelineTools,
   ...agentTools,
+  ...taggingTools,
 ];
 
 const BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.name, t]));

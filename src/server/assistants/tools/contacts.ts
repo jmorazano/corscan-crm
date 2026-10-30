@@ -51,6 +51,44 @@ function contactOut(c: typeof ct.$inferSelect, stage: string | null, timeZone: s
   };
 }
 
+/** Filtros de `search_contacts` (046: `tag_contacts` acepta los mismos). */
+export const contactSearchFilterShape = {
+  q: z.string().max(120).optional(),
+  tags: z.array(z.string().max(60)).max(10).optional(),
+  tags_mode: z.enum(["any", "all"]).optional(),
+  channel: z.enum(["whatsapp", "instagram"]).optional(),
+  opted_out: z.boolean().optional().describe("true: solo los dados de baja; false: solo los que no."),
+  include_archived: z.boolean().optional(),
+};
+
+export type ContactSearchFilter = {
+  q?: string;
+  tags?: string[];
+  tags_mode?: "any" | "all";
+  channel?: "whatsapp" | "instagram";
+  opted_out?: boolean;
+  include_archived?: boolean;
+};
+
+/**
+ * WHERE de la búsqueda de contactos. Compartido por `search_contacts` y
+ * `tag_contacts`: lo que la búsqueda cuenta es exactamente lo que se etiqueta.
+ */
+export function contactSearchWhere(orgId: string, f: ContactSearchFilter) {
+  const q = typeof f.q === "string" ? f.q.trim() : "";
+  const like = likePattern(q.replace(/^@/, ""));
+  return scoped(
+    ct.organizationId,
+    orgId,
+    eq(ct.isTest, false),
+    q ? or(ilike(ct.name, like), ilike(ct.phone, like), ilike(ct.igUsername, like), ilike(ct.email, like)) : undefined,
+    f.include_archived === true ? undefined : isNull(ct.archivedAt),
+    Array.isArray(f.tags) && f.tags.length > 0 ? tagsWhere(ct.tags, f.tags, f.tags_mode ?? "any") : undefined,
+    f.channel ? eq(ct.channel, f.channel) : undefined,
+    f.opted_out === true ? isNotNull(ct.optedOutAt) : f.opted_out === false ? isNull(ct.optedOutAt) : undefined
+  );
+}
+
 const searchContactsTool: AssistantTool = {
   name: "search_contacts",
   title: "Buscar contactos",
@@ -58,12 +96,7 @@ const searchContactsTool: AssistantTool = {
     "Busca contactos por nombre, teléfono, @usuario de Instagram o email, y por etiquetas, canal o baja (opt-out). Devuelve su ficha corta con la etapa del lead; para el detalle y sus conversaciones usá get_contact.",
   input: z.object({
     workspace: workspaceParam,
-    q: z.string().max(120).optional(),
-    tags: z.array(z.string().max(60)).max(10).optional(),
-    tags_mode: z.enum(["any", "all"]).optional(),
-    channel: z.enum(["whatsapp", "instagram"]).optional(),
-    opted_out: z.boolean().optional().describe("true: solo los dados de baja; false: solo los que no."),
-    include_archived: z.boolean().optional(),
+    ...contactSearchFilterShape,
     timezone: z.string().max(64).optional(),
     cursor: z.string().max(200).optional(),
     limit: limitParam(25, 50),
@@ -73,20 +106,7 @@ const searchContactsTool: AssistantTool = {
   async run({ workspace }, args) {
     const orgId = workspace!.id;
     const timeZone = resolveTimeZone(args.timezone);
-    const q = typeof args.q === "string" ? args.q.trim() : "";
-    const like = likePattern(q.replace(/^@/, ""));
-    const where = scoped(
-      ct.organizationId,
-      orgId,
-      eq(ct.isTest, false),
-      q ? or(ilike(ct.name, like), ilike(ct.phone, like), ilike(ct.igUsername, like), ilike(ct.email, like)) : undefined,
-      args.include_archived === true ? undefined : isNull(ct.archivedAt),
-      Array.isArray(args.tags) && args.tags.length > 0
-        ? tagsWhere(ct.tags, args.tags as string[], (args.tags_mode as "any" | "all" | undefined) ?? "any")
-        : undefined,
-      args.channel ? eq(ct.channel, args.channel as "whatsapp" | "instagram") : undefined,
-      args.opted_out === true ? isNotNull(ct.optedOutAt) : args.opted_out === false ? isNull(ct.optedOutAt) : undefined
-    );
+    const where = contactSearchWhere(orgId, args as ContactSearchFilter);
     const cursor = decodeKeyset(args.cursor);
     const limit = (args.limit as number | undefined) ?? 25;
     const db = getDb();
