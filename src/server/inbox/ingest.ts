@@ -22,6 +22,7 @@ import { maybeRunAgentTurn } from "@/server/ai/trigger";
 import { parseWhatsAppReferral, type WhatsAppReferral } from "@/lib/whatsapp-ad-origin";
 import { applyWhatsAppAdOrigin } from "@/server/inbox/ad-origin";
 import { applyOriginRules, tagMetaAdContact } from "@/server/contact-origin";
+import { inBackground as inBackgroundAttention, openWaitForInbound } from "@/server/attention/waits";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -502,6 +503,23 @@ export async function ingestInboundCore(input: {
     message: { type: message.type, text: message.text },
   });
 
+  // 048: ¿el cliente quedó esperando a una persona? En segundo plano: jamás
+  // demora ni tumba la ingesta.
+  if (!conversation.isTest) {
+    inBackgroundAttention("apertura en la ingesta", () =>
+      openWaitForInbound({
+        organizationId,
+        conversationId: conversation.id,
+        message: {
+          id: message.id,
+          direction: message.direction,
+          type: message.type,
+          createdAt: message.createdAt,
+        },
+      })
+    );
+  }
+
   // 011 (FR-007): el mensaje de baja no merece respuesta del agente — el
   // side-effect ya marcó la baja; responder sería insistirle a quien pidió
   // no recibir más.
@@ -575,6 +593,7 @@ export function serializeMessage(
     source: m.source ?? "cloud",
     details: m.details ?? null,
     team: isTeamMessage(m),
+    sentByName: m.sentByName ?? null,
     createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
   };
 }

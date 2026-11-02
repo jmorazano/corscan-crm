@@ -39,5 +39,9 @@ export async function register(): Promise<void> {
     // (cada 15 minutos; solo empresas que lo encendieron).
     const { startStaleTicker } = await import("./server/inbox/lead-stale");
     startStaleTicker();
+    // 048: esperas de clientes que necesitan a una persona (cada minuto:
+    // las concilia y avisa al propietario si la empresa lo encendió).
+    const { startAttentionTicker } = await import("./server/attention/sweep");
+    startAttentionTicker();
   }
 }

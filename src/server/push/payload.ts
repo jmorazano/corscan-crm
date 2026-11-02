@@ -4,7 +4,7 @@
  */
 
 export type PushPayload = {
-  kind: "inbound" | "handoff" | "test";
+  kind: "inbound" | "handoff" | "test" | "waiting";
   title: string;
   body: string;
   /** Agrupa: varios mensajes del mismo chat reemplazan la notificación. */
@@ -82,6 +82,32 @@ export function buildHandoffPayload(input: {
     title: `Atención humana: ${input.contactName}`,
     body: HANDOFF_LABELS[input.reason] ?? "La IA está en pausa en esta conversación.",
     tag: `conv:${input.conversationId}`,
+    url: conversationUrl(input.conversationId),
+    icon: input.icon,
+  };
+}
+
+/**
+ * 048: aviso al propietario — un cliente espera a una persona hace N
+ * minutos. Una etiqueta por espera: un aviso nuevo de la misma espera no
+ * se apila (igual hay uno solo por espera).
+ */
+export function buildWaitingPayload(input: {
+  contactName: string;
+  conversationId: string;
+  waitId: string;
+  minutes: number;
+  lastText: string | null;
+  lastType: string | null;
+  icon?: string;
+}): PushPayload {
+  return {
+    kind: "waiting",
+    title: `${input.contactName} espera hace ${input.minutes} min`,
+    body: input.lastType
+      ? messagePreview(input.lastType, input.lastText)
+      : "Derivado por el agente. Nadie del equipo respondió todavía.",
+    tag: `wait:${input.waitId}`,
     url: conversationUrl(input.conversationId),
     icon: input.icon,
   };

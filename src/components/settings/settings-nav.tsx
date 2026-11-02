@@ -22,6 +22,8 @@ const TABS = [
   { href: "/settings/team", label: "Equipo" },
   // 013: push por dispositivo.
   { href: "/settings/notifications", label: "Notificaciones" },
+  // 048: los propios números de atención (todo el equipo).
+  { href: "/settings/attention", label: "Mi atención" },
   // 014: claves y guía de la API pública de envíos.
   { href: "/settings/api", label: "API" },
   // 040: asistentes del propietario (Claude) conectados por MCP.
@@ -41,7 +43,7 @@ export function SettingsNav({
   role = "owner",
 }: {
   demoTools?: boolean;
-  /** 022: un miembro solo ve Respuestas rápidas, Notificaciones y Mi contraseña. */
+  /** 022: un miembro solo ve Respuestas rápidas, Notificaciones, Mi atención y Mi contraseña. */
   role?: string;
 }) {
   const pathname = usePathname();

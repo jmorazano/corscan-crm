@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { authorName } from "@/server/inbox/author";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -141,6 +142,7 @@ export async function sendText(input: {
         status: "pending",
         aiGenerated: input.aiGenerated ?? false,
         sentByUserId: input.sentByUserId ?? null,
+        sentByName: await authorName(input.sentByUserId),
         details: input.details && Object.keys(input.details).length > 0 ? input.details : null,
       })
       .returning();

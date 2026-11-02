@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     urgency: req.headers.get("urgency"),
     vapid: /^vapid t=\S+, k=\S+$/.test(authorization),
     bodyLength: body.byteLength,
+    query: url.search,
   });
   return new Response(null, { status });
 }

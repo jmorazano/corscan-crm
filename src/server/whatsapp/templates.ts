@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { authorName } from "@/server/inbox/author";
 import { newId } from "@/lib/db/ids";
 import { getEnv } from "@/lib/env";
 import { validateHeaderImage } from "@/lib/template-header";
@@ -733,6 +734,7 @@ export async function sendTemplateCore(input: {
       templateId: template.id,
       apiKeyId: input.via?.apiKeyId ?? null,
       sentByUserId: input.sentByUserId ?? null,
+      sentByName: await authorName(input.sentByUserId),
       text: renderBody(template.body, bodyParams),
       status: "pending",
     })

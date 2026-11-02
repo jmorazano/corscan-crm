@@ -109,6 +109,11 @@ export const member = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("member"),
+    /**
+     * 048: última vez que la persona usó el CRM en esta empresa (la abre el
+     * SSE, con un freno de 5 min). Solo el último momento, sin historial.
+     */
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   // 018: un usuario puede ser miembro de VARIAS empresas, pero una sola
@@ -442,6 +447,11 @@ export const message = pgTable(
      * atendiendo». Campañas, API, automatismos y la IA lo dejan NULL.
      */
     sentByUserId: text("sent_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    /**
+     * 048: copia del nombre de quien lo mandó, para la firma del hilo: el
+     * FK de arriba queda NULL si la cuenta se elimina (019).
+     */
+    sentByName: text("sent_by_name"),
     waTimestamp: timestamp("wa_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -496,6 +506,72 @@ export const conversationEvent = pgTable(
   (t) => [
     index("conversation_event_org_conv_idx").on(t.organizationId, t.conversationId, t.createdAt),
   ]
+);
+
+/**
+ * 048: un cliente esperando a una PERSONA (el agente derivó o la IA está
+ * apagada) y si alguien del equipo le respondió. Se abre en la ingesta o en
+ * la derivación y se cierra conciliando los mensajes posteriores
+ * (`src/server/attention/waits.ts`). Una sola abierta por conversación.
+ */
+export const attentionWait = pgTable(
+  "attention_wait",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at").notNull(),
+    startReason: text("start_reason", { enum: ["handoff", "ai_off"] }).notNull(),
+    startMessageId: text("start_message_id").references(() => message.id, {
+      onDelete: "set null",
+    }),
+    /** Monotónico: `open` → `answered` | `agent` | `expired`, nunca vuelve. */
+    status: text("status", { enum: ["open", "answered", "agent", "expired"] })
+      .notNull()
+      .default("open"),
+    closedAt: timestamp("closed_at"),
+    responderUserId: text("responder_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Copia del nombre: la fila se sigue leyendo si la cuenta se elimina. */
+    responderName: text("responder_name"),
+    responderVia: text("responder_via", { enum: ["crm", "phone"] }),
+    responseMs: integer("response_ms"),
+    /** Reserva del aviso: no NULL = ya se avisó (o se intentó). */
+    alertedAt: timestamp("alerted_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("attention_wait_open_uq")
+      .on(t.conversationId)
+      .where(sql`${t.status} = 'open'`),
+    index("attention_wait_org_started_idx").on(t.organizationId, t.startedAt),
+    index("attention_wait_open_idx")
+      .on(t.status, t.startedAt)
+      .where(sql`${t.status} = 'open'`),
+  ]
+);
+
+/** 048: aviso al propietario cuando un cliente espera (apagado por defecto). */
+export const attentionSettings = pgTable(
+  "attention_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    alertEnabled: boolean("alert_enabled").notNull().default(false),
+    /** También define «tarde» en Métricas (5–120). */
+    alertMinutes: integer("alert_minutes").notNull().default(15),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("attention_settings_org_uq").on(t.organizationId)]
 );
 
 export const metaCredentials = pgTable(

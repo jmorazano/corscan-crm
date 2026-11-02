@@ -28,6 +28,7 @@ describe("memberCanOpen", () => {
       "/contacts",
       "/campaigns/cmp_1",
       "/settings/notifications",
+      "/settings/attention",
       "/change-password",
     ]) {
       expect(memberCanOpen(p), p).toBe(true);

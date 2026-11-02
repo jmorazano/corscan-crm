@@ -21,6 +21,7 @@ import {
   type MetricsRange,
 } from "@/lib/metrics";
 import { CHANNEL_SERIES, PAST_SERIES, StackedBars } from "./stacked-bars";
+import { TeamSection } from "./team-section";
 
 /**
  * Métricas del propietario (024): un selector de período arriba de todo
@@ -46,12 +47,13 @@ export function MetricsClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const timeZone = useMemo(() => browserTimeZone(), []);
 
   useEffect(() => {
     const ctrl = new AbortController();
     setLoading(true);
     setError(false);
-    const qs = new URLSearchParams({ range, tz: browserTimeZone() });
+    const qs = new URLSearchParams({ range, tz: timeZone });
     fetch(`/api/metrics?${qs}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? (r.json() as Promise<MetricsOverview>) : Promise.reject(r.status)))
       .then((d) => {
@@ -65,7 +67,7 @@ export function MetricsClient() {
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [range, reloadTick]);
+  }, [range, reloadTick, timeZone]);
 
   const spec = RANGE_SPECS[range];
   // Lo que se ve corresponde a los datos cargados (que pueden ser del
@@ -149,6 +151,9 @@ export function MetricsClient() {
           </Card>
         </div>
       ) : null}
+
+      {/* 048: quién atiende — se carga aparte (no frena las tarjetas). */}
+      <TeamSection range={range} timeZone={timeZone} />
     </div>
   );
 }

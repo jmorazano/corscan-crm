@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { authorName } from "@/server/inbox/author";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { InstagramApiError, sendInstagramMessage } from "@/lib/instagram/client";
@@ -131,6 +132,7 @@ export async function sendInstagramConversationText(input: {
         status: "sent",
         aiGenerated: input.aiGenerated,
         sentByUserId: input.sentByUserId ?? null,
+        sentByName: await authorName(input.sentByUserId),
         waTimestamp: now,
       })
       .onConflictDoNothing({
@@ -148,6 +150,7 @@ export async function sendInstagramConversationText(input: {
           source: "cloud",
           aiGenerated: input.aiGenerated,
           sentByUserId: input.sentByUserId ?? null,
+          sentByName: await authorName(input.sentByUserId),
           details: planned.details,
           text: chunk,
           type: "text",

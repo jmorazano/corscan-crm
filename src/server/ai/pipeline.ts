@@ -90,6 +90,7 @@ import {
   renderListingsPromptSection,
   type ListingsContext,
 } from "@/server/meli/agent-tools";
+import { inBackground as inBackgroundAttention, openWaitForHandoff } from "@/server/attention/waits";
 
 /** 038: lo que queda en el hilo si el modelo insiste en callar por el formato. */
 const FORMAT_ARTIFACT_SILENCE =
@@ -1835,6 +1836,17 @@ export async function applyHandoff(
       details: detail ? { detail } : null,
     });
   }
+  // 048: desde ahora el cliente espera a una persona.
+  const derived = updated[0];
+  inBackgroundAttention("apertura en la derivación", () =>
+    openWaitForHandoff({
+      organizationId,
+      conversationId,
+      at: derived.handoffAt ?? new Date(),
+      reason,
+      isTest: derived.isTest,
+    })
+  );
   // 013 (FR-006): avisar a todos los dispositivos que alguien necesita atención.
   notifyHandoff({ organizationId, conversationId, reason });
 }

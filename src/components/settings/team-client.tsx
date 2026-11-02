@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { generateTempPassword } from "@/components/admin/temp-password";
 import { teamRoleLabel, type TeamMemberActions } from "@/lib/team";
+import { AttentionAlertCard } from "./attention-alert-card";
 
 type Member = {
   id: string;
@@ -215,6 +216,9 @@ export function TeamClient() {
       </Card>
 
       <TeamMembers members={members} onChanged={refetch} />
+
+      {/* 048: aviso al propietario cuando un cliente espera a una persona. */}
+      <AttentionAlertCard />
     </div>
   );
 }

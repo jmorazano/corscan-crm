@@ -1,5 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { authorName } from "@/server/inbox/author";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv, isInstagramHumanAgentEnabled } from "@/lib/env";
@@ -194,6 +195,7 @@ export async function sendMedia(input: {
         mediaState: "ready",
         aiGenerated: false,
         sentByUserId: input.sentByUserId ?? null,
+        sentByName: await authorName(input.sentByUserId),
         waTimestamp: now,
       })
       .returning();

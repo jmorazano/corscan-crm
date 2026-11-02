@@ -46,7 +46,7 @@ export async function notifyOrganization(
   return results;
 }
 
-async function brandIcon(organizationId: string): Promise<string> {
+export async function brandIcon(organizationId: string): Promise<string> {
   const branding = await getBranding(organizationId);
   return pwaIconUrl(192, branding);
 }

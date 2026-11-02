@@ -11,6 +11,8 @@ export type PushMockDelivery = {
   /** `Authorization: vapid t=…, k=…` presente y bien formado. */
   vapid: boolean;
   bodyLength: number;
+  /** 048: la query del endpoint (`?who=owner`): a qué dispositivo llegó. */
+  query: string;
 };
 
 type PushMockState = { deliveries: PushMockDelivery[] };

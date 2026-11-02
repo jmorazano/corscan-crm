@@ -246,6 +246,13 @@
       "when": 1793625635035,
       "tag": "0034_quick_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793650824926,
+      "tag": "0035_team_attention",
+      "breakpoints": true
     }
   ]
 }

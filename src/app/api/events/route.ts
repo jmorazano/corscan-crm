@@ -5,6 +5,7 @@ import {
 } from "@/lib/auth/session";
 import { subscribe, type SseEvent } from "@/server/events/bus";
 import { listMembershipOrganizationIds } from "@/server/workspaces/list";
+import { touchLastSeen } from "@/server/attention/last-seen";
 
 /**
  * Canal SSE de la bandeja (contrato sse.md).
@@ -71,6 +72,8 @@ export async function GET(req: Request) {
       };
 
       send(`: conectado\n\n`);
+      // 048: la app abierta = «usó el CRM» (con freno de 5 min).
+      touchLastSeen(organizationId, session.userId);
 
       const unsubscribe = subscribe(organizationId, (event) => {
         if (event.type === "team.member_removed") {
@@ -104,7 +107,10 @@ export async function GET(req: Request) {
         })
       );
 
-      const heartbeat = setInterval(() => send(`: ping\n\n`), HEARTBEAT_MS);
+      const heartbeat = setInterval(() => {
+        send(`: ping\n\n`);
+        touchLastSeen(organizationId, session.userId);
+      }, HEARTBEAT_MS);
       const maxLifetime = setTimeout(
         () => cleanup?.(),
         MAX_STREAM_LIFETIME_MS

@@ -31,6 +31,8 @@ export const OWNER_ONLY_SECTIONS = ["/agent", "/lab", "/integrations", "/metrics
 export const MEMBER_SETTINGS_PATHS = [
   "/settings/notifications",
   "/settings/quick-replies",
+  // 048: «Mi atención» — los propios números de cada persona.
+  "/settings/attention",
 ] as const;
 
 /** ¿Un miembro puede abrir esta ruta de configuración? */

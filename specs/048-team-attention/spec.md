@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft
+**Status**: Implementada (2-nov-2026) · migración 0035 · E2E [tests/e2e/us-048-team-attention.md](../../tests/e2e/us-048-team-attention.md)
 
 **Pedido**: el dueño de Altos de Calamuchita (2-nov-2026): tiene empleados
 «de guardia» que atienden desde la app del CRM y quiere saber si
@@ -381,3 +381,20 @@ Guardias u horarios por persona, asignar conversaciones a alguien, «en línea
 ahora», historial de conexiones, avisar a los miembros, horario de silencio
 para el aviso, reconstruir esperas anteriores al despliegue, y atribuir
 mensajes enviados desde la app de WhatsApp Business del celular.
+
+## Implementación (2-nov-2026)
+
+- Esperas en `attention_wait`: se abren en `ingestInboundCore` y en
+  `applyHandoff`, y se cierran conciliando los mensajes (`src/server/attention/waits.ts`).
+  Barrido de 60 s con reserva-primero del aviso (`sweep.ts`).
+- Desvíos del plan:
+  - el PUT de la configuración responde 422 `invalid_body` (convención
+    `parseBody`), no 400;
+  - las personas en Métricas son tarjetas a lo ancho, no una tabla (en
+    media columna las etiquetas se pisaban);
+  - el push-mock ahora registra la query del endpoint para saber a qué
+    dispositivo llegó cada entrega;
+  - una despedida del agente dentro de los 5 s posteriores a la derivación
+    no cierra la espera (`AGENT_GRACE_MS`).
+- Si se elimina la cuenta de una persona, sus esperas y mensajes se agrupan
+  por el nombre copiado y aparece como «ya no está en el equipo».

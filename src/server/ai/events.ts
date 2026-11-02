@@ -236,6 +236,24 @@ export async function lastTeamMessageAt(
   return result;
 }
 
+/**
+ * 048: ¿este mensaje del equipo es una difusión (036)? Respeta la marca ya
+ * guardada; ante un error cuenta como atención (comportamiento de 031).
+ */
+export async function isTeamBroadcastMessage(
+  organizationId: string,
+  conversationId: string,
+  row: { text: string | null; createdAt: Date; details: { broadcast?: boolean } | null }
+): Promise<boolean> {
+  if (row.details?.broadcast) return true;
+  try {
+    return await isTeamBroadcast(organizationId, conversationId, row);
+  } catch (err) {
+    console.error("[atención] no se pudo evaluar la difusión:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 async function isTeamBroadcast(
   organizationId: string,
   conversationId: string,

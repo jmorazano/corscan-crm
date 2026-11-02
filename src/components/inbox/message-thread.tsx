@@ -1170,6 +1170,17 @@ function Bubble({
               <Sparkles className="h-3 w-3" strokeWidth={1.7} /> IA
             </span>
           )}
+          {out && !m.aiGenerated && m.sentByName && (
+            // 048: quién lo mandó desde el CRM (la firma sigue aunque la
+            // persona ya no esté en el equipo).
+            <span
+              data-testid="message-author"
+              className="max-w-[9rem] truncate text-[10.5px] font-medium text-text-3"
+              title={`Lo envió ${m.sentByName}`}
+            >
+              {m.sentByName} ·
+            </span>
+          )}
           <span className="text-[10.5px] text-text-4">{bubbleTime(m.createdAt)}</span>
           {out && wa && <StatusTicks status={m.status} error={m.error} />}
         </span>

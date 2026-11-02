@@ -82,7 +82,7 @@ type MyAttention = {
 ## `PUT /api/settings/attention` — `withOwner`
 
 Body (Zod): `{ alertEnabled: boolean; alertMinutes: number /* int 5–120 */ }`.
-Responde lo mismo que el GET. Fuera de rango → 400 `invalid_minutes`.
+Responde lo mismo que el GET. Fuera de rango → 422 `invalid_body` (`parseBody`, convención del repo).
 
 ## `MessageDto` (cambio)
 

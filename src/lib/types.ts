@@ -77,6 +77,8 @@ export type MessageDto = {
   details: MessageDetails | null;
   /** 031: lo escribió una persona del equipo (CRM con autor, celular o app). */
   team: boolean;
+  /** 048: quién lo mandó desde el CRM (copia del nombre; null sin autor). */
+  sentByName: string | null;
   createdAt: string;
 };
 

@@ -49,6 +49,8 @@ const prefixes = {
   agentFollowUp: "fu",
   contactOriginRule: "orr",
   quickReply: "qr",
+  attentionWait: "aw",
+  attentionSettings: "as",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
