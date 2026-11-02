@@ -48,6 +48,11 @@ escritorio (≥ 1024) para la regresión. Evidencia = DOM (`read_page` /
 12. Escritorio: tres columnas como antes; `⌘K` enfoca la búsqueda;
     `Alt+↓/↑` cambia de chat (URL `?c=` con replace); `Esc` cierra el panel;
     `⌘⇧U` marca no leída; Enter envía.
+    Marcar no leída en escritorio (nov-2026): el sobre `thread-mark-unread`
+    del encabezado (oculto en móvil) marca y CIERRA el hilo (`?c=` se va,
+    `row-unread` = 1; ⌘⇧U igual). Clic derecho en una fila → `row-sheet` con
+    «Marcar como no leída» / «Marcar como leída» según el estado. En móvil el
+    clic derecho no abre la hoja (el long-press sigue siendo selección).
 13. Infeliz: `/inbox?c=cv_inexistente` → vuelve a la lista sin colgarse.
 
 ## C. Pipeline (US3)

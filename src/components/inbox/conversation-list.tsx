@@ -25,6 +25,7 @@ import { BulkTagsBar } from "@/components/tags/bulk-tags-bar";
 import { TagChip } from "@/components/tags/tag-chip";
 import { TagFilter } from "@/components/tags/tag-filter";
 import { ChannelIcon } from "@/components/channel-icon";
+import { useIsMobile } from "@/components/use-media";
 import type { TagFacet } from "@/components/tags/use-tag-facets";
 import type { TagFilterState } from "@/components/use-query-filters";
 import { formatTime, previewText } from "./helpers";
@@ -500,6 +501,7 @@ export function ConversationList({
                         selectMode ? toggleSelected(c.id) : onSelect(c.id)
                       }
                       onLongPress={() => startSelectionWith(c.id)}
+                      onContextMenu={() => setSheetFor(c)}
                       onToggleTag={toggleTagInFilter}
                     />
                   </SwipeRow>
@@ -533,6 +535,18 @@ export function ConversationList({
         actions={
           sheetFor
             ? [
+                {
+                  key: "read",
+                  label:
+                    sheetFor.unreadCount > 0
+                      ? "Marcar como leída"
+                      : "Marcar como no leída",
+                  icon: sheetFor.unreadCount > 0 ? MailOpen : Mail,
+                  onSelect: () =>
+                    sheetFor.unreadCount > 0
+                      ? rowActions.markRead(sheetFor.id)
+                      : rowActions.markUnread(sheetFor.id),
+                },
                 {
                   key: "ai",
                   label: sheetFor.aiEnabled
@@ -611,6 +625,7 @@ function ConversationRow({
   activeTags,
   onActivate,
   onLongPress,
+  onContextMenu,
   onToggleTag,
 }: {
   conversation: ConversationDto;
@@ -620,9 +635,12 @@ function ConversationRow({
   activeTags: string[];
   onActivate: () => void;
   onLongPress: () => void;
+  /** Clic derecho en escritorio: la misma hoja «Más» del gesto en móvil. */
+  onContextMenu: () => void;
   onToggleTag: (tag: string) => void;
 }) {
   const { handlers } = useLongPress(onLongPress, { enabled: !selectMode });
+  const isMobile = useIsMobile();
   const unread = c.unreadCount > 0;
   const extraTags = c.tags.length - ROW_TAGS_MAX;
   return (
@@ -631,6 +649,13 @@ function ConversationRow({
       tabIndex={0}
       {...handlers}
       onClick={onActivate}
+      onContextMenu={(e) => {
+        handlers.onContextMenu(e);
+        // En el celular la pulsación larga es la selección múltiple.
+        if (isMobile || selectMode) return;
+        e.preventDefault();
+        onContextMenu();
+      }}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {

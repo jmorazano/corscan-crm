@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, PanelRight } from "lucide-react";
+import { ChevronLeft, Mail, PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { serializeTagsParam, type TagOps } from "@/lib/tags";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
@@ -721,12 +721,15 @@ export function InboxClient() {
     [deleteConversationById, goToList, refetchConversations]
   );
 
+  // El hilo abierto se cierra: si quedara a la vista, el próximo entrante lo
+  // volvería a marcar leído (como en WhatsApp Web y Gmail).
   const markUnread = useCallback(
     async (id: string) => {
+      if (id === selectedIdRef.current) closeThread();
       await patchById(id, { markUnread: true });
       void refetchConversations();
     },
-    [patchById, refetchConversations]
+    [patchById, refetchConversations, closeThread]
   );
 
   // Acciones por fila (012): gesto de deslizar y hoja «Más».
@@ -956,6 +959,16 @@ export function InboxClient() {
                     </span>
                   )}
                 </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void markUnread(selected.id)}
+                aria-label="Marcar como no leída"
+                title="Marcar como no leída (⌘⇧U)"
+                data-testid="thread-mark-unread"
+                className="hidden rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground md:inline-flex"
+              >
+                <Mail className="h-4 w-4" strokeWidth={1.7} />
               </button>
               {!panelOpen && (
                 <button
