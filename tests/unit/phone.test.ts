@@ -20,6 +20,18 @@ describe("normalizeToWaId — Argentina (la trampa del 9)", () => {
     expect(normalizeToWaId(input)).toEqual({ ok: true, waId: esperado });
   });
 
+  // Lo que manda un PMS por la API pública: área + local, sin 0 ni 54. Leído
+  // con `+` era Francia (+33) y se rechazaba como inválido.
+  it.each([
+    ["área + local, solo dígitos", "3364209185", "5493364209185"],
+    ["área + local con espacio", "336 4209185", "5493364209185"],
+    ["área + 15 + local, sin 0", "336 15 4209185", "5493364209185"],
+    ["Córdoba sin 0", "3516882234", "5493516882234"],
+    ["AMBA sin 0", "1155551234", "5491155551234"],
+  ])("%s → 549…", (_label, input, waId) => {
+    expect(normalizeToWaId(input)).toEqual({ ok: true, waId });
+  });
+
   it("wa_id crudo con espacio interno (fixture) → válido", () => {
     expect(normalizeToWaId("549351688 2202")).toEqual({
       ok: true,
@@ -39,6 +51,11 @@ describe("normalizeToWaId — otros países", () => {
     const r = normalizeToWaId("5215512345678", "MX");
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.waId).toBe("5215512345678");
+  });
+
+  it("un wa_id internacional válido no se reinterpreta como nacional", () => {
+    expect(normalizeToWaId("12025550123")).toEqual({ ok: true, waId: "12025550123" });
+    expect(normalizeToWaId("34612345678")).toEqual({ ok: true, waId: "34612345678" });
   });
 
   it("un E.164 genérico pasa sin tocarse", () => {

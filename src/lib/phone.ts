@@ -61,7 +61,23 @@ export function normalizeToWaId(
     ? `+${parseDigits}`
     : trimmed;
 
-  const parsed = parsePhoneNumberFromString(candidate, defaultCountry);
+  // Dígitos solos SIN código de país ("3364209185", área + local) también
+  // llegan así — la API pública, un PMS que guarda el número nacional. Leídos
+  // con `+` caen en otro país (+33 = Francia) y se rechazaban: si la lectura
+  // internacional no es VÁLIDA y la nacional del país por defecto sí, gana la
+  // nacional. Un wa_id real (549…, 34…) sigue siendo válido internacional y
+  // no cambia.
+  const international = parsePhoneNumberFromString(candidate, defaultCountry);
+  const national = candidate !== trimmed
+    ? parsePhoneNumberFromString(trimmed, defaultCountry)
+    : undefined;
+  const parsed = international?.isValid()
+    ? international
+    : national?.isValid()
+      ? national
+      : international?.isPossible()
+        ? international
+        : national;
   if (!parsed || !(parsed.isValid() || parsed.isPossible())) {
     return {
       ok: false,
