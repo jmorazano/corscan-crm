@@ -196,7 +196,12 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **047-quick-replies** (respuestas rápidas propias:
+Feature en curso: **048-team-attention** (quién atiende: esperas de
+clientes que necesitan a una persona, aviso al propietario a los N minutos,
+sección «Equipo» en Métricas, firma en el hilo y «Mi atención» para cada
+miembro; migración 0035) — plan en
+[specs/048-team-attention/plan.md](specs/048-team-attention/plan.md).
+Anterior: **047-quick-replies** (respuestas rápidas propias:
 atajo + texto por empresa, sin pasar por Meta, las administra todo el
 equipo; migración 0034) — [specs/047-quick-replies/](specs/047-quick-replies/spec.md).
 Anterior: **044-pipeline-stages** (el pipeline se ordena solo: la
