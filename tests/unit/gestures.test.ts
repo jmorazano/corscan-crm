@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   clampReveal,
   classifySwipe,
-  filterQuickReplies,
   inboxShortcut,
   isEdgeSwipeBack,
   longPressCancelled,
@@ -99,18 +98,5 @@ describe("quick replies con /", () => {
     expect(quickReplyQuery("hola /x")).toBeNull();
     expect(quickReplyQuery("/con espacio")).toBeNull();
     expect(quickReplyQuery("")).toBeNull();
-  });
-  it("filtra por nombre o cuerpo", () => {
-    const items = [
-      { name: "bienvenida", body: "Hola {{1}}" },
-      { name: "recordatorio", body: "Tu turno es mañana" },
-    ];
-    expect(filterQuickReplies(items, "").length).toBe(2);
-    expect(filterQuickReplies(items, "turno").map((t) => t.name)).toEqual([
-      "recordatorio",
-    ]);
-    expect(filterQuickReplies(items, "BIEN").map((t) => t.name)).toEqual([
-      "bienvenida",
-    ]);
   });
 });

@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEve
 import { Clock3, FileText, Film, Mic, Music, Paperclip, Send, Smile, X, Zap } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { filterQuickReplies, quickReplyQuery } from "@/lib/gestures";
+import { quickReplyQuery } from "@/lib/gestures";
+import {
+  filterQuickPicks,
+  quickPicks,
+  renderQuickReply,
+  type QuickPick,
+  type QuickReplyDto,
+} from "@/lib/quick-replies";
 import { composerMode } from "@/lib/trainer";
 import { fileNameFor, formatElapsed } from "@/lib/audio-record";
 import { VOICE_NOTE_MAX_BYTES, VOICE_NOTE_MAX_MS } from "@/lib/voice-note";
@@ -93,6 +100,8 @@ export function Composer({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
+  // 047: respuestas rápidas propias de la empresa (van antes que las plantillas).
+  const [quickReplies, setQuickReplies] = useState<QuickReplyDto[]>([]);
   const [dragging, setDragging] = useState(false);
   // 038: selector de emojis (escritorio; en el celular está el teclado).
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -328,17 +337,19 @@ export function Composer({
   }
 
   // Respuestas rápidas (012, FR-008): `/` abre el selector; el rayo también.
+  // 047: las propias primero, después las plantillas aprobadas. El rayo abre
+  // el selector aunque esté vacío (ahí está el enlace para crear la primera).
   const [qrForce, setQrForce] = useState(false);
   const [qrDismissedFor, setQrDismissedFor] = useState<string | null>(null);
   const [qrIndex, setQrIndex] = useState(0);
   const qrQuery = quickReplyQuery(text);
+  const picks = useMemo(() => quickPicks(quickReplies, templates), [quickReplies, templates]);
   const qrOpen =
     conversation.kind !== "trainer" &&
-    templates.length > 0 &&
-    (qrForce || (qrQuery !== null && qrDismissedFor !== text));
+    (qrForce || (picks.length > 0 && qrQuery !== null && qrDismissedFor !== text));
   const qrItems = useMemo(
-    () => filterQuickReplies(templates, qrForce ? "" : (qrQuery ?? "")),
-    [templates, qrForce, qrQuery]
+    () => filterQuickPicks(picks, qrForce ? "" : (qrQuery ?? "")),
+    [picks, qrForce, qrQuery]
   );
   useEffect(() => {
     setQrIndex(0);
@@ -351,6 +362,12 @@ export function Composer({
       .then((d: { templates?: TemplateDto[] }) => {
         if (!cancelled)
           setTemplates((d.templates ?? []).filter((t) => t.status === "approved"));
+      })
+      .catch(() => {});
+    fetch("/api/quick-replies")
+      .then((r) => (r.ok ? r.json() : { replies: [] }))
+      .then((d: { replies?: QuickReplyDto[] }) => {
+        if (!cancelled) setQuickReplies(d.replies ?? []);
       })
       .catch(() => {});
     return () => {
@@ -381,9 +398,13 @@ export function Composer({
     }, 0);
   }
 
-  function insertTemplate(t: TemplateDto) {
+  function insertPick(p: QuickPick) {
     const firstName = conversation.contact.name.split(" ")[0] ?? "";
-    setText(t.body.replace(/\{\{\s*1\s*\}\}/g, firstName));
+    setText(
+      p.kind === "reply"
+        ? renderQuickReply(p.body, conversation.contact.name)
+        : p.body.replace(/\{\{\s*1\s*\}\}/g, firstName)
+    );
     setQrForce(false);
     setQrDismissedFor(null);
     taRef.current?.focus();
@@ -577,7 +598,7 @@ export function Composer({
           query={qrForce ? "" : (qrQuery ?? "")}
           activeIndex={qrIndex}
           onHover={setQrIndex}
-          onPick={insertTemplate}
+          onPick={insertPick}
         />
       )}
       {!(recording || uploading) && !qrOpen && emojiOpen && (
@@ -589,16 +610,16 @@ export function Composer({
           }}
         />
       )}
-      {templates.length > 0 && !qrOpen && !emojiOpen && !isTrainer && (
+      {picks.length > 0 && !qrOpen && !emojiOpen && !isTrainer && (
         <div className="mb-2.5 hidden flex-wrap gap-1.5 md:flex">
-          {templates.slice(0, 4).map((t) => (
+          {picks.slice(0, 4).map((p) => (
             <button
-              key={t.id}
+              key={p.id}
               className="rounded-full border bg-secondary px-3 py-1 text-xs font-medium text-text-2 transition-colors hover:border-brand-soft hover:bg-brand-tint hover:text-brand-text"
-              onClick={() => insertTemplate(t)}
-              title={t.body}
+              onClick={() => insertPick(p)}
+              title={p.body}
             >
-              {t.name.replace(/_/g, " ")}
+              {p.kind === "reply" ? `/${p.key}` : p.key.replace(/_/g, " ")}
             </button>
           ))}
         </div>
@@ -649,7 +670,6 @@ export function Composer({
           aria-expanded={qrOpen}
           title="Respuestas rápidas (escribe /)"
           data-testid="quick-replies-toggle"
-          disabled={templates.length === 0}
           onClick={() => {
             setQrDismissedFor(null);
             setQrForce((v) => !v);
@@ -727,7 +747,7 @@ export function Composer({
                   const pick = qrItems[qrIndex];
                   if (pick) {
                     e.preventDefault();
-                    insertTemplate(pick);
+                    insertPick(pick);
                     return;
                   }
                 }

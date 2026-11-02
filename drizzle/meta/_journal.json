@@ -239,6 +239,13 @@
       "when": 1793225912978,
       "tag": "0033_lead_stale",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793625635035,
+      "tag": "0034_quick_replies",
+      "breakpoints": true
     }
   ]
 }

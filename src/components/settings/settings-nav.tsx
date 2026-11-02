@@ -17,6 +17,8 @@ const TABS = [
   { href: "/settings/origins", label: "Origen de contactos" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
+  // 047: atajos del compositor; las administra todo el equipo.
+  { href: "/settings/quick-replies", label: "Respuestas rápidas" },
   { href: "/settings/team", label: "Equipo" },
   // 013: push por dispositivo.
   { href: "/settings/notifications", label: "Notificaciones" },
@@ -39,7 +41,7 @@ export function SettingsNav({
   role = "owner",
 }: {
   demoTools?: boolean;
-  /** 022: un miembro solo ve Notificaciones y Mi contraseña. */
+  /** 022: un miembro solo ve Respuestas rápidas, Notificaciones y Mi contraseña. */
   role?: string;
 }) {
   const pathname = usePathname();

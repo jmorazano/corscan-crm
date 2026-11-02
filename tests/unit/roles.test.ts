@@ -62,6 +62,10 @@ describe("memberCanOpen", () => {
     expect(memberCanOpen("/agente")).toBe(true);
     expect(memberCanOpen("/settings/notificationsx")).toBe(false);
   });
+
+  it("047: las respuestas rápidas son de todo el equipo", () => {
+    expect(memberCanOpen("/settings/quick-replies")).toBe(true);
+  });
 });
 
 describe("settingsHomeFor", () => {

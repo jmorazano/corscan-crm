@@ -244,6 +244,29 @@ export const contactOriginRule = pgTable(
   (t) => [index("contact_origin_rule_org_idx").on(t.organizationId, t.createdAt)]
 );
 
+/**
+ * 047: respuestas rápidas propias de la empresa (atajo + texto). Las crea
+ * cualquiera del equipo, sin pasar por Meta; el compositor las lista con la
+ * `/` junto a las plantillas aprobadas.
+ */
+export const quickReply = pgTable(
+  "quick_reply",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    shortcut: text("shortcut").notNull(),
+    body: text("body").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("quick_reply_org_shortcut_uq").on(t.organizationId, t.shortcut)]
+);
+
 export const pipelineStage = pgTable(
   "pipeline_stage",
   {

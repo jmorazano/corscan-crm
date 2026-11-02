@@ -24,10 +24,14 @@ export function canManageConfig(role: string): boolean {
 export const OWNER_ONLY_SECTIONS = ["/agent", "/lab", "/integrations", "/metrics"] as const;
 
 /**
- * Pestañas de Ajustes que un miembro sí tiene: son personales, no de la
- * empresa. Cualquier otra ruta bajo `/settings` es del propietario.
+ * Pestañas de Ajustes que un miembro sí tiene: las personales y las
+ * herramientas de operación del equipo (047: respuestas rápidas). Cualquier
+ * otra ruta bajo `/settings` es del propietario.
  */
-export const MEMBER_SETTINGS_PATHS = ["/settings/notifications"] as const;
+export const MEMBER_SETTINGS_PATHS = [
+  "/settings/notifications",
+  "/settings/quick-replies",
+] as const;
 
 /** ¿Un miembro puede abrir esta ruta de configuración? */
 export function memberCanOpen(pathname: string): boolean {

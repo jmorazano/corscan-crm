@@ -137,15 +137,3 @@ export function quickReplyQuery(text: string): string | null {
   const m = /^\s*\/([^\s/]*)$/.exec(text);
   return m ? (m[1] ?? "") : null;
 }
-
-export function filterQuickReplies<T extends { name: string; body: string }>(
-  items: readonly T[],
-  query: string
-): T[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [...items];
-  return items.filter(
-    (t) =>
-      t.name.toLowerCase().includes(q) || t.body.toLowerCase().includes(q)
-  );
-}
