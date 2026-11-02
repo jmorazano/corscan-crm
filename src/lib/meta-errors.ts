@@ -9,10 +9,12 @@
 
 const KNOWN: { pattern: RegExp; friendly: string }[] = [
   {
-    // 131042 — falta o falla el método de pago de la WABA.
+    // 131042 — falta o falla el método de pago de la WABA. Meta frena TODO
+    // envío de la cuenta (también el texto libre, que es gratis): el aviso no
+    // debe sugerir que es culpa de un tipo de mensaje.
     pattern: /payment issue|payment method|eligibility payment/i,
     friendly:
-      "Problema de facturación en Meta: revisá el método de pago de la cuenta de WhatsApp (las plantillas de marketing se cobran).",
+      "Meta frenó todos los envíos de esta cuenta de WhatsApp por un problema de facturación (tarjeta rechazada, cobro pendiente o sin método de pago). No depende del mensaje: el dueño de la cuenta lo resuelve en WhatsApp Manager → Configuración → Métodos de pago, y después hay que reenviar.",
   },
   {
     // 131049 — límite de frecuencia de marketing POR destinatario.

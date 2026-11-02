@@ -7,6 +7,9 @@ describe("friendlyDeliveryError", () => {
       friendlyDeliveryError("Business eligibility payment issue")
     ).toMatch(/facturación/);
     expect(
+      friendlyDeliveryError("Business eligibility payment issue")
+    ).not.toMatch(/marketing/);
+    expect(
       friendlyDeliveryError(
         "This message was not delivered to maintain healthy ecosystem engagement."
       )
