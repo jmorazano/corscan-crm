@@ -6,6 +6,7 @@ import {
 } from "@/server/ai/prompts";
 import { FOLLOW_UP_MARKER } from "@/server/ai/follow-up";
 import { TRAINER_MARKER } from "@/server/ai/trainer-prompts";
+import { CLOCK_MARKER } from "@/lib/agent-clock";
 import {
   LISTINGS_MARKER,
   MCP_MARKER,
@@ -569,6 +570,11 @@ function aiMockCompletionCore(messages: InMessage[]): string {
   const nameTurn = fromClient ? dispatchContactName(system, text) : null;
   if (nameTurn) return nameTurn;
 
+  // «¿qué hora es?» → el E2E prueba que el turno recibió la sección FECHA
+  // Y HORA con la hora del negocio (y no la del servidor en UTC).
+  const clockTurn = fromClient ? dispatchClock(system, text) : null;
+  if (clockTurn) return clockTurn;
+
   // 044: perillas del E2E de etapas, antes que cualquier herramienta.
   // «[E2E_ETAPA:Perdido]» → respuesta con la etapa a bordo;
   // «[E2E_MOVER:Interesado]» → la acción vieja `move_stage`.
@@ -699,6 +705,15 @@ function dispatchWhatsAppOrigin(system: string, text: string): string | null {
   return JSON.stringify({
     action: "reply",
     text: title ? `Llegaste por el anuncio «${title}».` : "Llegaste por un anuncio de Facebook o Instagram.",
+  });
+}
+
+function dispatchClock(system: string, text: string): string | null {
+  if (!/qu[eé] hora es/.test(text)) return null;
+  const now = new RegExp(`^${CLOCK_MARKER}: Ahora: ([^\\n]+)$`, "m").exec(system)?.[1];
+  return JSON.stringify({
+    action: "reply",
+    text: now ? `Según mi reloj: ${now}` : "No sé qué hora es.",
   });
 }
 

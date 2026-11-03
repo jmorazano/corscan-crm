@@ -17,6 +17,7 @@ import { withSendRetry } from "@/lib/send-retry";
 import { getAiConfig } from "@/server/ai/credentials";
 import { recordConversationEvent } from "@/server/ai/events";
 import { draftFollowUp } from "@/server/ai/follow-up";
+import { nowLine } from "@/lib/agent-clock";
 import { SendError, sendText } from "@/server/inbox/send";
 
 /**
@@ -256,6 +257,7 @@ async function evaluateConversation(
   if (!recordId) return;
 
   const outcome = await sendFollowUp({
+    now,
     profile,
     conversation,
     contact,
@@ -299,6 +301,7 @@ type SendOutcome = {
 };
 
 async function sendFollowUp(input: {
+  now: Date;
   profile: Profile;
   conversation: Conversation;
   contact: { name: string; phone: string };
@@ -319,6 +322,7 @@ async function sendFollowUp(input: {
     fallback,
     history: input.history,
     contactPhone: input.contact.phone,
+    now: nowLine(input.now, profile.followUpTimezone),
   });
   if (draft.kind === "none") {
     return {

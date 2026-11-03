@@ -295,6 +295,11 @@ export function buildAgentSystemPrompt(input: {
    * interruptor el prompt queda intacto.
    */
   followUp?: boolean;
+  /**
+   * Fecha y hora del negocio (la arma `clockSection`). Sin esto el modelo
+   * adivinaba la hora y aplicaba la regla de horario equivocada.
+   */
+  clock?: string | null;
 }): string {
   const { profile } = input;
   const sheetsSearch = Boolean(input.sheetsSection && input.sheetsSearchable);
@@ -328,6 +333,7 @@ export function buildAgentSystemPrompt(input: {
       ? `Reglas de escalado a humano:\n${profile.escalationRules}`
       : null,
     profile.greeting ? `Saludo sugerido para conversaciones nuevas: ${profile.greeting}` : null,
+    input.clock ?? null,
     input.mcpOverridesKb
       ? `CONOCIMIENTO DEL NEGOCIO (lo general del negocio: cómo funciona, políticas, formas de pago, cómo llegar). NO inventes lo que no esté acá. OJO: los precios, la disponibilidad y las características de cada propiedad NO salen de este texto sino de la consulta EN VIVO al sistema de reservas — si algo de acá contradice lo que te devuelve la herramienta, MANDA la herramienta, porque este texto puede estar desactualizado:\n${renderKb(input.kb)}`
       : `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,

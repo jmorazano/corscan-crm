@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { nowLine } from "@/lib/agent-clock";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { getAiConfig } from "@/server/ai/credentials";
 import { publish } from "@/server/events/bus";
@@ -267,6 +268,7 @@ export async function runTrainerTurn(conversationId: string): Promise<void> {
         kbChars: size.chars,
         warnAt: size.warnAt,
         connectorSection,
+        now: nowLine(new Date(), profile.followUpTimezone),
       }),
     },
     ...history.flatMap((m) => {

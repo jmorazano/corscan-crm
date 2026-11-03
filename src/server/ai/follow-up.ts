@@ -39,10 +39,13 @@ export function buildFollowUpPrompt(input: {
   step: FollowUpStep;
   greetingName: string | null;
   fallback: string;
+  /** «Ahora: …» en la zona de la empresa (`nowLine`): «buenas noches», «mañana». */
+  now?: string | null;
 }): string {
   const { profile, step } = input;
   return [
     `${FOLLOW_UP_MARKER} Eres "${profile.name}" y atendés el WhatsApp de este negocio. El cliente dejó de contestar después de tu último mensaje y vas a escribirle un RECORDATORIO breve (seguimiento ${step} de 2).`,
+    input.now ?? null,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio (para el tono y el contexto):\n${profile.instructions}` : null,
     step === 1
@@ -125,6 +128,7 @@ export async function draftFollowUp(input: {
   fallback: string;
   history: readonly Message[];
   contactPhone: string | null;
+  now?: string | null;
 }): Promise<FollowUpDraft> {
   const fallback = (note: string): FollowUpDraft => ({ kind: "text", text: input.fallback, source: "fallback", note });
   if (!input.aiConfig) return fallback("sin IA configurada");

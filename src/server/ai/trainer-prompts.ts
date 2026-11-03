@@ -40,6 +40,8 @@ export function buildTrainerSystemPrompt(input: {
   warnAt: number;
   /** 032: el conector con el sistema del negocio (lo arma `renderConnectorForTrainer`). */
   connectorSection?: string | null;
+  /** «Ahora: …» en la zona de la empresa (`nowLine`). */
+  now?: string | null;
 }): string {
   const { profile } = input;
   const sizeNotice =
@@ -68,6 +70,9 @@ export function buildTrainerSystemPrompt(input: {
       "=== FIN DEL CONOCIMIENTO ===",
     ].join("\n"),
     sizeNotice,
+    input.now
+      ? `${input.now} Si el dueño te habla de «hoy», «mañana» o «desde el lunes» y lo guardás, escribí la fecha concreta.`
+      : null,
     input.connectorSection ?? null,
     [
       "FORMATO DE RESPUESTA: en cada turno respondés ÚNICAMENTE un objeto JSON con UNA de estas dos formas.",

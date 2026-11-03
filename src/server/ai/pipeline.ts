@@ -83,6 +83,7 @@ import {
 import { executeDynamicTool } from "@/server/mcp/dynamic-tools";
 import { executeSearchSheet, loadSheetsContext, type SheetsContext } from "@/server/sheets/sources";
 import { noAvailabilityReply, type NoAvailabilitySearch } from "@/lib/no-availability";
+import { clockSection } from "@/lib/agent-clock";
 import {
   executeListingsAction,
   listingForVisit,
@@ -749,6 +750,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         sharedPersonalNumber: profile.sharedPersonalNumber,
         // 042: pide la marca «espera respuesta» (y ofrece la baja).
         followUp: profile.followUpEnabled,
+        // La hora del negocio AHORA (después de la espera): las reglas de
+        // horario del dueño dependen de ella. La zona es la de la empresa.
+        clock: clockSection(new Date(), profile.followUpTimezone),
         // 030: Instagram · 035: también el anuncio Click-to-WhatsApp. El
         // canal de la conversación decide el encabezado (el Entrenador no
         // llega acá: tiene su propio turno).
