@@ -37,6 +37,8 @@ Conducción: script Node (entrantes por `POST /api/dev/wa-mock/inbound` con
    funcionando.» → ✔ `google-ads-<mes>` + `origin_at`, sin `meta-ads`.
 2. Otro contacto: «Hola, buen día» y enseguida «ah, vi el anuncio en Google
    ayer» → ✔ sin etiqueta (no abre la charla).
+3. Regla «(G)» → `google-ads`: ✔ alta 201. Contacto nuevo «Hola, quiero info
+   (G)» → ✔ etiqueta; otro contacto nuevo «tengo el plan g» → ✔ sin etiqueta.
 
 ### Campaña
 1. ✔ Vista previa: etiqueta sola = 2; `days=15` = 1 (el de hace 20 días);

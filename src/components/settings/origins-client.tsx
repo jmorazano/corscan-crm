@@ -133,7 +133,9 @@ export function OriginsSettingsClient() {
             el enlace de la bio): si el mensaje con el que la persona abre la
             charla contiene la frase, el contacto se lleva la etiqueta. Usá
             el mismo texto que precargás en el enlace de WhatsApp. No
-            importan mayúsculas, tildes ni signos.
+            importan mayúsculas, tildes ni signos, salvo los paréntesis: una
+            marca corta como «(G)» solo coincide si el mensaje la trae con
+            paréntesis.
           </p>
         </div>
 

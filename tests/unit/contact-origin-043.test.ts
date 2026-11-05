@@ -53,6 +53,18 @@ describe("043 · etiqueta base de una regla", () => {
     expect(originRuleInput.safeParse({ phrase: "!!!!", tag: "x" }).success).toBe(false);
     expect(originRuleInput.safeParse({ phrase: "hola qr", tag: "???" }).success).toBe(false);
   });
+
+  it("una marca corta entre paréntesis es una frase válida", () => {
+    expect(originRuleInput.safeParse({ phrase: "(G)", tag: "google-ads" }).data).toEqual({
+      phrase: "(G)",
+      tag: "google-ads",
+      appendMonth: true,
+    });
+    expect(originRuleInput.safeParse({ phrase: "G", tag: "x" }).success).toBe(false);
+    expect(originRuleInput.safeParse({ phrase: "G!!", tag: "x" }).success).toBe(false);
+    expect(originRuleInput.safeParse({ phrase: "(((", tag: "x" }).success).toBe(false);
+    expect(originRuleInput.safeParse({ phrase: "( )", tag: "x" }).success).toBe(false);
+  });
 });
 
 describe("043 · coincidencia de reglas", () => {
@@ -81,6 +93,20 @@ describe("043 · coincidencia de reglas", () => {
       "google-ads-2026-10",
       "qr-local",
     ]);
+  });
+
+  it("una frase con paréntesis los exige en el mensaje", () => {
+    const mark = [{ phrase: "(G)", tag: "google-ads", appendMonth: false }];
+    for (const text of ["Hola, quiero info (G)", "(g) hola", "info(G).", "info ( G )", "HOLA (Ǵ)!"]) {
+      expect(matchOriginRules(text, mark, at)).toEqual(["google-ads"]);
+    }
+    for (const text of ["tengo el plan g", "(Google)", "(G", "G)", "(a)(g b)"]) {
+      expect(matchOriginRules(text, mark, at)).toEqual([]);
+    }
+  });
+
+  it("los paréntesis del mensaje no molestan a una frase sin paréntesis", () => {
+    expect(matchOriginRules("Hola (vi el anuncio en Google)", rules, at)).toEqual(["google-ads-2026-10"]);
   });
 });
 

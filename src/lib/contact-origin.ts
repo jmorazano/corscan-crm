@@ -106,6 +106,22 @@ export function normalizeOriginText(text: string): string {
   return normalizeForMatch(text).replace(/\s+/g, " ");
 }
 
+/**
+ * Los paréntesis son el único signo que cuenta, y solo si la frase los trae:
+ * sirven de marca corta en el texto precargado de un enlace («Hola (G)»), que
+ * sin ellos sería una letra suelta y coincidiría con cualquier «plan g».
+ */
+const HAS_PARENS = /[()]/;
+
+/** Como `normalizeOriginText`, con cada paréntesis como palabra: `Info (G).` → `info ( g )`. */
+function normalizeKeepingParens(text: string): string {
+  return text
+    .split(/([()])/)
+    .map((part) => (part === "(" || part === ")" ? part : normalizeOriginText(part)))
+    .filter(Boolean)
+    .join(" ");
+}
+
 export const originRuleInput = z
   .object({
     phrase: z.string().trim().min(ORIGIN_PHRASE_MIN).max(ORIGIN_PHRASE_MAX),
@@ -118,7 +134,8 @@ export const originRuleInput = z
       ctx.addIssue({ code: "custom", path: ["tag"], message: "La etiqueta necesita letras o números." });
       return z.NEVER;
     }
-    if (normalizeOriginText(v.phrase).length < ORIGIN_PHRASE_MIN) {
+    const minLength = HAS_PARENS.test(v.phrase) ? 1 : ORIGIN_PHRASE_MIN;
+    if (normalizeOriginText(v.phrase).length < minLength) {
       ctx.addIssue({ code: "custom", path: ["phrase"], message: "La frase necesita letras o números." });
       return z.NEVER;
     }
@@ -132,7 +149,8 @@ export type OriginRule = { phrase: string; tag: string; appendMonth: boolean };
 /**
  * Las etiquetas que dejan las reglas que coinciden con el texto (todas, sin
  * repetir). Coincidencia por palabras completas: «google» no coincide con
- * «googleado».
+ * «googleado». Una frase con paréntesis los exige en el texto: «(G)» coincide
+ * con «info (g).» y no con «plan g».
  */
 export function matchOriginRules(
   text: string | null | undefined,
@@ -143,12 +161,14 @@ export function matchOriginRules(
   if (!text) return [];
   const haystack = ` ${normalizeOriginText(text)} `;
   if (!haystack.trim()) return [];
+  const haystackWithParens = ` ${normalizeKeepingParens(text)} `;
   const tags = new Set<string>();
   for (const rule of rules) {
-    const needle = normalizeOriginText(rule.phrase);
+    const withParens = HAS_PARENS.test(rule.phrase);
+    const needle = withParens ? normalizeKeepingParens(rule.phrase) : normalizeOriginText(rule.phrase);
     const base = sanitizeRuleTag(rule.tag);
     if (!needle || !base) continue;
-    if (haystack.includes(` ${needle} `)) {
+    if ((withParens ? haystackWithParens : haystack).includes(` ${needle} `)) {
       tags.add(originTag(base, at, rule.appendMonth, timeZone));
     }
   }
