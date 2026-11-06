@@ -23,7 +23,7 @@ import {
   type AgentActionType,
 } from "@/server/ai/actions";
 import { stripBookingPromise } from "@/lib/promise-guard";
-import { safePriceReply, stripPrices } from "@/lib/price-guard";
+import { businessFixedAmounts, safePriceReply, stripPrices } from "@/lib/price-guard";
 import { stripUnknownContactData } from "@/lib/privacy-guard";
 import {
   interactiveAgentNote,
@@ -556,9 +556,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .filter((m) => m.direction === "in")
     .map((m) => m.text ?? "")
     .filter((t) => t.trim().length > 0);
-  // 032: importes que devolvió una herramienta genérica EN ESTE TURNO (el
-  // resumen de la reserva): los únicos que la guarda de precios deja salir.
-  const turnAmounts: number[] = [];
+  // Los importes que la guarda de precios deja salir: los montos fijos que el
+  // negocio escribió (cochera, ropa blanca, transfer) y, se suman más abajo,
+  // los que devolvió una herramienta genérica EN ESTE TURNO (032, el resumen
+  // de la reserva) y los de las planillas (034).
+  const turnAmounts: number[] = businessFixedAmounts([
+    profile.instructions,
+    profile.escalationRules,
+    profile.greeting,
+    ...kb.flatMap((entry) => [entry.answer, entry.content]),
+  ]);
   let wroteThisTurn = false;
 
   // Publicaciones de Mercado Libre (025): snapshot LOCAL — el turno nunca sale

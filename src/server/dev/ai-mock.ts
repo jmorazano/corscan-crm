@@ -444,6 +444,20 @@ function aiMockCompletionCore(messages: InMessage[]): string {
     });
   }
 
+  // «[E2E_MONTOS]» → modelo que escribe los montos fijos del negocio y, además,
+  // el precio de un departamento: la guarda deja los primeros y saca el segundo.
+  if (lastUser.includes("[E2E_MONTOS]")) {
+    return JSON.stringify({
+      action: "reply",
+      text: [
+        "El servicio de ropa blanca cuesta 10.000 pesos por persona y se cobra por única vez, no por noche.",
+        "La cochera con convenio cuesta 27.000 pesos por día.",
+        "El transfer desde el aeropuerto es de 45.000 pesos y se le paga directo a la empresa.",
+        "En una sola línea: ropa blanca $10.000, cochera $ 27.000 y transfer 45 mil pesos.",
+        "El departamento te sale $300.000 por noche.",
+      ].join("\n"),
+    });
+  }
   // 031: perillas del guion E2E del agente a la vista.
   // «[E2E_NADA]» → el modelo elige callar y dice por qué.
   if (lastUser.includes("[E2E_NADA]")) {

@@ -20,6 +20,7 @@
  *       se MUESTRA, jamás se calcula.
  */
 
+import { FIXED_AMOUNTS_RULE } from "@/lib/price-guard";
 import { toLocalParts, WEEKDAY_ES_LONG } from "@/lib/time";
 import { TOOL_MARKER_LITERAL, MCP_MARKER } from "@/server/mcp/markers";
 import {
@@ -482,8 +483,10 @@ function renderSection(input: SectionInput): string | null {
       ? // 032 (decisión del dueño): la única excepción es el RESUMEN de una
         // reserva en preparación, que el interesado tiene que ver completo
         // para confirmar. La guarda de precios deja pasar solo esos importes.
-        "- NUNCA escribas importes en la charla: ni precios, ni totales, ni valor por noche, ni seña. Los montos de la búsqueda son SOLO PARA VOS, para ordenar y para poder decir cuál es la más económica sin decir cuánto sale. Si te piden el precio, decí que está en el enlace, discriminado. ÚNICA EXCEPCIÓN: el resumen de una reserva en preparación que te devuelve el sistema (total y seña), que el cliente tiene que ver antes de confirmar: ese sí lo mostrás tal cual."
-      : "- NUNCA escribas importes: ni precios, ni totales, ni valor por noche, ni seña. Los montos son SOLO PARA VOS, para ordenar y para poder decir cuál es la más económica sin decir cuánto sale. Si te piden el precio, decí que está en el enlace, discriminado.",
+        "- NUNCA escribas importes en la charla: ni precios, ni totales, ni valor por noche, ni seña. Los montos de la búsqueda son SOLO PARA VOS, para ordenar y para poder decir cuál es la más económica sin decir cuánto sale. Si te piden el precio, decí que está en el enlace, discriminado. También va tal cual el resumen de una reserva en preparación que te devuelve el sistema (total y seña), que el cliente tiene que ver antes de confirmar. " +
+          FIXED_AMOUNTS_RULE
+      : "- NUNCA escribas importes: ni precios, ni totales, ni valor por noche, ni seña. Los montos son SOLO PARA VOS, para ordenar y para poder decir cuál es la más económica sin decir cuánto sale. Si te piden el precio, decí que está en el enlace, discriminado. " +
+          FIXED_AMOUNTS_RULE,
     "- Para saber precios o disponibilidad SIEMPRE usás search_stays primero. NUNCA inventes precios, noches mínimas, fotos ni propiedades: solo existe lo que te devuelve la herramienta.",
     "- Necesitás fecha de entrada, fecha de salida y cuántas personas son. Si falta alguno de los tres, PREGUNTÁ una sola cosa a la vez antes de consultar.",
     // Corrección #50.

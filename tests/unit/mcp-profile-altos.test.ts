@@ -173,8 +173,8 @@ describe("altos.renderSection", () => {
     // 021: 4.000 → 4.500. Las reglas nuevas (no escribir importes, usar el
     // barrio y los detalles) suman ~440 B. Lo que este tope cuida —que el
     // catálogo entero NO entre al prompt— lo sigue verificando la línea de
-    // arriba.
-    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(4_500);
+    // arriba. 4.500 → 4.800: la excepción de los montos fijos suma ~220 B.
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(4_800);
   });
 
   it("explica el AND/OR, el conteo de huéspedes y la prohibición de reservar", () => {
@@ -184,6 +184,14 @@ describe("altos.renderSection", () => {
     expect(text).toContain("NO TOMA RESERVAS POR WHATSAPP");
     expect(text).toContain("Un solo enlace por mensaje");
     expect(text).toContain("[HERRAMIENTA]");
+  });
+
+  it("prohíbe los importes del alojamiento, pero no los montos fijos que cargó el negocio", () => {
+    for (const bookingTools of [false, true]) {
+      const text = altos.renderSection({ ...base, bookingTools }) as string;
+      expect(text).toContain("NUNCA escribas importes");
+      expect(text).toContain("cochera, ropa blanca o transfer");
+    }
   });
 
   it("degrada sin inventar cuando el conector no está conectado o está apagado", () => {

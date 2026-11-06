@@ -337,7 +337,7 @@ describe("altos.renderSection con reservas (032)", () => {
     const text = altos.renderSection({ ...base, bookingTools: true }) as string;
     expect(text).not.toContain("NO TOMA RESERVAS");
     expect(text).toContain("PUEDE dejar la reserva iniciada");
-    expect(text).toContain("ÚNICA EXCEPCIÓN");
+    expect(text).toContain("el resumen de una reserva en preparación");
   });
 });
 

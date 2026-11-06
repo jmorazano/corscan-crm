@@ -1,5 +1,93 @@
 import { describe, expect, it } from "vitest";
-import { detectPriceMention, safePriceReply, stripPrices } from "@/lib/price-guard";
+import {
+  amountValue,
+  businessFixedAmounts,
+  detectPriceMention,
+  safePriceReply,
+  stripPrices,
+} from "@/lib/price-guard";
+
+describe("montos fijos del negocio (ropa blanca, cochera y transfer)", () => {
+  // Textos tal como los tiene cargados Altos de la Ciudad.
+  const CONFIG = [
+    "- Cochera con convenio: cuesta 27.000 pesos por día. Es un convenio bonificado.\n- Transfer desde el aeropuerto: 45.000 pesos. Es de una empresa aparte. Nunca lo sumes al total.",
+    "Cuesta 10.000 pesos por persona y se cobra por única vez, no por noche.",
+    null,
+  ];
+  const allowedAmounts = businessFixedAmounts(CONFIG);
+
+  it("lee los tres montos de la configuración", () => {
+    expect(allowedAmounts.sort((a, b) => a - b)).toEqual([10000, 27000, 45000]);
+  });
+
+  it("no toma como fijos los ejemplos con total o seña de una estadía", () => {
+    const ejemplos = businessFixedAmounts([
+      "Ejemplo: «Para esas fechas el total es de 253.440 pesos y la seña de 103.290 pesos.»",
+      "«Para la Suite Rocío, la seña es de 127.545 pesos.» Transfer desde Córdoba: 150.000 pesos por tramo.",
+    ]);
+    expect(ejemplos).toEqual([150000]);
+  });
+
+  it("los tres salen juntos, en oraciones separadas", () => {
+    const t =
+      "El servicio de ropa blanca cuesta 10.000 pesos por persona, por única vez.\nLa cochera con convenio cuesta 27.000 pesos por día.\nEl transfer desde el aeropuerto es de 45.000 pesos.";
+    expect(stripPrices(t, { allowedAmounts })).toEqual({ text: t, replaced: false, match: null });
+  });
+
+  it("los tres salen juntos, en una sola oración y escritos de otra forma", () => {
+    for (const t of [
+      "Ropa blanca $10.000, cochera $ 27.000 y transfer $45.000.",
+      "Ropa blanca 10 mil pesos, cochera 27 mil pesos y transfer 45 mil pesos.",
+      "Ropa blanca $10 mil, cochera $27 mil y transfer ARS 45.000.",
+    ]) {
+      expect(stripPrices(t, { allowedAmounts })).toEqual({ text: t, replaced: false, match: null });
+    }
+  });
+
+  it("el precio de un departamento se sigue recortando, aunque salga con los fijos", () => {
+    const out = stripPrices(
+      "La cochera cuesta 27.000 pesos por día.\nEl departamento te sale $300.000 por noche.",
+      { allowedAmounts }
+    );
+    expect(out.replaced).toBe(true);
+    expect(out.text).toContain("27.000 pesos");
+    expect(out.text).not.toContain("300.000");
+    // El registro nombra lo que se sacó, no el primer importe del mensaje.
+    expect(out.match).toBe("$300.000");
+
+    const misma = stripPrices("El depto sale $300.000 y la cochera $27.000.", { allowedAmounts });
+    expect(misma.text).not.toContain("300.000");
+    expect(misma.text).not.toContain("27.000");
+  });
+
+  it("un múltiplo del monto no es el monto", () => {
+    const out = stripPrices("La cochera por 4 días te queda en 108.000 pesos en total.", { allowedAmounts });
+    expect(out.replaced).toBe(true);
+    expect(out.text).not.toContain("108.000");
+  });
+
+  it("un importe en palabras no se perdona", () => {
+    expect(stripPrices("La cochera sale veintisiete mil pesos.", { allowedAmounts }).replaced).toBe(true);
+  });
+
+  it("no repite la frase de los valores si el mensaje ya la trae", () => {
+    const out = stripPrices(
+      "Este es el resumen de tu reserva.\nAlojamiento: $300.000\nLos valores y las condiciones los podés ver en la ficha del alojamiento, desde el enlace.\n¿Está todo correcto?",
+      { allowedAmounts }
+    );
+    expect(out.replaced).toBe(true);
+    expect(out.text.match(/Los valores y las condiciones/g)).toHaveLength(1);
+    expect(out.text).not.toContain("300.000");
+  });
+
+  it("lee los miles escritos con la palabra «mil»", () => {
+    expect(amountValue("45 mil pesos")).toBe(45000);
+    expect(amountValue("$27 mil")).toBe(27000);
+    expect(amountValue("1,5 mil pesos")).toBe(1500);
+    expect(amountValue("45.000 pesos")).toBe(45000);
+    expect(amountValue("mil pesos")).toBeNull();
+  });
+});
 
 /**
  * 021: el negocio no escribe importes por WhatsApp. Los falsos positivos son

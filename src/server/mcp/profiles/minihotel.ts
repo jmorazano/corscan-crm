@@ -34,6 +34,7 @@ import {
   type RangeResult,
   type RoomCatalogPayload,
 } from "@/lib/minihotel";
+import { FIXED_AMOUNTS_RULE } from "@/lib/price-guard";
 import { toLocalParts, WEEKDAY_ES_LONG } from "@/lib/time";
 import { TOOL_MARKER_LITERAL, MCP_MARKER } from "@/server/mcp/markers";
 import {
@@ -342,7 +343,8 @@ function renderSection(input: SectionInput): string | null {
     );
   } else {
     lines.push(
-      "- NUNCA escribas importes: ni totales, ni valor por noche, ni seña. Los montos son SOLO PARA VOS (para ordenar o decir cuál es la opción más económica sin decir cuánto sale). Si te piden el precio, decí que lo ve en el enlace."
+      "- NUNCA escribas importes: ni totales, ni valor por noche, ni seña. Los montos son SOLO PARA VOS (para ordenar o decir cuál es la opción más económica sin decir cuánto sale). Si te piden el precio, decí que lo ve en el enlace. " +
+        FIXED_AMOUNTS_RULE
     );
   }
 

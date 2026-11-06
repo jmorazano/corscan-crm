@@ -62,9 +62,12 @@ const NUMERO_PALABRA =
  */
 const PATRONES: { id: string; patron: RegExp }[] = [
   // «$300.000», «$ 1200», «AR$ 50.000», «US$ 100»
-  { id: "signo-peso", patron: /(?:AR|US|U\$S|R)?\$\s?\d[\d.,]*/gi },
+  { id: "signo-peso", patron: /(?:AR|US|U\$S|R)?\$\s?\d[\d.,]*(?:\s*mil\b)?/gi },
   // «ARS 300000», «300000 ARS», «USD 50»
-  { id: "codigo-moneda", patron: /\b(?:ARS|USD|EUR)\s?\d[\d.,]*|\b\d[\d.,]*\s?(?:ARS|USD|EUR)\b/gi },
+  {
+    id: "codigo-moneda",
+    patron: /\b(?:ARS|USD|EUR)\s?\d[\d.,]*(?:\s*mil\b)?|\b\d[\d.,]*\s?(?:mil\s+)?(?:ARS|USD|EUR)\b/gi,
+  },
   // «300.000 pesos», «1200 pesos argentinos»
   { id: "digitos-pesos", patron: /\b\d[\d.,]*\s*(?:mil\s+)?pesos?\b/gi },
   // «trescientos mil pesos», «ciento cincuenta mil pesos»
@@ -134,32 +137,46 @@ function enOraciones(text: string): string[] {
   return piezas.length > 0 ? piezas : [text];
 }
 
+const FRASE_VALORES = "Los valores y las condiciones los podés ver en la ficha del alojamiento";
+
 /** La frase de reemplazo cuando el mensaje entero hablaba de plata. */
 export function safePriceReply(link?: string | null): string {
   const enlace = (link ?? "").trim();
   const usable = enlace.startsWith("https://") && !/\s/.test(enlace) ? enlace : null;
   if (usable) {
-    return `Los valores y las condiciones los podés ver en la ficha del alojamiento 👉 ${usable}`;
+    return `${FRASE_VALORES} 👉 ${usable}`;
   }
-  return "Los valores y las condiciones los podés ver en la ficha del alojamiento, desde el enlace.";
+  return `${FRASE_VALORES}, desde el enlace.`;
 }
 
 /**
  * 032: el valor entero de un importe escrito («$ 450.000» → 450000,
- * «1.234,50 ARS» → 1234). `null` si no hay dígitos (importes en palabras).
+ * «1.234,50 ARS» → 1234, «45 mil pesos» → 45000). `null` si no hay dígitos
+ * (importes en palabras).
  */
 export function amountValue(fragment: string): number | null {
-  const digits = fragment.match(/\d[\d.,]*/)?.[0];
+  const m = fragment.match(/(\d[\d.,]*)(\s*mil\b)?/i);
+  const digits = m?.[1];
   if (!digits) return null;
+  if (m[2]) {
+    // «45 mil», «1,5 mil»: acá el separador solo puede ser decimal.
+    const miles = Number(digits.replace(/[.,]$/, "").replace(",", "."));
+    return Number.isFinite(miles) ? Math.round(miles * 1000) : null;
+  }
   // Decimales con coma (1.234,50) o con punto (1234.50): se descartan.
   const sinDecimales = digits.replace(/[.,]\d{1,2}$/, "");
   const n = Number(sinDecimales.replace(/[.,]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
-/** Todos los importes de una oración (no solo el primero). */
+/**
+ * Todos los importes de una oración (no solo el primero). Un patrón puede
+ * encontrar un pedazo de lo que encontró otro («mil pesos» dentro de «45 mil
+ * pesos»): cuenta solo el más largo, o el pedazo sin dígitos bloquearía un
+ * importe permitido.
+ */
 function importesDe(oracion: string): string[] {
-  const out: string[] = [];
+  const tramos: { desde: number; hasta: number; texto: string }[] = [];
   for (const { patron } of PATRONES) {
     patron.lastIndex = 0;
     for (let m = patron.exec(oracion); m !== null; m = patron.exec(oracion)) {
@@ -167,17 +184,66 @@ function importesDe(oracion: string): string[] {
         patron.lastIndex += 1;
         continue;
       }
-      out.push(m[0]);
+      tramos.push({ desde: m.index, hasta: m.index + m[0].length, texto: m[0] });
     }
   }
-  return out;
+  return tramos
+    .filter(
+      (t) =>
+        !tramos.some(
+          (otro) =>
+            otro !== t &&
+            otro.desde <= t.desde &&
+            otro.hasta >= t.hasta &&
+            otro.hasta - otro.desde > t.hasta - t.desde
+        )
+    )
+    .map((t) => t.texto);
 }
+
+/**
+ * Lo que dice una oración cuando su importe es el de una estadía y no el de
+ * un servicio. Los conocimientos traen ejemplos con números reales («el total
+ * es de 253.440 pesos y la seña de 103.290 pesos»), y esos no son montos
+ * fijos del negocio. No incluye «noche»: «por única vez, no por noche» es
+ * justamente cómo se describe un monto fijo.
+ */
+const ORACION_DE_ESTADIA = /\b(?:total(?:es)?|señas?)\b/i;
+
+/**
+ * Los montos FIJOS que el propio negocio escribió en la configuración del
+ * agente (la cochera, la ropa blanca, el transfer). Los escribió el dueño para
+ * que el agente los diga, así que la guarda los deja salir; los precios de
+ * alojamiento llegan del sistema de reservas y siguen sin salir. Se leen en
+ * cada turno: si el dueño cambia un monto, no hay nada más que actualizar.
+ *
+ * Solo el monto exacto: 27.000 por día no habilita los 108.000 de cuatro días.
+ */
+export function businessFixedAmounts(texts: readonly (string | null | undefined)[]): number[] {
+  const montos = new Set<number>();
+  for (const texto of texts) {
+    if (!texto) continue;
+    for (const oracion of enOraciones(texto)) {
+      if (ORACION_DE_ESTADIA.test(oracion)) continue;
+      for (const importe of importesDe(oracion)) {
+        const valor = amountValue(importe);
+        if (valor !== null && valor > 0) montos.add(valor);
+      }
+    }
+  }
+  return [...montos];
+}
+
+/** La excepción a «NUNCA escribas importes», para los prompts de los perfiles. */
+export const FIXED_AMOUNTS_RULE =
+  "EXCEPCIÓN: los montos fijos de servicios que el negocio escribió en sus instrucciones o en su conocimiento (por ejemplo cochera, ropa blanca o transfer) SÍ los decís, con el número tal cual está escrito y sin multiplicarlos ni sumarlos.";
 
 /**
  * 032: ¿la oración menciona SOLO importes permitidos? Los permitidos son los
  * que devolvió una herramienta en ESTE turno (el total y la seña del resumen
- * de una reserva, que el interesado tiene que ver para confirmar). Un
- * importe en palabras o uno que no está en la lista no se perdona.
+ * de una reserva, que el interesado tiene que ver para confirmar) y los montos
+ * fijos del negocio (`businessFixedAmounts`). Un importe en palabras o uno que
+ * no está en la lista no se perdona.
  */
 function soloPermitidos(oracion: string, permitidos: ReadonlySet<number>): boolean {
   if (permitidos.size === 0) return false;
@@ -194,9 +260,9 @@ function soloPermitidos(oracion: string, permitidos: ReadonlySet<number>): boole
  * que quien llama registre el incidente.
  *
  * 032: `allowedAmounts` son importes que SÍ pueden salir (los del resumen de
- * una reserva que devolvió el sistema en este turno). Una oración con solo
- * importes permitidos se conserva; cualquier otra con importes se recorta
- * igual que siempre.
+ * una reserva que devolvió el sistema en este turno y los montos fijos del
+ * negocio). Una oración con solo importes permitidos se conserva; cualquier
+ * otra con importes se recorta igual que siempre.
  */
 export function stripPrices(
   text: string | null | undefined,
@@ -210,18 +276,28 @@ export function stripPrices(
 
   const permitidos = new Set(options?.allowedAmounts ?? []);
   const oraciones = enOraciones(original);
-  const limpias = oraciones.filter(
-    (oracion) => !detectPriceMention(oracion).mentions || soloPermitidos(oracion, permitidos)
-  );
+  const seQueda = (oracion: string): boolean =>
+    !detectPriceMention(oracion).mentions || soloPermitidos(oracion, permitidos);
+  const limpias = oraciones.filter(seQueda);
   if (limpias.length === oraciones.length) {
     // Todo lo que tenía importes estaba permitido: sale tal cual.
     return { text: original, replaced: false, match: null };
   }
+  // Para el registro: un importe de lo que se sacó, no el primero del mensaje,
+  // que puede ser uno permitido.
+  const recortada = oraciones.find((oracion) => !seQueda(oracion)) ?? "";
+  const match = detectPriceMention(recortada).match;
   const restante = limpias.join("").replace(/\n{3,}/g, "\n\n").trim();
 
   // Un resto demasiado corto no es un mensaje: es la ruina de uno. Mejor la
   // frase completa que «Claro!» solo.
   const utilizable = restante.length >= 25 ? restante : "";
+
+  // Si lo que quedó ya trae la frase (el negocio se la pide al agente en el
+  // resumen de la reserva), no se la repite.
+  if (utilizable.includes(FRASE_VALORES)) {
+    return { text: utilizable, replaced: true, match };
+  }
 
   // Si lo que quedó YA lleva un enlace, la coletilla no suma otro: un
   // mensaje de WhatsApp con dos enlaces previsualiza solo el primero y el
@@ -232,6 +308,6 @@ export function stripPrices(
   return {
     text: utilizable ? `${utilizable}\n\n${coletilla}` : safePriceReply(options?.link),
     replaced: true,
-    match: deteccion.match,
+    match,
   };
 }
