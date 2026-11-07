@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FollowUpSection } from "@/components/agent/follow-up-section";
 import { PROFILE_LIMITS } from "@/lib/agent-profile-limits";
+import { PAYMENT_RECEIPT_TAG } from "@/lib/payment-receipt-tag";
 import { visibleLength } from "@/lib/text-length";
 import {
   REPLY_DELAY_MAX_MS,
@@ -38,6 +39,8 @@ type Profile = {
   sharedPersonalNumber: boolean;
   /** 039 */
   readVideos: boolean;
+  /** 049 */
+  tagPaymentReceipts: boolean;
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: number | null;
 };
@@ -170,6 +173,7 @@ export function AgentClient() {
             onSave={saveProfile}
           />
           <VideoReadingSection enabled={profile.readVideos} onSave={saveProfile} />
+          <ReceiptTagSection enabled={profile.tagPaymentReceipts} onSave={saveProfile} />
           <FollowUpSection />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
@@ -331,6 +335,67 @@ function PersonalNumberSection({
         </ul>
         <p className="mt-2 text-xs font-medium" data-testid="personal-number-state">
           {enabled ? "Activado: el agente solo atiende contactos nuevos." : "Desactivado: el agente atiende a todos."}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 049: la conversación se etiqueta sola cuando llega un comprobante de pago. */
+function ReceiptTagSection({
+  enabled,
+  onSave,
+}: {
+  enabled: boolean;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>Etiquetar comprobantes de pago</CardTitle>
+            <CardDescription>
+              Cuando el cliente manda un comprobante, la conversación recibe la
+              etiqueta <strong>{PAYMENT_RECEIPT_TAG}</strong>, para filtrarlas en
+              la Bandeja y registrar esos pagos.
+            </CardDescription>
+          </div>
+          <button
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Etiquetar las conversaciones con comprobantes de pago"
+            data-testid="receipt-tag-switch"
+            onClick={() => void onSave({ tagPaymentReceipts: !enabled })}
+            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
+              enabled ? "bg-primary" : "bg-secondary"
+            }`}
+          >
+            <span
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground" data-testid="receipt-tag-hint">
+          <li>Es una etiqueta común: la saca tu equipo a mano cuando registra el pago.</li>
+          <li>
+            Si el cliente manda otro comprobante después, la conversación vuelve a
+            etiquetarse.
+          </li>
+          <li>
+            Mira imágenes y PDF, según lo que describe la IA de Ajustes →
+            Inteligencia artificial. Puede equivocarse: no confirma que el pago se
+            haya acreditado.
+          </li>
+        </ul>
+        <p className="mt-2 text-xs font-medium" data-testid="receipt-tag-state">
+          {enabled
+            ? "Activado: las conversaciones con comprobantes se etiquetan solas."
+            : "Desactivado: los comprobantes llegan igual, sin etiqueta."}
         </p>
       </CardContent>
     </Card>

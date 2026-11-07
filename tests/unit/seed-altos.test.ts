@@ -62,6 +62,7 @@ function promptOf(seed: SeedFile): string {
       teamSilenceMs: null,
       sharedPersonalNumber: false,
       readVideos: false,
+      tagPaymentReceipts: false,
       followUpEnabled: false,
       followUpTimezone: "America/Argentina/Cordoba",
       followUpStartHour: 9,

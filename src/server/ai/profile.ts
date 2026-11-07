@@ -37,6 +37,8 @@ export const profileUpdateSchema = z.object({
   sharedPersonalNumber: z.boolean().optional(),
   /** 039: el agente mira los videos del cliente (gasta más tokens). */
   readVideos: z.boolean().optional(),
+  /** 049: la conversación se etiqueta sola al recibir un comprobante de pago. */
+  tagPaymentReceipts: z.boolean().optional(),
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: z
     .number()

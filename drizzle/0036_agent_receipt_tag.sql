@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "tag_payment_receipts" boolean DEFAULT false NOT NULL;

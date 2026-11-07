@@ -20,6 +20,7 @@ import { getAiConfig } from "@/server/ai/credentials";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
+import { tagIfPaymentReceipt } from "@/server/inbox/receipt-tag";
 import { isOptOutMessage, onInboundSideEffects } from "@/server/inbox/side-effects";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 import { RECEIPT_NOTES } from "@/lib/sheets";
@@ -350,6 +351,12 @@ async function withReceiptNote(
     messageId: input.messageId,
     summary,
     media: { bytes: media.data, mimeType: media.mimeType, fileName: input.fileName ?? null },
+  });
+  await tagIfPaymentReceipt({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    summary,
+    confirmed: outcome === "recorded" || outcome === "duplicate",
   });
   return outcome ? `${summary} — ${RECEIPT_NOTES[outcome]}` : summary;
 }

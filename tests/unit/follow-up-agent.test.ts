@@ -21,6 +21,7 @@ const profile = {
   teamSilenceMs: null,
   sharedPersonalNumber: false,
   readVideos: false,
+  tagPaymentReceipts: false,
   followUpEnabled: true,
   followUpTimezone: "America/Argentina/Cordoba",
   followUpStartHour: 9,

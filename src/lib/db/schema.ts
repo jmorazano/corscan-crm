@@ -668,6 +668,11 @@ export const agentProfile = pgTable(
      */
     readVideos: boolean("read_videos").notNull().default(false),
     /**
+     * 049: la conversación se etiqueta sola cuando el cliente manda un
+     * comprobante de pago. Apagado por defecto: lo decide cada empresa.
+     */
+    tagPaymentReceipts: boolean("tag_payment_receipts").notNull().default(false),
+    /**
      * 042: seguimiento automático — hasta dos recordatorios dentro de la
      * ventana de 24 h cuando el cliente deja de contestar. Apagado por
      * defecto: ninguna empresa cambia hasta que la encienden.

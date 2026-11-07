@@ -28,6 +28,8 @@ export const GET = withAuth(async (session) => {
       sharedPersonalNumber: p.sharedPersonalNumber,
       // 039: apagado por defecto (cada video gasta muchos tokens).
       readVideos: p.readVideos,
+      // 049: apagado por defecto.
+      tagPaymentReceipts: p.tagPaymentReceipts,
       // 031: null = 10 min (abajo, el efectivo para la bandeja).
       teamSilenceMs: p.teamSilenceMs,
     },
