@@ -38,7 +38,14 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/db/tenant", () => ({ scoped: (...args: unknown[]) => args }));
 vi.mock("@/lib/env", () => ({ getEnv: () => ({ APP_BASE_URL: "https://crm.corscan.com.ar" }) }));
 
-const profile = {
+const profile: {
+  name: string;
+  tone: string | null;
+  instructions: string | null;
+  escalationRules: string | null;
+  greeting: string | null;
+  extendedInstructions?: boolean;
+} = {
   name: "Giuliana",
   tone: "Cálido",
   instructions: "Reservas en https://reservas.altos-ejemplo.com",
@@ -51,7 +58,6 @@ const entries = [
 let currentProfile: typeof profile | null = profile;
 vi.mock("@/server/ai/profile", () => ({
   getProfile: vi.fn(async () => currentProfile),
-  PROFILE_LIMITS: { name: 60, tone: 500, instructions: 15000, escalationRules: 6000, greeting: 1000 },
 }));
 vi.mock("@/server/kb/service", () => ({
   listEntries: vi.fn(async () => entries),
@@ -173,6 +179,26 @@ describe("applyAssistantChanges", () => {
       { op: "profile_set", field: "tone", value: "🌲".repeat(501) },
     ]);
     expect(over.rejected[0]!.reason).toContain("Supera el tope de 500");
+  });
+
+  it("050: el tope de instrucciones es el de la empresa (15.000, o 30.000 con la opción)", async () => {
+    const { applyAssistantChanges, readAgentKnowledge } = await import("@/server/assistants/teach");
+    const long = "x".repeat(20000);
+    queueFor({ contacts: [] });
+    const off = await applyAssistantChanges("org_1", "edit", [{ op: "profile_set", field: "instructions", value: long }]);
+    expect(off.applied).toEqual([]);
+    expect(off.rejected[0]!.reason).toContain("Supera el tope de 15000");
+    // Claude no puede cambiar la opción: se lo tiene que decir a la persona.
+    expect(off.rejected[0]!.reason).toContain("Instrucciones extendidas");
+
+    currentProfile = { ...profile, extendedInstructions: true };
+    queueFor({ contacts: [] });
+    const on = await applyAssistantChanges("org_1", "edit", [{ op: "profile_set", field: "instructions", value: long }]);
+    expect(on.rejected).toEqual([]);
+    expect(on.applied).toHaveLength(1);
+    expect((await readAgentKnowledge("org_1", {})).limits.instructions).toBe(30000);
+    currentProfile = profile;
+    expect((await readAgentKnowledge("org_1", {})).limits.instructions).toBe(15000);
   });
 });
 

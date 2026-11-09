@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/env";
 import { DEFAULT_METRICS_TIMEZONE } from "@/lib/metrics";
 import { foldAccents } from "@/lib/assistants/format";
 import { visibleLength } from "@/lib/text-length";
+import { INSTRUCTIONS_EXTENDED_MAX, profileLimitsFor } from "@/lib/agent-profile-limits";
 import {
   checkTeachChange,
   extractContactKeys,
@@ -14,7 +15,7 @@ import {
   type KnownEntry,
 } from "@/lib/assistants/teach-guard";
 import { appendToField, type TrainerChangeType } from "@/server/ai/trainer-actions";
-import { getProfile, PROFILE_LIMITS, type AgentProfile } from "@/server/ai/profile";
+import { getProfile, type AgentProfile } from "@/server/ai/profile";
 import { KB_LIMITS, listEntries, type DbOrTx, type KbEntry } from "@/server/kb/service";
 import {
   applyTrainerChanges,
@@ -111,6 +112,8 @@ export async function readAgentKnowledge(
   if (anyCut) notes.push(`Textos recortados a ${KNOWLEDGE_SNIPPET_CHARS} caracteres; pedí ids para verlos completos.`);
   if (total > page.length) notes.push(`Hay ${total} entradas y se muestran ${page.length}: filtrá con query.`);
   if (full && page.length < (opts.ids?.length ?? 0)) notes.push("Algunos ids no existen en esta empresa.");
+  // 050: el tope de instrucciones es el de ESTA empresa (15.000 o 30.000).
+  const profileLimits = profileLimitsFor(profile?.extendedInstructions);
   return {
     profile: profileDto(profile),
     knowledge: { total, returned: out.length, entries: out },
@@ -118,11 +121,11 @@ export async function readAgentKnowledge(
       question: KB_LIMITS.question,
       answer: KB_LIMITS.answer,
       content: KB_LIMITS.content,
-      name: PROFILE_LIMITS.name,
-      tone: PROFILE_LIMITS.tone,
-      instructions: PROFILE_LIMITS.instructions,
-      escalation_rules: PROFILE_LIMITS.escalationRules,
-      greeting: PROFILE_LIMITS.greeting,
+      name: profileLimits.name,
+      tone: profileLimits.tone,
+      instructions: profileLimits.instructions,
+      escalation_rules: profileLimits.escalationRules,
+      greeting: profileLimits.greeting,
     },
     note: notes.length > 0 ? notes.join(" ") : null,
   };
@@ -239,13 +242,15 @@ async function contactMatch(organizationId: string, texts: readonly string[], db
   return rows.length > 0 ? "Tiene un dato de un contacto (teléfono, correo o usuario): el conocimiento del agente no guarda datos de clientes." : null;
 }
 
-const FIELD_LIMIT: Record<ProfileField, number> = {
-  name: PROFILE_LIMITS.name,
-  tone: PROFILE_LIMITS.tone,
-  instructions: PROFILE_LIMITS.instructions,
-  escalationRules: PROFILE_LIMITS.escalationRules,
-  greeting: PROFILE_LIMITS.greeting,
-};
+/**
+ * 050: lo que puede hacer el propietario cuando las instrucciones no entran
+ * (Claude no puede cambiar la opción: se lo tiene que decir a la persona).
+ */
+function extendHint(field: ProfileField, profile: AgentProfile | null): string {
+  return field === "instructions" && !profile?.extendedInstructions
+    ? ` El propietario puede subir el tope a ${INSTRUCTIONS_EXTENDED_MAX} activando «Instrucciones extendidas» en la página Agente del CRM.`
+    : "";
+}
 
 /** Topes de largo por campo (el motor del Entrenador confía en su Zod; acá se verifica el resultado). Los del perfil cuentan caracteres visibles. */
 function lengthProblem(change: TrainerChangeType, profile: AgentProfile | null): string | null {
@@ -258,13 +263,17 @@ function lengthProblem(change: TrainerChangeType, profile: AgentProfile | null):
       if (over(change.content, KB_LIMITS.content)) return `El bloque supera el tope de ${KB_LIMITS.content} caracteres.`;
       return null;
     case "profile_set": {
-      const max = FIELD_LIMIT[change.field];
-      return visibleLength(change.value ?? "") > max ? `Supera el tope de ${max} caracteres del campo.` : null;
+      const max = profileLimitsFor(profile?.extendedInstructions)[change.field];
+      return visibleLength(change.value ?? "") > max
+        ? `Supera el tope de ${max} caracteres del campo.${extendHint(change.field, profile)}`
+        : null;
     }
     case "profile_append": {
-      const max = FIELD_LIMIT[change.field];
+      const max = profileLimitsFor(profile?.extendedInstructions)[change.field];
       const next = appendToField((profile?.[change.field] as string | null | undefined) ?? null, change.text);
-      return visibleLength(next) > max ? `Con esta regla el campo superaría el tope de ${max} caracteres: resumilo o corregí el campo con edit_agent.` : null;
+      return visibleLength(next) > max
+        ? `Con esta regla el campo superaría el tope de ${max} caracteres: resumilo o corregí el campo con edit_agent.${extendHint(change.field, profile)}`
+        : null;
     }
     case "kb_delete":
       return null;
@@ -451,6 +460,8 @@ export async function undoAssistantChange(organizationId: string, changeId: stri
     if (err instanceof ChangeError) {
       if (err.code === "already_reverted") throw new ToolInputError("Ese cambio ya estaba deshecho.");
       if (err.code === "not_found") throw new ToolNotFoundError(`No encontré el cambio «${changeId}» en esta empresa.`);
+      // 050: el texto anterior ya no entra en el tope de instrucciones de la empresa.
+      if (err.code === "over_limit") throw new ToolInputError(`No se puede deshacer: ${err.message}`);
       throw new ToolInputError(`No se puede deshacer sin pisar otro cambio: ${err.message}.`);
     }
     throw err;

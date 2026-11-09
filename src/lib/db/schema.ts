@@ -673,6 +673,13 @@ export const agentProfile = pgTable(
      */
     tagPaymentReceipts: boolean("tag_payment_receipts").notNull().default(false),
     /**
+     * 050: el tope de las instrucciones sube de 15.000 a 30.000 caracteres
+     * (`instructionsLimit` en `src/lib/agent-profile-limits.ts`). Apagado por
+     * defecto: un texto más largo gasta más tokens en CADA respuesta, así
+     * que lo decide cada empresa.
+     */
+    extendedInstructions: boolean("extended_instructions").notNull().default(false),
+    /**
      * 042: seguimiento automático — hasta dos recordatorios dentro de la
      * ventana de 24 h cuando el cliente deja de contestar. Apagado por
      * defecto: ninguna empresa cambia hasta que la encienden.

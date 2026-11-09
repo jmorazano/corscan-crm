@@ -23,18 +23,19 @@ describe("topes del perfil del agente", () => {
   it("instrucciones hasta 15.000 y reglas de derivación hasta 6.000", () => {
     expect(PROFILE_LIMITS.instructions).toBe(15000);
     expect(PROFILE_LIMITS.escalationRules).toBe(6000);
+    // Desde 050 el esquema solo pone el techo de forma (30.000): el tope de
+    // cada empresa lo aplica `updateProfile` (extended-instructions-050.test.ts).
     expect(profileUpdateSchema.safeParse({ instructions: "x".repeat(15000) }).success).toBe(true);
-    expect(profileUpdateSchema.safeParse({ instructions: "x".repeat(15001) }).success).toBe(false);
     expect(profileUpdateSchema.safeParse({ escalationRules: "x".repeat(6000) }).success).toBe(true);
     expect(profileUpdateSchema.safeParse({ escalationRules: "x".repeat(6001) }).success).toBe(false);
   });
 
   it("un texto con emojis se mide en caracteres visibles (el caso de los 7.996)", () => {
-    // 14.990 letras + 10 emojis = 15.000 visibles, 15.010 unidades UTF-16.
-    const text = "x".repeat(14990) + "🌲".repeat(10);
-    expect(text.length).toBe(15010);
-    expect(profileUpdateSchema.safeParse({ instructions: text }).success).toBe(true);
-    expect(profileUpdateSchema.safeParse({ instructions: text + "🌲" }).success).toBe(false);
+    // 5.990 letras + 10 emojis = 6.000 visibles, 6.010 unidades UTF-16.
+    const text = "x".repeat(5990) + "🌲".repeat(10);
+    expect(text.length).toBe(6010);
+    expect(profileUpdateSchema.safeParse({ escalationRules: text }).success).toBe(true);
+    expect(profileUpdateSchema.safeParse({ escalationRules: text + "🌲" }).success).toBe(false);
   });
 
   it("el nombre sigue recortado y obligatorio", () => {

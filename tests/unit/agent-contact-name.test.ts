@@ -28,6 +28,7 @@ const profile = {
   sharedPersonalNumber: false,
   readVideos: false,
   tagPaymentReceipts: false,
+  extendedInstructions: false,
   followUpEnabled: false,
   followUpTimezone: "America/Argentina/Cordoba",
   followUpStartHour: 9,

@@ -2,7 +2,11 @@ import { z } from "zod";
 import { REPLY_DELAY_MAX_MS, REPLY_DELAY_MIN_MS } from "@/lib/agent-timing";
 import { TEAM_SILENCE_MAX_MS, TEAM_SILENCE_MIN_MS } from "@/lib/agent-presence";
 import { getDb, schema } from "@/lib/db";
-import { PROFILE_LIMITS } from "@/lib/agent-profile-limits";
+import {
+  INSTRUCTIONS_EXTENDED_MAX,
+  instructionsProblem,
+  PROFILE_LIMITS,
+} from "@/lib/agent-profile-limits";
 import { visibleMax } from "@/lib/text-length";
 import { scoped } from "@/lib/db/tenant";
 import type { DbOrTx } from "@/server/kb/service";
@@ -22,7 +26,12 @@ export const profileUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   name: visibleMax(z.string().trim().min(1), PROFILE_LIMITS.name).optional(),
   tone: visibleMax(z.string(), PROFILE_LIMITS.tone).nullable().optional(),
-  instructions: visibleMax(z.string(), PROFILE_LIMITS.instructions).nullable().optional(),
+  /**
+   * 050: acá va el techo absoluto; el tope de CADA empresa (15.000 o 30.000
+   * según `extendedInstructions`) lo aplica `updateProfile`, que conoce lo
+   * guardado.
+   */
+  instructions: visibleMax(z.string(), INSTRUCTIONS_EXTENDED_MAX).nullable().optional(),
   escalationRules: visibleMax(z.string(), PROFILE_LIMITS.escalationRules).nullable().optional(),
   greeting: visibleMax(z.string(), PROFILE_LIMITS.greeting).nullable().optional(),
   /** 022: espera antes de responder (ms); null = default de instancia. */
@@ -39,6 +48,8 @@ export const profileUpdateSchema = z.object({
   readVideos: z.boolean().optional(),
   /** 049: la conversación se etiqueta sola al recibir un comprobante de pago. */
   tagPaymentReceipts: z.boolean().optional(),
+  /** 050: instrucciones de hasta 30.000 caracteres en vez de 15.000. */
+  extendedInstructions: z.boolean().optional(),
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: z
     .number()
@@ -79,6 +90,13 @@ export async function updateProfile(
 ): Promise<{ before: AgentProfile; after: AgentProfile }> {
   const before = await getProfile(organizationId, db);
   if (!before) throw new ProfileError("not_found", "Perfil del agente no encontrado");
+  // 050: único punto donde se aplica el tope por empresa. Por acá pasan la
+  // página Agente, el Entrenador, Claude por MCP y el «Deshacer».
+  const problem = instructionsProblem({
+    current: { instructions: before.instructions, extended: before.extendedInstructions },
+    patch: { instructions: patch.instructions, extended: patch.extendedInstructions },
+  });
+  if (problem) throw new ProfileError("invalid", problem);
   const updated = await db
     .update(schema.agentProfile)
     .set({ ...patch, updatedAt: new Date() })

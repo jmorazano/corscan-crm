@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FollowUpSection } from "@/components/agent/follow-up-section";
-import { PROFILE_LIMITS } from "@/lib/agent-profile-limits";
+import {
+  INSTRUCTIONS_EXTENDED_MAX,
+  instructionsLimit,
+  PROFILE_LIMITS,
+} from "@/lib/agent-profile-limits";
 import { PAYMENT_RECEIPT_TAG } from "@/lib/payment-receipt-tag";
 import { visibleLength } from "@/lib/text-length";
 import {
@@ -41,6 +45,8 @@ type Profile = {
   readVideos: boolean;
   /** 049 */
   tagPaymentReceipts: boolean;
+  /** 050: instrucciones de hasta 30.000 caracteres en vez de 15.000. */
+  extendedInstructions: boolean;
   /** 031: cuánto se calla el agente cuando el equipo escribe (ms); null = 10 min. */
   teamSilenceMs: number | null;
 };
@@ -62,7 +68,7 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -99,10 +105,17 @@ export function AgentClient() {
     }).catch(() => null);
     // Sin refetch: el formulario conserva lo que escribió la persona.
     if (!res?.ok) {
-      setSaveError(true);
+      // 422 = una regla del perfil (p. ej. el tope de instrucciones de 050):
+      // el servidor ya lo explica en criollo.
+      const body = res?.status === 422 ? await res.json().catch(() => null) : null;
+      setSaveError(
+        typeof body?.error?.message === "string"
+          ? body.error.message
+          : "No se guardó: revisá los topes de cada campo."
+      );
       return;
     }
-    setSaveError(false);
+    setSaveError(null);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     void refetch();
@@ -115,8 +128,8 @@ export function AgentClient() {
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
           {saveError && (
-            <span className="text-xs text-destructive" data-testid="profile-save-error">
-              No se guardó: revisá los topes de cada campo.
+            <span className="max-w-xs text-right text-xs text-destructive" data-testid="profile-save-error">
+              {saveError}
             </span>
           )}
           <span className="text-sm text-muted-foreground">
@@ -190,11 +203,31 @@ function ProfileSection({
   onSave: (patch: Partial<Profile>) => Promise<void>;
 }) {
   const [form, setForm] = useState(profile);
-  useEffect(() => setForm(profile), [profile]);
+  // Al llegar un perfil nuevo (se guardó algo en cualquier tarjeta) se
+  // conserva lo que la persona escribió y todavía no guardó: prender
+  // «Instrucciones extendidas» (050) para que entre el texto recién pegado no
+  // puede borrarlo.
+  const synced = useRef(profile);
+  useEffect(() => {
+    const prev = synced.current;
+    synced.current = profile;
+    setForm((f) => {
+      const next = { ...profile };
+      for (const k of TEXT_FIELDS) {
+        if ((f[k] ?? "") !== (prev[k] ?? "")) Object.assign(next, { [k]: f[k] });
+      }
+      return next;
+    });
+  }, [profile]);
+  const instructionsMax = instructionsLimit(profile.extendedInstructions);
+  const savedInstructionsLength = visibleLength(profile.instructions ?? "");
+  // Apagar no recorta el texto de nadie: primero hay que acortarlo.
+  const cannotTurnOff =
+    profile.extendedInstructions && savedInstructionsLength > PROFILE_LIMITS.instructions;
   const overLimit =
     visibleLength(form.name) > PROFILE_LIMITS.name ||
     visibleLength(form.tone ?? "") > PROFILE_LIMITS.tone ||
-    visibleLength(form.instructions ?? "") > PROFILE_LIMITS.instructions ||
+    visibleLength(form.instructions ?? "") > instructionsMax ||
     visibleLength(form.escalationRules ?? "") > PROFILE_LIMITS.escalationRules ||
     visibleLength(form.greeting ?? "") > PROFILE_LIMITS.greeting;
 
@@ -233,7 +266,48 @@ function ProfileSection({
             value={form.instructions ?? ""}
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
           />
-          <CharCount id="agent-instructions-count" value={form.instructions} max={PROFILE_LIMITS.instructions} />
+          <CharCount id="agent-instructions-count" value={form.instructions} max={instructionsMax} />
+          <div className="rounded-md border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-sm font-medium">Instrucciones extendidas</p>
+                <p className="text-xs text-muted-foreground">
+                  Sube el tope de {fmt(PROFILE_LIMITS.instructions)} a{" "}
+                  {fmt(INSTRUCTIONS_EXTENDED_MAX)} caracteres.
+                </p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={profile.extendedInstructions}
+                aria-label="Instrucciones extendidas"
+                data-testid="extended-instructions-switch"
+                disabled={cannotTurnOff}
+                onClick={() => void onSave({ extendedInstructions: !profile.extendedInstructions })}
+                className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  profile.extendedInstructions ? "bg-primary" : "bg-secondary"
+                }`}
+              >
+                <span
+                  className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                    profile.extendedInstructions ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground" data-testid="extended-instructions-hint">
+              El agente lee las instrucciones completas en cada respuesta: un
+              texto más largo gasta <strong>más tokens por mensaje</strong> y
+              hace que le cueste más seguir cada regla. Lo que son datos del
+              negocio conviene cargarlo en Conocimiento.
+            </p>
+            <p className="mt-2 text-xs font-medium" data-testid="extended-instructions-state">
+              {!profile.extendedInstructions
+                ? `Desactivado: hasta ${fmt(PROFILE_LIMITS.instructions)} caracteres.`
+                : cannotTurnOff
+                  ? `Activado. Para desactivarlo, primero acortá las instrucciones guardadas a ${fmt(PROFILE_LIMITS.instructions)} caracteres o menos (hoy tienen ${fmt(savedInstructionsLength)}).`
+                  : `Activado: hasta ${fmt(INSTRUCTIONS_EXTENDED_MAX)} caracteres.`}
+            </p>
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-escalation">Reglas de escalado</Label>
@@ -263,6 +337,11 @@ function ProfileSection({
   );
 }
 
+/** Campos de texto del formulario de comportamiento (los que se pueden estar editando). */
+const TEXT_FIELDS = ["name", "tone", "instructions", "escalationRules", "greeting"] as const;
+
+const fmt = (n: number) => n.toLocaleString("es-AR");
+
 /** «7.990 / 15.000», en caracteres visibles (un emoji = 1, como cuenta el servidor). */
 function CharCount({ id, value, max }: { id: string; value: string | null; max: number }) {
   const n = visibleLength(value ?? "");
@@ -271,7 +350,7 @@ function CharCount({ id, value, max }: { id: string; value: string | null; max: 
       data-testid={id}
       className={`text-right text-xs ${n > max ? "text-destructive" : "text-muted-foreground"}`}
     >
-      {n.toLocaleString("es-AR")} / {max.toLocaleString("es-AR")}
+      {fmt(n)} / {fmt(max)}
       {n > max && " · supera el tope"}
     </p>
   );

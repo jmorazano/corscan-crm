@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { KB_LIMITS } from "@/server/kb/service";
 import { visibleMax } from "@/lib/text-length";
-import { PROFILE_LIMITS } from "@/server/ai/profile";
+import { INSTRUCTIONS_EXTENDED_MAX } from "@/lib/agent-profile-limits";
 
 /**
  * Contrato de acciones del entrenador (015, D6). Vive SEPARADO de
@@ -45,7 +45,9 @@ export const TrainerChange = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("profile_set"),
     field: z.enum(PROFILE_FIELDS),
-    value: visibleMax(z.string(), PROFILE_LIMITS.instructions).nullable(),
+    // Techo de forma (el campo más largo, con las instrucciones extendidas
+    // de 050); el tope real de cada campo y empresa se aplica al guardar.
+    value: visibleMax(z.string(), INSTRUCTIONS_EXTENDED_MAX).nullable(),
   }),
   z.object({
     op: z.literal("profile_append"),

@@ -16,6 +16,7 @@ const STATUS: Record<ChangeError["code"], number> = {
   not_found: 404,
   already_reverted: 409,
   target_conflict: 409,
+  over_limit: 409,
 };
 
 /**

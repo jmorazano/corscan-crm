@@ -1,5 +1,6 @@
 import { apiError, parseBody, withAuth, withOwner } from "@/lib/api";
 import { getEnv } from "@/lib/env";
+import { instructionsLimit } from "@/lib/agent-profile-limits";
 import { resolveTeamSilenceMs, TEAM_SILENCE_DEFAULT_MS } from "@/lib/agent-presence";
 import { isAiConfigured } from "@/server/ai/credentials";
 import {
@@ -30,9 +31,12 @@ export const GET = withAuth(async (session) => {
       readVideos: p.readVideos,
       // 049: apagado por defecto.
       tagPaymentReceipts: p.tagPaymentReceipts,
+      // 050: apagado por defecto; sube el tope de las instrucciones.
+      extendedInstructions: p.extendedInstructions,
       // 031: null = 10 min (abajo, el efectivo para la bandeja).
       teamSilenceMs: p.teamSilenceMs,
     },
+    instructionsLimit: instructionsLimit(p.extendedInstructions),
     defaultReplyDelayMs: getEnv().AGENT_COALESCE_MS,
     defaultTeamSilenceMs: TEAM_SILENCE_DEFAULT_MS,
     effectiveTeamSilenceMs: resolveTeamSilenceMs(p.teamSilenceMs),

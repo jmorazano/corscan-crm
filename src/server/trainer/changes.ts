@@ -15,6 +15,7 @@ import {
 } from "@/server/kb/service";
 import {
   getProfile,
+  ProfileError,
   updateProfile,
   type AgentProfile,
   type ProfilePatch,
@@ -57,7 +58,7 @@ export type ApplyOutcome = {
 
 export class ChangeError extends Error {
   constructor(
-    public readonly code: "not_found" | "already_reverted" | "target_conflict",
+    public readonly code: "not_found" | "already_reverted" | "target_conflict" | "over_limit",
     message: string
   ) {
     super(message);
@@ -372,7 +373,16 @@ export async function revertChange(
       case "profile_update": {
         const before = row.before as ProfileSnapshot | null;
         if (!before) throw new ChangeError("target_conflict", "Sin estado anterior");
-        await updateProfile(organizationId, profilePatchFor(before.field, before.value), tx);
+        try {
+          await updateProfile(organizationId, profilePatchFor(before.field, before.value), tx);
+        } catch (err) {
+          // 050: el texto anterior ya no entra en el tope de la empresa (se
+          // desactivaron las instrucciones extendidas después del cambio).
+          if (err instanceof ProfileError && err.code === "invalid") {
+            throw new ChangeError("over_limit", err.message);
+          }
+          throw err;
+        }
         break;
       }
     }

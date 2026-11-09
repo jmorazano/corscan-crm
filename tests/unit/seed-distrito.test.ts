@@ -103,6 +103,7 @@ describe("seed de Javier (Distrito Inmobiliario)", () => {
         sharedPersonalNumber: true,
         readVideos: false,
         tagPaymentReceipts: false,
+        extendedInstructions: false,
         followUpEnabled: false,
         followUpTimezone: "America/Argentina/Cordoba",
         followUpStartHour: 9,

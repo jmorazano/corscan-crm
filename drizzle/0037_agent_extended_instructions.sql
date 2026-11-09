@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "extended_instructions" boolean DEFAULT false NOT NULL;
