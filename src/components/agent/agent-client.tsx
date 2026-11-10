@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { FollowUpSection } from "@/components/agent/follow-up-section";
 import {
   INSTRUCTIONS_EXTENDED_MAX,
@@ -135,22 +136,12 @@ export function AgentClient() {
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
-          <button
-            role="switch"
-            aria-checked={profile.enabled}
+          <Switch
+            checked={profile.enabled}
             aria-label="Agente encendido"
             disabled={!aiConfigured}
             onClick={() => void saveProfile({ enabled: !profile.enabled })}
-            className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
-              profile.enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                profile.enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+          />
         </div>
       </header>
 
@@ -276,23 +267,14 @@ function ProfileSection({
                   {fmt(INSTRUCTIONS_EXTENDED_MAX)} caracteres.
                 </p>
               </div>
-              <button
-                role="switch"
-                aria-checked={profile.extendedInstructions}
+              <Switch
+                checked={profile.extendedInstructions}
                 aria-label="Instrucciones extendidas"
                 data-testid="extended-instructions-switch"
                 disabled={cannotTurnOff}
                 onClick={() => void onSave({ extendedInstructions: !profile.extendedInstructions })}
-                className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                  profile.extendedInstructions ? "bg-primary" : "bg-secondary"
-                }`}
-              >
-                <span
-                  className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    profile.extendedInstructions ? "translate-x-5" : "translate-x-0.5"
-                  }`}
-                />
-              </button>
+                className="mt-0.5"
+              />
             </div>
             <p className="mt-2 text-xs text-muted-foreground" data-testid="extended-instructions-hint">
               El agente lee las instrucciones completas en cada respuesta: un
@@ -384,22 +366,13 @@ function PersonalNumberSection({
               ejemplo, conectado en modo coexistencia con la app).
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="Este WhatsApp también es mi número personal"
             data-testid="personal-number-switch"
             onClick={() => void onSave({ sharedPersonalNumber: !enabled })}
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent>
@@ -440,22 +413,13 @@ function ReceiptTagSection({
               la Bandeja y registrar esos pagos.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="Etiquetar las conversaciones con comprobantes de pago"
             data-testid="receipt-tag-switch"
             onClick={() => void onSave({ tagPaymentReceipts: !enabled })}
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent>
@@ -503,22 +467,13 @@ function VideoReadingSection({
               comprobante grabado) y responde según lo que se ve.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="El agente mira los videos del cliente"
             data-testid="read-videos-switch"
             onClick={() => void onSave({ readVideos: !enabled })}
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent>

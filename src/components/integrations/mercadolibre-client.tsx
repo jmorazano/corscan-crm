@@ -6,6 +6,7 @@ import { Building2, ExternalLink, Link2, RefreshCw, Unplug } from "lucide-react"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 
 /**
  * Página de la integración Mercado Libre (025): conexión OAuth, estado de la
@@ -271,23 +272,14 @@ function AgentCard({
               deja para que confirmes el horario. Nunca inventa propiedades ni da la dirección exacta.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="El agente ofrece estas publicaciones"
             data-testid="meli-agent-switch"
             disabled={!data.canManage}
             onClick={() => void toggle()}
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
     </Card>

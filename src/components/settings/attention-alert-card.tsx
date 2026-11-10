@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { ATTENTION_MAX_MINUTES, ATTENTION_MIN_MINUTES } from "@/lib/team-attention";
 
 type Settings = { alertEnabled: boolean; alertMinutes: number; ownerHasPush: boolean };
@@ -74,9 +75,8 @@ export function AttentionAlertCard() {
               espera.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="Aviso cuando un cliente espera"
             data-testid="attention-alert-switch"
             disabled={!settings || saving}
@@ -86,16 +86,8 @@ export function AttentionAlertCard() {
                 alertMinutes: Number.isFinite(parsedMinutes) ? parsedMinutes : 15,
               })
             }
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent className="space-y-3">

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 
 type Settings = {
   enabled: boolean;
@@ -96,22 +97,13 @@ export function FollowUpSection() {
               (a las 2 h y a las 20 h), solo cuando quedó esperando una respuesta.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
+          <Switch
+            checked={enabled}
             aria-label="Seguimiento automático"
             data-testid="follow-up-switch"
             onClick={() => void save({ enabled: !enabled })}
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

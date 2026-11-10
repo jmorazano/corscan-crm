@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useSpreadsheetPicker } from "@/components/integrations/google-picker";
 
 /**
@@ -388,9 +389,8 @@ function ReceiptsCard({
               nunca entran a la conversación.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={receipts.enabled}
+          <Switch
+            checked={receipts.enabled}
             aria-label="Anotar comprobantes"
             data-testid="gs-receipts-switch"
             disabled={busy || !receipts.spreadsheetId}
@@ -400,16 +400,8 @@ function ReceiptsCard({
                 receipts.enabled ? "Ya no se anotan comprobantes." : "Se anotan los comprobantes."
               )
             }
-            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-              receipts.enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                receipts.enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            className="mt-1"
+          />
         </div>
       </CardHeader>
       <CardContent className="space-y-4 px-5 pb-5">

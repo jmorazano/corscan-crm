@@ -11,6 +11,7 @@ import { contactHandle } from "@/lib/instagram/messaging";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { TagEditor } from "@/components/tags/tag-editor";
 import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
 
@@ -369,9 +370,9 @@ export function ContactPanel({
                           : "Respondiendo"}
                 </p>
               </div>
-              <button
-                role="switch"
-                aria-checked={aiActive}
+              <Switch
+                size="sm"
+                checked={aiActive}
                 aria-label="IA en esta conversación"
                 disabled={!agentReady}
                 onClick={() => {
@@ -380,19 +381,7 @@ export function ContactPanel({
                     aiEnabled: !conversation.aiEnabled,
                   });
                 }}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors",
-                  aiActive ? "bg-brand" : "bg-border-strong",
-                  !agentReady && "cursor-not-allowed opacity-60"
-                )}
-              >
-                <span
-                  className={cn(
-                    "h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-                    aiActive ? "translate-x-4" : "translate-x-0"
-                  )}
-                />
-              </button>
+              />
             </div>
 
             {!agentReady && (

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 
 /**
  * Ajustes → Asistentes (040, FR-023): el switch «Permitir asistentes
@@ -211,25 +211,14 @@ export function AssistantsSettingsClient() {
             {view.updatedAt && ` Último cambio: ${fmt(view.updatedAt)}${view.updatedBy ? ` por ${view.updatedBy}` : ""}.`}
           </p>
         </div>
-        <button
-          role="switch"
-          aria-checked={view.enabled}
+        <Switch
+          size="sm"
+          checked={view.enabled}
           aria-label="Permitir asistentes externos"
           disabled={saving}
           onClick={() => void toggle()}
-          className={cn(
-            "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors",
-            view.enabled ? "bg-brand" : "bg-border-strong",
-            saving && "opacity-60"
-          )}
-        >
-          <span
-            className={cn(
-              "h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-              view.enabled ? "translate-x-4" : "translate-x-0"
-            )}
-          />
-        </button>
+          className="mt-0.5"
+        />
       </div>
 
       {error && (
