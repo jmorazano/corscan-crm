@@ -200,6 +200,49 @@ export async function postGuardedText(o: GuardedTextOptions): Promise<GuardedTex
   }
 }
 
+/**
+ * 051: GET protegido para feeds de texto (calendarios iCal). MISMO socket
+ * que `postGuardedText`: anti-SSRF sobre la IP resuelta, 3xx rechazados,
+ * tope de bytes, deadline único, `agent: false` y el `sandbox` que lanza
+ * antes de cualquier I/O. La URL puede llevar una llave (`?t=`): jamás se
+ * loguea ni vuelve en un error (los `McpError` solo llevan código y status).
+ */
+export type GuardedGetOptions = {
+  endpointUrl: string;
+  headers?: Record<string, string>;
+  accept: string;
+  allowedContentTypes: readonly string[];
+  timeoutMs: number;
+  maxResponseBytes: number;
+  sandbox: boolean;
+  request?: McpRequestFn;
+};
+
+export async function getGuardedText(o: GuardedGetOptions): Promise<GuardedTextResult> {
+  if (o.sandbox) throw new McpError("sandbox_violation");
+  const url = checkedUrl(o.endpointUrl);
+  const done = await acquire(o.timeoutMs);
+  try {
+    return await send(
+      url,
+      null,
+      {
+        method: "GET",
+        headers: o.headers ?? {},
+        contentType: "",
+        accept: o.accept,
+        allowedContentTypes: o.allowedContentTypes,
+        timeoutMs: o.timeoutMs,
+        maxResponseBytes: o.maxResponseBytes,
+        ...(o.request ? { request: o.request } : {}),
+      },
+      TEXT_READER
+    );
+  } finally {
+    done();
+  }
+}
+
 function checkedUrl(endpointUrl: string): URL {
   const check = checkEndpointSyntax(endpointUrl);
   if (!check.ok) {
@@ -213,6 +256,8 @@ function checkedUrl(endpointUrl: string): URL {
 /* ------------------------------------------------------------------ */
 
 type SendSpec = {
+  /** 051: GET sin cuerpo (feeds iCal). Por defecto POST. */
+  method?: "GET" | "POST";
   headers: Record<string, string>;
   contentType: string;
   accept: string;
@@ -291,7 +336,7 @@ const TEXT_READER: ResponseReader<GuardedTextResult> = {
 
 function send<T>(
   url: URL,
-  payload: Buffer,
+  payload: Buffer | null,
   spec: SendSpec,
   reader: ResponseReader<T>
 ): Promise<T> {
@@ -304,16 +349,16 @@ function send<T>(
     hostname: url.hostname,
     port: url.port === "" ? (insecure ? 80 : 443) : Number(url.port),
     path: `${url.pathname}${url.search}`,
-    method: "POST",
+    method: spec.method ?? "POST",
     headers: {
       ...spec.headers,
       // Nuestros headers van DESPUÉS: el caller no puede pisarlos.
-      "content-type": spec.contentType,
+      ...(payload ? { "content-type": spec.contentType } : {}),
       accept: spec.accept,
       // #12: sin compresión. Con `content-encoding` el tope de bytes deja de
       // significar algo (512 KB de gzip son ~500 MB en memoria).
       "accept-encoding": "identity",
-      "content-length": String(payload.byteLength),
+      ...(payload ? { "content-length": String(payload.byteLength) } : {}),
     },
     // El control real de SSRF: ocurre dentro de la resolución que consume el
     // socket. `servername` mantiene SNI = hostname.
@@ -436,7 +481,8 @@ function send<T>(
     if (typeof req.setTimeout === "function") {
       req.setTimeout(Math.max(1, spec.timeoutMs), () => finish(new McpError("timeout")));
     }
-    req.end(payload);
+    if (payload) req.end(payload);
+    else req.end();
   });
 }
 

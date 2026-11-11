@@ -16,6 +16,7 @@ import {
   isListingsAction,
   isGenericToolAction,
   isSheetsAction,
+  isStaysAction,
   isFormatArtifactReason,
   isMcpAction,
   isConcreteAvailabilityQuery,
@@ -91,6 +92,12 @@ import {
   renderListingsPromptSection,
   type ListingsContext,
 } from "@/server/meli/agent-tools";
+import {
+  executeStaysAction,
+  loadStaysContext,
+  renderStaysPromptSection,
+  type StaysContext,
+} from "@/server/ical/agent-tools";
 import { inBackground as inBackgroundAttention, openWaitForHandoff } from "@/server/attention/waits";
 
 /** 038: lo que queda en el hilo si el modelo insiste en callar por el formato. */
@@ -588,6 +595,20 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     ? renderListingsPromptSection(listings, { calendarBookable })
     : null;
 
+  // 051: calendarios de las unidades (iCal de Airbnb): también un snapshot
+  // LOCAL — el turno jamás sale a la red por esto. Un fallo no tumba el
+  // turno: el agente atiende sin ellos.
+  let stays: StaysContext | null = null;
+  try {
+    stays = await loadStaysContext(organizationId);
+  } catch (err) {
+    console.error(
+      "[agente] no se pudieron cargar los calendarios:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  const staysSection = stays ? renderStaysPromptSection(stays) : null;
+
   // Planillas de consulta (034): la COPIA local; las vencidas se refrescan
   // con un timeout corto (nunca en sandbox). Un fallo no tumba el turno: el
   // agente atiende sin planillas. Sus importes pueden salir (guarda de 021).
@@ -667,7 +688,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     const afterDelivery = async (delivered: boolean): Promise<void> => {
       if (delivered && extrasRaw?.opt_out === true) await agentOptOut();
     };
-    if (!mcp) {
+    // 051: con calendarios la guarda de promesas también corre: la
+    // ocupación es un espejo con demora y la reserva la confirma el sistema
+    // del complejo, nunca el agente.
+    if (!mcp && !stays) {
       await afterDelivery(
         await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive, details)
       );
@@ -676,8 +700,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     // 032: con reservas habilitadas el agente PUEDE ofrecer y hacer la
     // reserva; solo se vigila que no AFIRME que quedó hecha. Y si ya salió
     // bien una escritura en la conversación, afirmarlo es la verdad.
-    const canWrite = mcp.dynamic?.canWrite ?? false;
-    const wrote = wroteThisTurn || (mcp.dynamic?.wroteInConversation ?? false);
+    const canWrite = mcp?.dynamic?.canWrite ?? false;
+    const wrote = wroteThisTurn || (mcp?.dynamic?.wroteInConversation ?? false);
     const guarded =
       canWrite && wrote
         ? { text, replaced: false, match: null }
@@ -695,7 +719,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     let fallback: string | null = null;
     // 028: la decisión puede ser de la EMPRESA (un hotel informa precios y
     // otro no), no solo del proveedor: el contexto ya la resolvió.
-    if (mcp.hidePrices) {
+    if (mcp?.hidePrices) {
       const priced = stripPrices(finalText, { link: lastStayLink, allowedAmounts: turnAmounts });
       if (priced.replaced) {
         console.warn(
@@ -751,6 +775,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         mcpOverridesKb: mcpSection !== null,
         channel: conversation.kind === "instagram" ? "instagram" : "whatsapp",
         listingsSection,
+        staysSection,
         sheetsSection: sheets?.section ?? null,
         sheetsSearchable,
         receiptsToSheet: sheets?.receiptsEnabled ?? false,
@@ -836,7 +861,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     await appendLeadNote(organizationId, conversation.contactId, text);
   };
   const toolsAvailable =
-    mcpSection !== null || calendar !== null || listingsSection !== null || sheetsSearchable;
+    mcpSection !== null || calendar !== null || listingsSection !== null || staysSection !== null || sheetsSearchable;
 
   // 044: la etapa que el modelo mandó con su acción, o la que corresponde
   // por una regla fija. Pasa por las reglas de `canAutoMove` (solo avanza);
@@ -880,6 +905,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // datos normalizados + enlaces de ML validados), por si el modelo se cuelga.
   let lastListingsSummary: string | null = null;
   let listingsRounds = 0;
+  // 051: consultas a los calendarios de las unidades.
+  let staysRounds = 0;
+  let lastStaysSummary: string | null = null;
   // 034: búsquedas en planillas.
   let sheetsRounds = 0;
   const toolDeadline = Date.now() + TOOL_WALL_CLOCK_MS;
@@ -892,7 +920,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       const wantsListings = isListingsAction(action);
       const wantsGeneric = isGenericToolAction(action);
       const wantsSheets = isSheetsAction(action);
-      if (!wantsCalendar && !wantsMcp && !wantsListings && !wantsGeneric && !wantsSheets) break;
+      const wantsStays = isStaysAction(action);
+      if (!wantsCalendar && !wantsMcp && !wantsListings && !wantsGeneric && !wantsSheets && !wantsStays) break;
       // Presupuesto POR FAMILIA: que la agenda se haya agotado no le quita
       // vueltas al conector, ni al revés.
       if (wantsCalendar && calendarRounds >= MAX_TOOL_ROUNDS) break;
@@ -900,6 +929,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       if (wantsListings && listingsRounds >= MAX_TOOL_ROUNDS) break;
       if (wantsGeneric && genericRounds >= MAX_GENERIC_TOOL_ROUNDS) break;
       if (wantsSheets && sheetsRounds >= MAX_TOOL_ROUNDS) break;
+      if (wantsStays && staysRounds >= MAX_TOOL_ROUNDS) break;
       if (Date.now() >= toolDeadline) break;
 
       // 031: la nota del lead que vino con la herramienta.
@@ -925,6 +955,34 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         const next = await chatJson(aiConfig, AgentAction, messages);
         if (!next.ok) {
           console.error(`[agente] fallo del proveedor tras la planilla (raw): ${next.detail}`);
+          await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
+          return;
+        }
+        action = next.data;
+        continue;
+      }
+
+      // ---- Calendarios de las unidades (051) -----------------------------
+      if (isStaysAction(action)) {
+        staysRounds++;
+        if (!stays) {
+          // Pidió calendarios que esta empresa no tiene: degradar sin inventar.
+          await say("Dejame confirmar la disponibilidad y te escribo en un ratito.");
+          await applyHandoff(conversationId, organizationId, "modelo");
+          return;
+        }
+        const out = executeStaysAction(stays, action);
+        if (out.clientSummary) lastStaysSummary = out.clientSummary;
+        if (out.link) lastStayLink = out.link;
+        // Como el conector: el resultado es un DATO, entra como usuario.
+        messages.push({ role: "user", content: out.toolText });
+        const next = await chatJson(aiConfig, AgentAction, messages);
+        if (!next.ok) {
+          console.error(`[agente] fallo del proveedor tras los calendarios (raw): ${next.detail}`);
+          if (lastStaysSummary) {
+            await say(lastStaysSummary);
+            return;
+          }
           await applyHandoff(conversationId, organizationId, "error", friendlyProviderError(next));
           return;
         }
@@ -1216,7 +1274,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       continue;
     }
 
-    const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds > 0;
+    const usedTools = calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds + staysRounds > 0;
     if (!promiseRetried && toolsAvailable && !usedTools && announcesLookup(conversationalText(action))) {
       promiseRetried = true;
       console.warn(`[agente] promesa de consulta sin consultar en ${conversation.id}: se le pide que consulte`);
@@ -1244,7 +1302,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // peor) y pasa a atención humana con aviso, para que una persona consulte.
   if (
     promiseRetried &&
-    calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds === 0 &&
+    calendarRounds + mcpRounds + listingsRounds + genericRounds + sheetsRounds + staysRounds === 0 &&
     announcesLookup(conversationalText(action))
   ) {
     if (action.action === "update_lead") await saveLeadNote(action.note);
@@ -1290,6 +1348,17 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (isSheetsAction(action)) {
     await say("Dejame confirmarlo con el equipo y te escribo enseguida.");
     await applyHandoff(conversationId, organizationId, "modelo", "pidió más búsquedas en planillas de las que podía hacer en un turno");
+    return;
+  }
+
+  // 051: agotadas las consultas a los calendarios, lo último seguro.
+  if (isStaysAction(action)) {
+    if (lastStaysSummary) {
+      await say(lastStaysSummary);
+      return;
+    }
+    await say("Estoy revisando la disponibilidad y te confirmo en un ratito.");
+    await applyHandoff(conversationId, organizationId, "modelo");
     return;
   }
 

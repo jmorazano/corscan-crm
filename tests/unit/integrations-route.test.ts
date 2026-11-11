@@ -52,6 +52,14 @@ vi.mock("@/server/meli/integration", () => ({
   },
 }));
 
+// 051: calendarios de Airbnb — la tarjeta está siempre (sin app del operador).
+vi.mock("@/server/ical/integration", () => ({
+  getIcalView: (org: string) => {
+    expect(org).toBe("org_1");
+    return Promise.resolve({ agentEnabled: true, bookingUrl: null, units: [] });
+  },
+}));
+
 // 034: Google Sheets, conexión aparte de Calendar.
 vi.mock("@/server/sheets/integration", () => ({
   getSheetsIntegrationView: (org: string) => {
@@ -156,7 +164,18 @@ describe("GET /api/integrations", () => {
     const { GET } = await import("@/app/api/integrations/route");
     const res = await GET();
     const json = (await res.json()) as { integrations: { key: string }[] };
-    expect(json.integrations.map((i) => i.key)).toEqual(["google_calendar", "google_sheets", "mercadolibre"]);
+    expect(json.integrations.map((i) => i.key)).toEqual([
+      "google_calendar",
+      "google_sheets",
+      "mercadolibre",
+      "airbnb_calendars",
+    ]);
+    // 051: siempre disponible; sin unidades, «no conectada».
+    expect(json.integrations.find((i) => i.key === "airbnb_calendars")).toMatchObject({
+      available: true,
+      connected: false,
+      status: null,
+    });
   });
 
   it("016: habilitado, aparece con su etiqueta y su host — jamás la URL completa", async () => {

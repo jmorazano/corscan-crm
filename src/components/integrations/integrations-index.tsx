@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, CalendarDays, Plug, Sheet } from "lucide-react";
+import { BedDouble, Building2, CalendarDays, Plug, Sheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +52,12 @@ const META: Record<
     icon: Building2,
     description:
       "El agente conoce tus publicaciones vigentes de Mercado Libre, ofrece opciones y junta los pedidos de visita.",
+  },
+  airbnb_calendars: {
+    href: "/integrations/airbnb-calendars",
+    icon: BedDouble,
+    description:
+      "El agente sabe qué unidades están libres leyendo el calendario de cada publicación de Airbnb, y manda tu enlace para reservar.",
   },
   mcp: {
     href: "/integrations/mcp",

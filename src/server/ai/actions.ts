@@ -230,6 +230,29 @@ export const AgentAction = z.discriminatedUnion("action", [
     ...LEAD_NOTE_FIELD,
   }),
   /**
+   * 051: disponibilidad de las unidades según los calendarios iCal (Airbnb)
+   * que cargó el propietario. Consulta el SNAPSHOT (nunca la red en el
+   * turno). Laxo como `search_stays`: rangos o entrada/salida sueltos,
+   * fechas ISO o dd/mm/aaaa; lo que falte lo pregunta el agente.
+   */
+  z.object({
+    action: z.literal("check_stays"),
+    check_in: z.string().trim().max(40).optional(),
+    check_out: z.string().trim().max(40).optional(),
+    ranges: z
+      .array(
+        z.object({
+          check_in: z.string().trim().max(40).optional(),
+          check_out: z.string().trim().max(40).optional(),
+        })
+      )
+      .max(10)
+      .optional()
+      .catch(undefined),
+    guests: z.coerce.number().int().min(1).max(100).optional().catch(undefined),
+    ...LEAD_NOTE_FIELD,
+  }),
+  /**
    * 034: búsqueda en la COPIA de una planilla de consulta (nunca la red en
    * el turno). Solo se ofrece cuando alguna planilla no entró completa.
    */
@@ -276,6 +299,13 @@ export function isMcpAction(
   return action.action === "search_stays" || action.action === "show_stay";
 }
 
+/** 051: consulta de los calendarios de las unidades. */
+export function isStaysAction(
+  action: AgentActionType
+): action is Extract<AgentActionType, { action: "check_stays" }> {
+  return action.action === "check_stays";
+}
+
 /** 032: herramienta GENÉRICA del conector (lo que el servidor publique). */
 export function isGenericToolAction(
   action: AgentActionType
@@ -296,6 +326,10 @@ export function isConcreteAvailabilityQuery(action: AgentActionType): boolean {
   if (action.action === "use_tool") {
     const a = action.args ?? {};
     return Boolean(a.check_in && a.check_out);
+  }
+  if (action.action === "check_stays") {
+    if (action.check_in && action.check_out) return true;
+    return (action.ranges ?? []).some((r) => r.check_in && r.check_out);
   }
   if (action.action !== "search_stays") return false;
   if (action.check_in && action.check_out) return true;

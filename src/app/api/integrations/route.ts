@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/api";
 import { isGoogleIntegrationConfigured, isMeliConfigured } from "@/lib/env";
 import { getCalendarIntegrationView } from "@/server/calendar/integration";
+import { getIcalView } from "@/server/ical/integration";
 import { getMcpIntegrationView } from "@/server/mcp/integration";
 import { getMeliView } from "@/server/meli/integration";
 import { getSheetsIntegrationView } from "@/server/sheets/integration";
@@ -12,12 +13,14 @@ export const dynamic = "force-dynamic";
  * por integración soportada. Hoy: Google Calendar. Sin tokens, jamás.
  */
 export const GET = withAuth(async (session) => {
-  const [gc, mcp, meli, sheets] = await Promise.all([
+  const [gc, mcp, meli, sheets, ical] = await Promise.all([
     getCalendarIntegrationView(session.organizationId),
     getMcpIntegrationView(session.organizationId),
     getMeliView(session.organizationId),
     getSheetsIntegrationView(session.organizationId),
+    getIcalView(session.organizationId),
   ]);
+  const icalUnits = ical.units.length;
   return Response.json({
     integrations: [
       {
@@ -46,6 +49,21 @@ export const GET = withAuth(async (session) => {
         connected: meli !== null,
         status: meli?.status ?? null,
         accountEmail: meli?.nickname ?? null,
+      },
+      // 051: calendarios de Airbnb. Sin app del operador ni env: siempre
+      // disponible; «conectada» = al menos una unidad cargada.
+      {
+        key: "airbnb_calendars",
+        name: "Calendarios de Airbnb",
+        available: true,
+        connected: icalUnits > 0,
+        status:
+          icalUnits === 0
+            ? null
+            : ical.units.some((u) => u.lastError === "link_revoked")
+              ? "reconnect_required"
+              : "connected",
+        accountEmail: icalUnits > 0 ? `${icalUnits} ${icalUnits === 1 ? "unidad" : "unidades"}` : null,
       },
       // 016 (FR-001): a diferencia de Google Calendar, esta tarjeta NO la ven
       // todas las empresas. La habilita el super admin empresa por empresa, y

@@ -43,5 +43,9 @@ export async function register(): Promise<void> {
     // las concilia y avisa al propietario si la empresa lo encendió).
     const { startAttentionTicker } = await import("./server/attention/sweep");
     startAttentionTicker();
+    // 051: calendarios iCal de las unidades (cada minuto mira cuáles tienen
+    // más de 15 min sin leer; de a una y espaciadas).
+    const { startIcalTicker } = await import("./server/ical/sync");
+    startIcalTicker();
   }
 }

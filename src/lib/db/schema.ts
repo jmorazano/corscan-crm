@@ -2074,3 +2074,78 @@ export const assistantAccessLog = pgTable(
   },
   (t) => [index("assistant_access_log_org_created_idx").on(t.organizationId, t.createdAt)]
 );
+
+/* ============================================================
+ * Calendarios iCal de alquileres (051, constitución 1.16.0 cat. 7)
+ * ============================================================ */
+
+/**
+ * Ajustes por empresa de los calendarios iCal (051): si el agente los
+ * consulta y el enlace PROPIO de reservas del complejo (puede llevar
+ * `{entrada}`, `{salida}` y `{huespedes}`). Las unidades van aparte.
+ */
+export const icalIntegration = pgTable(
+  "ical_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    agentEnabled: boolean("agent_enabled").notNull().default(true),
+    bookingUrl: text("booking_url"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ical_integration_org_uq").on(t.organizationId)]
+);
+
+/** Rango de noches ocupadas: `from` inclusivo, `to` = día de salida (exclusivo). */
+export type IcalBusyRange = { from: string; to: string };
+
+/**
+ * Una unidad (cabaña, departamento) con el enlace `.ics` que exporta el
+ * proveedor (Airbnb) y el SNAPSHOT de su última lectura (051). El enlace es
+ * credencial (lleva la llave del feed): cifrado, jamás vuelve al cliente.
+ * Del feed se guardan SOLO fechas: el texto de los eventos se descarta.
+ * El turno del agente lee esta tabla, nunca la red.
+ */
+export const icalUnit = pgTable(
+  "ical_unit",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    capacity: integer("capacity").notNull(),
+    description: text("description"),
+    /** Enlace propio de reservas de ESTA unidad (pisa el general). */
+    bookingUrl: text("booking_url"),
+    icalUrlCipher: text("ical_url_cipher").notNull(),
+    icalUrlIv: text("ical_url_iv").notNull(),
+    icalUrlTag: text("ical_url_tag").notNull(),
+    /** Id de la publicación (sale de la URL): una unidad por publicación. */
+    listingId: text("listing_id").notNull(),
+    /** Host del feed (airbnb.com.ar…), para mostrarlo sin la llave. */
+    feedHost: text("feed_host").notNull(),
+    tokenLast4: text("token_last4"),
+    position: integer("position").notNull().default(0),
+    busyRanges: jsonb("busy_ranges").$type<IcalBusyRange[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Último día que cubre el feed (último fin de evento), o null. */
+    horizonTo: text("horizon_to"),
+    /** Último intento de lectura (bueno o malo). */
+    fetchedAt: timestamp("fetched_at"),
+    /** Última lectura buena: el snapshot vale desde acá. */
+    lastOkAt: timestamp("last_ok_at"),
+    /** Código propio (nunca texto del proveedor); null = la última anduvo. */
+    lastError: text("last_error"),
+    contentHash: text("content_hash"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ical_unit_org_listing_uq").on(t.organizationId, t.listingId),
+    index("ical_unit_org_position_idx").on(t.organizationId, t.position),
+    index("ical_unit_fetched_idx").on(t.fetchedAt),
+  ]
+);

@@ -50,6 +50,17 @@ export const PRIVACY_HEADING = "PRIVACIDAD Y HONESTIDAD";
 export const PERSONAL_NUMBER_MARKER = "NÚMERO PERSONAL DEL DUEÑO";
 
 /* ============================================================
+ * Marcadores propios de 051 (definidos acá, importados por su dueño)
+ * ============================================================ */
+
+/**
+ * Sección de los calendarios de las unidades (051) en el system prompt. El
+ * ai-mock despacha por esta literal; un nombre de unidad que la contenga se
+ * apropiaría del turno, por eso el saneo la remueve.
+ */
+export const STAYS_MARKER = "DISPONIBILIDAD DE LAS UNIDADES";
+
+/* ============================================================
  * Marcadores de las features anteriores (copiados de su fuente)
  * ============================================================ */
 
@@ -87,6 +98,7 @@ export const SYSTEM_MARKERS: readonly string[] = [
   PERSONAL_NUMBER_MARKER,
   PRIVACY_HEADING,
   LISTINGS_MARKER,
+  STAYS_MARKER,
   FENCE_CLOSE_PREFIX,
   FENCE_OPEN_PREFIX,
   TRANSACTIONAL_MARKER_LITERAL,

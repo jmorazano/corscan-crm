@@ -1,7 +1,30 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.14.0 → 1.15.0
+Versión: 1.15.0 → 1.16.0
+
+Cambios (feature 051-ical-availability, 11-nov-2026) — MINOR:
+  - Principio II: nueva categoría 7 de dependencias permitidas: CALENDARIOS
+    iCal EXPORTADOS POR UN PROVEEDOR DE ALQUILERES, solo lectura, por
+    empresa (hoy solo Airbnb). A diferencia de la categoría 5, la URL la
+    carga el PROPIETARIO de la empresa (no el super admin): por eso los
+    hosts quedan en una allowlist fija por proveedor en el código, además
+    del anti-SSRF sobre la IP resuelta. La URL es credencial (lleva la
+    llave del feed): cifrada, jamás al cliente ni a logs. Del feed se
+    guardan SOLO fechas (el texto de los eventos se descarta: puede traer
+    datos del huésped). El turno del agente lee un snapshot de la base,
+    jamás la red; el sandbox nunca sale. «Seis categorías» pasa a «siete» y
+    la lista de adaptadores suma el de iCal.
+  - Motivación: pedido de Hernán (Altos de la Ciudad) para Bosque Douglas,
+    cuyo sistema propio no tiene API: el channel manager bloquea en Airbnb
+    lo vendido por cualquier canal, así que el calendario exportado es un
+    espejo de la ocupación. Decisiones del dueño (11-nov-2026): MiniHotel
+    descartado, carga el propietario, enlace propio del complejo para
+    reservar, unidades nombradas una por una.
+  - Plantillas: sin cambios. CLAUDE.md: mapa del código (051) al
+    implementar.
+
+Versión anterior: 1.14.0 → 1.15.0
 
 Cambios (feature 046-assistant-tag-contacts, 29-oct-2026) — MINOR:
   - Principio I, regla «Acceso entrante de asistentes del usuario»,
@@ -523,11 +546,37 @@ dependencias externas en runtime es CERRADA:
      (g) el self-test y los mocks JAMÁS alcanzan un SMTP real; (h) un fallo
      del correo no revela si una cuenta existe ni tumba el login ni ningún
      otro flujo.
+  7. **Calendarios iCal exportados por un proveedor de alquileres** (desde
+     1.16.0; el primero: Airbnb). El enlace `.ics` que el propio proveedor
+     ofrece para sincronizar la disponibilidad de una publicación (RFC 5545),
+     del que el agente obtiene SOLO qué noches están ocupadas. Condiciones NO
+     negociables: (a) sin calendarios el producto funciona completo y el
+     agente atiende con su conocimiento propio; (b) los carga el PROPIETARIO
+     de la empresa, unidad por unidad, y puede quitarlos cuando quiera; (c)
+     el host debe estar en una allowlist FIJA por proveedor definida en el
+     código (hoy los dominios de Airbnb), solo HTTPS —salvo loopback bajo el
+     gate de mocks del self-test—, sin userinfo, con la ruta de exportación
+     del proveedor; además se valida contra SSRF sobre la IP resuelta al
+     guardar y en cada lectura, con 3xx rechazados, timeout, tope de tamaño
+     y frecuencia acotada (lecturas espaciadas, nunca en ráfaga); (d) la URL
+     es credencial —lleva la llave del feed—: cifrada en reposo
+     (AES-256-GCM), jamás al cliente, a un log ni a un mensaje de error; (e)
+     SOLO LECTURA: el CRM nunca publica un calendario propio ni escribe en el
+     proveedor; (f) del feed se guardan únicamente rangos de fechas: el
+     texto de los eventos (que puede traer datos del huésped) se descarta al
+     parsear y nunca llega al agente; (g) el turno del agente lee el
+     snapshot guardado en la base y jamás sale a la red; el sandbox del
+     Laboratorio nunca dispara una lectura; (h) la ocupación es un espejo con
+     demora: el agente informa disponibilidad pero jamás afirma una reserva,
+     y una unidad sin lectura reciente no se ofrece; (i) un feed caído o
+     inválido degrada —se conserva el último dato bueno con su antigüedad— y
+     jamás tumba el turno, la ingesta ni el envío; (j) se aísla tras un
+     adaptador dedicado y el instalador NO lo necesita.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), email de
   marketing o masivo y SDK/API de proveedores de email (el correo
   transaccional por SMTP estándar entra SOLO por la categoría 6), Stripe u
   otro billing. Cualquier feature que los requiera queda fuera del alcance de
-  v1. Cualquier servicio externo que no encaje en las seis categorías
+  v1. Cualquier servicio externo que no encaje en las siete categorías
   anteriores también queda fuera.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta y (opcional) un token de OpenRouter y un servidor SMTP. Nada más.
@@ -537,7 +586,8 @@ dependencias externas en runtime es CERRADA:
   (cliente Graph API propio; adaptador LLM; adaptador OAuth/REST de Google;
   adaptador OAuth/REST de Mercado Libre; transporte MCP genérico + perfil por
   proveedor; adaptador XML de MiniHotel sobre el mismo transporte; adaptador
-  SMTP de correo) para no acoplar el dominio a ellas.
+  SMTP de correo; adaptador iCal de calendarios de alquileres) para no
+  acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -741,4 +791,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.15.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-29
+**Version**: 1.16.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-11-11

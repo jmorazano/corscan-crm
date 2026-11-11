@@ -255,6 +255,12 @@ export function buildAgentSystemPrompt(input: {
    * Habilita `search_listings` / `show_listing` / `request_visit`.
    */
   listingsSection?: string | null;
+  /**
+   * 051: sección de los calendarios de las unidades (la arma
+   * `renderStaysPromptSection`). Solo con unidades leídas. Habilita
+   * `check_stays`.
+   */
+  staysSection?: string | null;
   /** 025: el WhatsApp es también el celular personal del dueño. */
   sharedPersonalNumber?: boolean;
   /**
@@ -304,7 +310,7 @@ export function buildAgentSystemPrompt(input: {
   const { profile } = input;
   const sheetsSearch = Boolean(input.sheetsSection && input.sheetsSearchable);
   const hasTools = Boolean(
-    input.mcpSection || input.listingsSection || input.calendarSection || sheetsSearch
+    input.mcpSection || input.listingsSection || input.staysSection || input.calendarSection || sheetsSearch
   );
   const stageNames = input.stages.map((s) => s.name).join(" | ");
   const fullStages = input.stages.every((s) => s.id && s.kind && typeof s.position === "number")
@@ -341,6 +347,7 @@ export function buildAgentSystemPrompt(input: {
     calendar,
     input.mcpSection ?? null,
     input.listingsSection ?? null,
+    input.staysSection ?? null,
     input.sheetsSection ?? null,
     input.contact ? contactSection(input.contact.name, input.contact.source) : null,
     input.originSection ?? null,
@@ -389,6 +396,11 @@ export function buildAgentSystemPrompt(input: {
             '- {"action":"request_visit","listing":"MLA123…","when":"...","reply":"..."} — anotar un pedido de visita y pasárselo a una persona para que confirme el horario (acepta "contact_name").',
           ]
         : []),
+      ...(input.staysSection
+        ? [
+            '- {"action":"check_stays","ranges":[{"check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD"}],"guests":4} — consultar qué unidades están libres en esas fechas (check_out = día de salida; hasta 3 rangos). Te respondo con las libres y vos le contestás al cliente.',
+          ]
+        : []),
       ...(calendar
         ? [
             '- {"action":"check_availability","date":"YYYY-MM-DD"} — consultar horarios libres de la agenda (date opcional). Te respondo con los horarios y vos volvés a contestar.',
@@ -406,7 +418,7 @@ export function buildAgentSystemPrompt(input: {
         : []),
       ...(hasTools
         ? [
-            '- Las consultas (search_stays, show_stay, use_tool, search_listings, show_listing, check_availability, search_sheet) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
+            '- Las consultas (search_stays, show_stay, use_tool, search_listings, show_listing, check_stays, check_availability, search_sheet) aceptan además "lead_note":"..." para guardar la nota del lead en el mismo paso, sin dejar de consultar.',
           ]
         : []),
       "Reglas duras:",
@@ -449,6 +461,11 @@ export function buildAgentSystemPrompt(input: {
       ...(input.listingsSection
         ? [
             "- Si el cliente busca una propiedad → PRIMERO search_listings; jamás ofrezcas propiedades, precios ni características que no te haya devuelto la herramienta.",
+          ]
+        : []),
+      ...(input.staysSection
+        ? [
+            "- Si el cliente pregunta si hay lugar en fechas concretas → PRIMERO check_stays; nombrá las unidades libres una por una y jamás digas que una unidad quedó reservada.",
           ]
         : []),
       ...(calendar

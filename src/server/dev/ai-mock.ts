@@ -11,6 +11,7 @@ import {
   LISTINGS_MARKER,
   MCP_MARKER,
   PERSONAL_NUMBER_MARKER,
+  STAYS_MARKER,
 } from "@/server/mcp/markers";
 import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
 import { STICKER_DESCRIBE_MARKER, TRAINER_IMAGE_READ_MARKER } from "@/lib/ai";
@@ -609,6 +610,10 @@ function aiMockCompletionCore(messages: InMessage[]): string {
   // quien está preguntando por una cabaña. El orden es el desempate.
   const stayTurn = dispatchStays(messages, system);
   if (stayTurn) return stayTurn;
+
+  // 051: calendarios de las unidades (iCal de Airbnb).
+  const icalTurn = dispatchIcalStays(messages, system);
+  if (icalTurn) return icalTurn;
 
   // Publicaciones de Mercado Libre (025): también antes que la agenda —
   // «visita» y «horario» no deben terminar en un turno de 30 minutos cuando
@@ -1397,6 +1402,84 @@ function dispatchListings(messages: InMessage[], system: string): string | null 
   });
 }
 
+
+/**
+ * 051: despacho determinista de los calendarios de las unidades. Con dos
+ * fechas (ISO o dd/mm/aaaa) en el mensaje del cliente consulta
+ * `check_stays`; con el resultado nombra las libres una por una y manda el
+ * enlace. «[E2E_STAYS_PROMESA]» afirma una reserva (la guarda la saca).
+ */
+function dispatchIcalStays(messages: InMessage[], system: string): string | null {
+  if (!system.includes(STAYS_MARKER)) return null;
+  const last = messages[messages.length - 1];
+  const lastText = last ? textOf(last.content) : "";
+  const clientTexts = messages
+    .filter((m) => m.role === "user")
+    .map((m) => textOf(m.content))
+    .filter((t) => !t.startsWith("[HERRAMIENTA]"));
+  const lastClient = clientTexts[clientTexts.length - 1] ?? "";
+
+  if (last?.role === "user" && lastText.startsWith("[HERRAMIENTA] DISPONIBILIDAD")) {
+    const free = lastText
+      .split("\n")
+      .filter((l) => l.startsWith("  • ") && !/^  • del /.test(l))
+      .map((l) => l.slice(4));
+    if (lastText.includes("LIBRES (")) {
+      const names = free.map((l) => l.split(" (hasta")[0]!.trim());
+      const link = lastText.match(/Enlace para reservar: (\S+)/)?.[1] ?? "";
+      if (lastClient.includes("[E2E_STAYS_PROMESA]")) {
+        return JSON.stringify({
+          action: "reply",
+          text: `¡Listo! Ya te reservé la ${names[0]}, quedó reservada a tu nombre.`,
+        });
+      }
+      return JSON.stringify({
+        action: "reply",
+        text: `¡Sí! Para esas fechas tengo libre: ${names.join(" y ")}.${link ? ` Podés reservar acá: ${link}` : ""}`,
+      });
+    }
+    if (lastText.includes("Fechas cercanas")) {
+      const alts = lastText
+        .split("\n")
+        .filter((l) => /^  • del /.test(l))
+        .map((l) => l.slice(4).split(" (enlace")[0]!.trim());
+      return JSON.stringify({
+        action: "reply",
+        text: `Para esas fechas no tengo lugar, pero sí ${alts.join("; ")}. ¿Te sirve alguna?`,
+      });
+    }
+    if (lastText.includes("NO PUDE CONFIRMAR")) {
+      return JSON.stringify({
+        action: "reply",
+        text: "Dejame confirmar la disponibilidad con el equipo y te escribo enseguida.",
+      });
+    }
+    return JSON.stringify({ action: "reply", text: "Para esas fechas no tengo lugar. ¿Querés probar otras?" });
+  }
+  if (last?.role !== "user" || lastText.startsWith("[")) {
+    if (!lastClient.includes("[E2E_STAYS")) return null;
+  }
+
+  const dates = [
+    ...lastClient.matchAll(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g),
+  ].map((m) => m[1]!);
+  const guests = lastClient.match(/(?:para|somos)\s+(\d{1,2})\b/i)?.[1] ?? lastClient.match(/\b(\d{1,2})\s*personas?\b/i)?.[1];
+  if (dates.length >= 2) {
+    return JSON.stringify({
+      action: "check_stays",
+      ranges: [{ check_in: dates[0], check_out: dates[1] }],
+      ...(guests ? { guests: Number(guests) } : {}),
+      lead_note: "Consulta de disponibilidad (E2E 051)",
+    });
+  }
+  if (/(lugar|disponib|libre)/i.test(foldText(lastClient))) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¡Hola! ¿Para qué fechas (entrada y salida) y cuántas personas son?",
+    });
+  }
+  return null;
+}
 
 /* ============================================================
  * 032: herramientas genéricas (flujo de reserva del mcp-mock)

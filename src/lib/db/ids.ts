@@ -51,6 +51,8 @@ const prefixes = {
   quickReply: "qr",
   attentionWait: "aw",
   attentionSettings: "as",
+  icalIntegration: "ici",
+  icalUnit: "icu",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
