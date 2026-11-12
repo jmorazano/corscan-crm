@@ -3,6 +3,7 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { schema } from "@/lib/db";
 import {
+  createOrganizationForExistingUser,
   createOrganizationWithAdmin,
   listOrganizations,
 } from "@/server/admin/organizations";
@@ -225,9 +226,15 @@ describe("createOrganizationWithAdmin", () => {
   });
 
   it("email duplicado (pre-chequeo) → duplicate_email sin efectos", async () => {
-    state.user.push({ id: "u_prev", email: "socio@empresa.com" });
+    state.user.push({ id: "u_prev", name: "Socio", email: "socio@empresa.com" });
     const result = await createOrganizationWithAdmin(INPUT, stubDb());
-    expect(result).toMatchObject({ ok: false, code: "duplicate_email" });
+    // La cuenta existente puede ser la titular (mismo dueño, varias empresas).
+    expect(result).toMatchObject({
+      ok: false,
+      code: "duplicate_email",
+      canAttach: true,
+      existingName: "Socio",
+    });
     expect(state.organization).toHaveLength(0);
     expect(signUpEmailMock).not.toHaveBeenCalled();
   });
@@ -282,6 +289,52 @@ describe("createOrganizationWithAdmin", () => {
     const result = await createOrganizationWithAdmin(INPUT, stubDb());
     expect(result).toMatchObject({ ok: false, code: "invalid" });
     expect(state.organization).toHaveLength(1);
+  });
+});
+
+describe("createOrganizationForExistingUser", () => {
+  const EXISTING = { organizationName: "Bosque Douglas", email: " Socio@Empresa.com " };
+
+  it("feliz: org sembrada + la cuenta existente queda como owner, sin tocar su contraseña", async () => {
+    state.user.push({ id: "u_prev", name: "Socio", email: "socio@empresa.com" });
+    state.organization.push({ id: "org_otra", name: "Altos", slug: "altos" });
+    state.member.push({ id: "mem_1", organizationId: "org_otra", userId: "u_prev", role: "owner" });
+
+    const result = await createOrganizationForExistingUser(EXISTING, stubDb());
+    expect(result).toEqual({
+      ok: true,
+      organizationId: expect.stringMatching(/^org_/),
+      slug: "bosque-douglas",
+      userId: "u_prev",
+    });
+    if (!result.ok) throw new Error("inalcanzable");
+    expect(state.pipelineStage).toHaveLength(5);
+    expect(state.agentProfile).toHaveLength(1);
+    expect(state.member).toHaveLength(2);
+    expect(state.member[1]).toMatchObject({
+      organizationId: result.organizationId,
+      userId: "u_prev",
+      role: "owner",
+    });
+    expect(state.user[0]).not.toHaveProperty("mustChangePassword");
+    expect(signUpEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("sin cuenta con ese correo → user_not_found sin crear la empresa", async () => {
+    const result = await createOrganizationForExistingUser(EXISTING, stubDb());
+    expect(result).toMatchObject({ ok: false, code: "user_not_found" });
+    expect(state.organization).toHaveLength(0);
+    expect(state.member).toHaveLength(0);
+  });
+
+  it("correo de plataforma (FR-016) → reserved_email sin efectos", async () => {
+    state.user.push({ id: "u_sa", name: "Dueña", email: "duena@agencia.com" });
+    const result = await createOrganizationForExistingUser(
+      { organizationName: "Bosque Douglas", email: "duena@agencia.com" },
+      stubDb()
+    );
+    expect(result).toMatchObject({ ok: false, code: "reserved_email" });
+    expect(state.organization).toHaveLength(0);
   });
 });
 

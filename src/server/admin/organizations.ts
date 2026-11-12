@@ -144,6 +144,13 @@ export type CreateOrganizationWithAdminResult =
       ok: false;
       code: "duplicate_email" | "reserved_email" | "invalid";
       message: string;
+      /** En `duplicate_email`: la cuenta ya existe y puede ser la titular de
+       * la empresa nueva (un mismo dueño con varias empresas) — la UI ofrece
+       * crearla con esa cuenta (`createOrganizationForExistingUser`). */
+      canAttach?: boolean;
+      /** Nombre de la cuenta existente, para que el super admin confirme
+       * que es la persona correcta antes de dársela. */
+      existingName?: string;
     };
 
 /**
@@ -174,7 +181,7 @@ export async function createOrganizationWithAdmin(
 
   // Validar email ANTES de tocar la base: el duplicado no deja efectos.
   const existing = await db
-    .select({ id: schema.user.id })
+    .select({ id: schema.user.id, name: schema.user.name })
     .from(schema.user)
     .where(eq(schema.user.email, email));
   if (existing.length > 0) {
@@ -182,6 +189,8 @@ export async function createOrganizationWithAdmin(
       ok: false,
       code: "duplicate_email",
       message: "Ya existe una cuenta con ese correo",
+      canAttach: true,
+      existingName: existing[0]?.name ?? undefined,
     };
   }
 
@@ -220,6 +229,7 @@ export async function createOrganizationWithAdmin(
         ok: false,
         code: "duplicate_email",
         message: "Ya existe una cuenta con ese correo",
+        canAttach: true,
       };
     }
     return { ok: false, code: "invalid", message };
@@ -243,6 +253,90 @@ export async function createOrganizationWithAdmin(
     .where(eq(schema.user.id, newUserId));
 
   return { ok: true, organizationId, slug };
+}
+
+export type CreateOrganizationForExistingUserInput = {
+  organizationName: string;
+  email: string;
+};
+
+export type CreateOrganizationForExistingUserResult =
+  | { ok: true; organizationId: string; slug: string; userId: string }
+  | {
+      ok: false;
+      code: "user_not_found" | "reserved_email" | "invalid";
+      message: string;
+    };
+
+/**
+ * Crea una empresa cuya titular es una cuenta que YA existe: el mismo dueño
+ * con varias empresas (018 lo resolvía solo sumándola a una empresa ya
+ * creada, con lo que el alta obligaba a inventar un admin descartable).
+ * La persona conserva su contraseña — no se crea ni se fuerza a cambiarla —
+ * y ve la empresa nueva en su rail de espacios de trabajo. Mismo orden
+ * defensivo que el alta con cuenta nueva: validar → org → membresía, con
+ * rollback compensatorio de la org creada en la request.
+ */
+export async function createOrganizationForExistingUser(
+  input: CreateOrganizationForExistingUserInput,
+  db: AdminDbConn = getDb()
+): Promise<CreateOrganizationForExistingUserResult> {
+  const email = input.email.trim().toLowerCase();
+
+  if (isSuperAdminEmail(email)) {
+    return {
+      ok: false,
+      code: "reserved_email",
+      message:
+        "Ese correo está reservado para la administración de la plataforma",
+    };
+  }
+
+  const [existing] = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.email, email));
+  if (!existing) {
+    return {
+      ok: false,
+      code: "user_not_found",
+      message: "No existe una cuenta con ese correo",
+    };
+  }
+
+  const { organizationId, slug, reused } = await provisionOrganization(
+    { name: input.organizationName },
+    db
+  );
+
+  try {
+    await db
+      .insert(schema.member)
+      .values({
+        id: newId("member"),
+        organizationId,
+        userId: existing.id,
+        role: "owner",
+      })
+      .onConflictDoNothing();
+  } catch (err) {
+    // La cuenta pudo borrarse entre el chequeo y el alta (FK): no dejamos
+    // una empresa sin dueño creada por esta request.
+    if (!reused) {
+      try {
+        await db
+          .delete(schema.organization)
+          .where(eq(schema.organization.id, organizationId));
+      } catch (rollbackErr) {
+        console.error("[admin] rollback de org falló:", rollbackErr);
+      }
+    }
+    const message =
+      err instanceof Error ? err.message : "No se pudo crear la empresa";
+    return { ok: false, code: "invalid", message };
+  }
+
+  return { ok: true, organizationId, slug, userId: existing.id };
 }
 
 export type AdminOrganization = {

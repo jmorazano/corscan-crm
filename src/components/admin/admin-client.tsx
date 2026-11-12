@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronRight, Plug, Plus } from "lucide-react";
+import { Building2, ChevronRight, Plug, Plus, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { McpAdminSummary } from "@/components/admin/mcp-admin-client";
 import { McpOverviewClient } from "@/components/admin/mcp-overview-client";
@@ -257,9 +257,18 @@ function CreateOrganizationDialog({
     organizationId: string;
     organization: string;
     email: string;
-    password: string;
+    /** null = la titular es una cuenta existente: conserva su contraseña. */
+    password: string | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** El correo ya tiene cuenta (un mismo dueño con varias empresas): se
+   * ofrece crear la empresa con esa cuenta como titular. */
+  /** Titular: cuenta nueva (contraseña temporal) o una que ya existe. */
+  const [ownerMode, setOwnerMode] = useState<"new" | "existing">("new");
+  const [attachOffer, setAttachOffer] = useState<{
+    email: string;
+    name: string | null;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
 
@@ -270,9 +279,52 @@ function CreateOrganizationDialog({
     setTempPassword("");
     setCreated(null);
     setError(null);
+    setAttachOffer(null);
+    setOwnerMode("new");
   }
 
   async function create() {
+    setSaving(true);
+    setError(null);
+    setAttachOffer(null);
+    const res = await fetch("/api/admin/organizations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        organizationName: orgName,
+        admin: { name: adminName, email: adminEmail, password: tempPassword },
+      }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: {
+          message?: string;
+          code?: string;
+          canAttach?: boolean;
+          existingName?: string;
+        };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo crear la empresa");
+      if (data?.error?.code === "duplicate_email" && data.error.canAttach) {
+        setAttachOffer({
+          email: adminEmail.trim().toLowerCase(),
+          name: data.error.existingName ?? null,
+        });
+      }
+      return;
+    }
+    const data = (await res.json()) as { organizationId: string };
+    setCreated({
+      organizationId: data.organizationId,
+      organization: orgName,
+      email: adminEmail,
+      password: tempPassword,
+    });
+    void onCreated();
+  }
+
+  async function createWithExisting(email: string) {
     setSaving(true);
     setError(null);
     const res = await fetch("/api/admin/organizations", {
@@ -280,7 +332,7 @@ function CreateOrganizationDialog({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         organizationName: orgName,
-        admin: { name: adminName, email: adminEmail, password: tempPassword },
+        admin: { email, attachExisting: true },
       }),
     }).catch(() => null);
     setSaving(false);
@@ -295,9 +347,10 @@ function CreateOrganizationDialog({
     setCreated({
       organizationId: data.organizationId,
       organization: orgName,
-      email: adminEmail,
-      password: tempPassword,
+      email: email.trim().toLowerCase(),
+      password: null,
     });
+    setAttachOffer(null);
     void onCreated();
   }
 
@@ -309,7 +362,7 @@ function CreateOrganizationDialog({
         reset();
       }}
       title="Nueva empresa"
-      description="La empresa nace lista (etapas y perfil de agente) con su admin inicial. Entregá vos la contraseña temporal: se muestra UNA sola vez y el titular deberá cambiarla en su primer ingreso."
+      description="La empresa nace lista (etapas y perfil de agente) con su titular. Con una cuenta nueva, entregá vos la contraseña temporal: se muestra UNA sola vez y el titular deberá cambiarla en su primer ingreso. Si ya tiene cuenta (otra empresa suya), usá esa: conserva su contraseña."
       size="lg"
       testId="admin-create-org"
       footer={
@@ -350,11 +403,15 @@ function CreateOrganizationDialog({
               disabled={
                 saving ||
                 !orgName.trim() ||
-                !adminName.trim() ||
                 !adminEmail.trim() ||
-                tempPassword.length < 8
+                (ownerMode === "new" &&
+                  (!adminName.trim() || tempPassword.length < 8))
               }
-              onClick={() => void create()}
+              onClick={() =>
+                void (ownerMode === "existing"
+                  ? createWithExisting(adminEmail)
+                  : create())
+              }
               data-testid="admin-create-org-submit"
             >
               <Building2 className="h-4 w-4" />
@@ -369,12 +426,20 @@ function CreateOrganizationDialog({
           <p className="font-medium text-[#3f6b52]">
             Empresa «{created.organization}» creada ✓
           </p>
-          <p className="mt-1 text-[#3f6b52]/90">
-            Guardá y compartí estas credenciales ahora (no se volverán a
-            mostrar):
-            <br />
-            <code>{created.email}</code> · contraseña <code>{created.password}</code>
-          </p>
+          {created.password === null ? (
+            <p className="mt-1 text-[#3f6b52]/90" data-testid="admin-create-org-attached">
+              La titular es la cuenta existente <code>{created.email}</code>:
+              entra con su contraseña de siempre y ve la empresa nueva en su
+              rail de espacios de trabajo.
+            </p>
+          ) : (
+            <p className="mt-1 text-[#3f6b52]/90">
+              Guardá y compartí estas credenciales ahora (no se volverán a
+              mostrar):
+              <br />
+              <code>{created.email}</code> · contraseña <code>{created.password}</code>
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -387,43 +452,126 @@ function CreateOrganizationDialog({
               autoFocus
             />
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-user-name">Nombre del admin</Label>
-              <Input
-                id="admin-user-name"
-                value={adminName}
-                onChange={(e) => setAdminName(e.target.value)}
-              />
+          <div className="space-y-1.5">
+            <Label>Titular</Label>
+            <div
+              className="flex flex-wrap gap-1"
+              data-testid="admin-create-org-owner-mode"
+            >
+              {(
+                [
+                  { value: "new", label: "Cuenta nueva" },
+                  { value: "existing", label: "Ya tiene cuenta" },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    setOwnerMode(m.value);
+                    setError(null);
+                    setAttachOffer(null);
+                  }}
+                  aria-pressed={ownerMode === m.value}
+                  data-testid={`admin-create-org-owner-${m.value}`}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs transition-colors md:py-1",
+                    ownerMode === m.value
+                      ? "border-brand bg-brand text-white"
+                      : "bg-card text-muted-foreground hover:border-brand/50"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
             </div>
+            {ownerMode === "existing" && (
+              <p className="text-xs text-muted-foreground">
+                Para el dueño que ya tiene otra empresa en esta instancia: queda
+                como propietario de esta, entra con su contraseña de siempre y
+                cambia de empresa desde su rail.
+              </p>
+            )}
+          </div>
+          <div
+            className={cn(
+              "grid gap-4",
+              ownerMode === "new" && "md:grid-cols-2"
+            )}
+          >
+            {ownerMode === "new" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-user-name">Nombre del admin</Label>
+                <Input
+                  id="admin-user-name"
+                  value={adminName}
+                  onChange={(e) => setAdminName(e.target.value)}
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label htmlFor="admin-user-email">Correo del admin</Label>
+              <Label htmlFor="admin-user-email">
+                {ownerMode === "new" ? "Correo del admin" : "Correo de su cuenta"}
+              </Label>
               <Input
                 id="admin-user-email"
                 type="email"
                 value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
+                onChange={(e) => {
+                  setAdminEmail(e.target.value);
+                  setAttachOffer(null);
+                }}
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="admin-user-password">Contraseña temporal</Label>
-            <div className="flex gap-2">
-              <Input
-                id="admin-user-password"
-                value={tempPassword}
-                onChange={(e) => setTempPassword(e.target.value)}
-                placeholder="mínimo 8 caracteres"
-              />
+          {ownerMode === "new" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-user-password">Contraseña temporal</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="admin-user-password"
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  placeholder="mínimo 8 caracteres"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setTempPassword(generateTempPassword())}
+                >
+                  Generar
+                </Button>
+              </div>
+            </div>
+          )}
+          {error && !attachOffer && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+          {attachOffer && (
+            <div
+              className="rounded-md border border-[#e6dcc4] bg-[#fbf7ec] p-3 text-sm"
+              data-testid="admin-create-org-attach-offer"
+            >
+              <p className="text-[#6b5a2e]">
+                <code>{attachOffer.email}</code>
+                {attachOffer.name ? <> ({attachOffer.name})</> : null} ya tiene
+                cuenta en esta instancia. Podés crear{" "}
+                <strong>{orgName.trim() || "la empresa"}</strong> con esa cuenta
+                como propietaria: conserva su contraseña y verá la empresa nueva
+                junto a las suyas. El nombre y la contraseña de arriba no se
+                usan.
+              </p>
               <Button
-                variant="outline"
-                onClick={() => setTempPassword(generateTempPassword())}
+                size="sm"
+                className="mt-2"
+                disabled={saving || !orgName.trim()}
+                onClick={() => void createWithExisting(attachOffer.email)}
+                data-testid="admin-create-org-attach"
               >
-                Generar
+                <UserPlus className="h-3.5 w-3.5" />
+                {saving ? "Creando…" : "Crear la empresa con esa cuenta"}
               </Button>
             </div>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          )}
         </div>
       )}
     </Dialog>

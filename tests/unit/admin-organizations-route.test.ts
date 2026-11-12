@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireSuperAdminMock = vi.fn();
 const createMock = vi.fn();
+const createExistingMock = vi.fn();
 const listMock = vi.fn();
 
 vi.mock("@/lib/auth/session", () => {
@@ -25,6 +26,8 @@ vi.mock("@/lib/auth/session", () => {
 
 vi.mock("@/server/admin/organizations", () => ({
   createOrganizationWithAdmin: (...args: unknown[]) => createMock(...args),
+  createOrganizationForExistingUser: (...args: unknown[]) =>
+    createExistingMock(...args),
   listOrganizations: (...args: unknown[]) => listMock(...args),
 }));
 
@@ -53,6 +56,7 @@ beforeEach(() => {
     email: "duena@agencia.com",
   });
   createMock.mockReset();
+  createExistingMock.mockReset();
   listMock.mockReset();
   listMock.mockResolvedValue([]);
 });
@@ -109,16 +113,84 @@ describe("POST /api/admin/organizations", () => {
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("email duplicado → 409 duplicate_email", async () => {
+  it("email duplicado → 409 duplicate_email con la oferta de usar esa cuenta", async () => {
     createMock.mockResolvedValue({
       ok: false,
       code: "duplicate_email",
       message: "Ya existe una cuenta con ese correo",
+      canAttach: true,
+      existingName: "Socio",
     });
     const res = await post(VALID_BODY);
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("duplicate_email");
+    const body = (await res.json()) as {
+      error: { code: string; canAttach: boolean; existingName: string };
+    };
+    expect(body.error).toMatchObject({
+      code: "duplicate_email",
+      canAttach: true,
+      existingName: "Socio",
+    });
+  });
+
+  it("titular existente: sin nombre ni contraseña → crea con esa cuenta", async () => {
+    createExistingMock.mockResolvedValue({
+      ok: true,
+      organizationId: "org_nueva",
+      slug: "bosque-douglas",
+      userId: "u_prev",
+    });
+    const res = await post({
+      organizationName: "Bosque Douglas",
+      admin: { email: "socio@empresa.com", attachExisting: true },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      organizationId: "org_nueva",
+      slug: "bosque-douglas",
+      attached: true,
+    });
+    expect(createExistingMock).toHaveBeenCalledWith({
+      organizationName: "Bosque Douglas",
+      email: "socio@empresa.com",
+    });
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("titular existente que no existe → 404 user_not_found", async () => {
+    createExistingMock.mockResolvedValue({
+      ok: false,
+      code: "user_not_found",
+      message: "No existe una cuenta con ese correo",
+    });
+    const res = await post({
+      organizationName: "Bosque Douglas",
+      admin: { email: "nadie@empresa.com", attachExisting: true },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("titular existente con correo de plataforma → 403 reserved_email", async () => {
+    createExistingMock.mockResolvedValue({
+      ok: false,
+      code: "reserved_email",
+      message: "Ese correo está reservado",
+    });
+    const res = await post({
+      organizationName: "Bosque Douglas",
+      admin: { email: "duena@agencia.com", attachExisting: true },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("usuario común no puede usar la variante de cuenta existente", async () => {
+    requireSuperAdminMock.mockRejectedValue(new ForbiddenError());
+    const res = await post({
+      organizationName: "Bosque Douglas",
+      admin: { email: "socio@empresa.com", attachExisting: true },
+    });
+    expect(res.status).toBe(403);
+    expect(createExistingMock).not.toHaveBeenCalled();
   });
 
   it("email reservado (FR-016) → 403 reserved_email", async () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, withSuperAdmin } from "@/lib/api";
 import {
+  createOrganizationForExistingUser,
   createOrganizationWithAdmin,
   listOrganizations,
 } from "@/server/admin/organizations";
@@ -19,14 +20,52 @@ const createSchema = z.object({
     email: z.string().trim().email(),
     // Min 8 server-side (D7): jamás se confía en el generador del cliente.
     password: z.string().min(8).max(128),
+    attachExisting: z.literal(false).optional(),
   }),
 });
 
+/** La titular es una cuenta que ya existe (mismo dueño, varias empresas):
+ * sin nombre ni contraseña — conserva la suya. */
+const existingOwnerSchema = z.object({
+  organizationName: z.string().trim().min(1).max(120),
+  admin: z.object({
+    email: z.string().trim().email(),
+    attachExisting: z.literal(true),
+  }),
+});
+
+const bodySchema = z.union([existingOwnerSchema, createSchema]);
+
 export const POST = withSuperAdmin(async (_ctx, req: Request) => {
-  const body = await parseBody(req, createSchema);
+  const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;
 
-  const result = await createOrganizationWithAdmin(body.data);
+  if (body.data.admin.attachExisting === true) {
+    const result = await createOrganizationForExistingUser({
+      organizationName: body.data.organizationName,
+      email: body.data.admin.email,
+    });
+    if (!result.ok) {
+      const status =
+        result.code === "user_not_found"
+          ? 404
+          : result.code === "reserved_email"
+            ? 403
+            : 422;
+      return apiError(status, result.code, result.message);
+    }
+    return Response.json({
+      organizationId: result.organizationId,
+      slug: result.slug,
+      attached: true,
+    });
+  }
+
+  const { organizationName, admin } = body.data as z.infer<typeof createSchema>;
+  const result = await createOrganizationWithAdmin({
+    organizationName,
+    admin: { name: admin.name, email: admin.email, password: admin.password },
+  });
   if (!result.ok) {
     const status =
       result.code === "duplicate_email"
@@ -34,7 +73,17 @@ export const POST = withSuperAdmin(async (_ctx, req: Request) => {
         : result.code === "reserved_email"
           ? 403
           : 422;
-    return apiError(status, result.code, result.message);
+    return apiError(
+      status,
+      result.code,
+      result.message,
+      result.code === "duplicate_email"
+        ? {
+            canAttach: result.canAttach === true,
+            ...(result.existingName ? { existingName: result.existingName } : {}),
+          }
+        : undefined
+    );
   }
   return Response.json({
     organizationId: result.organizationId,
