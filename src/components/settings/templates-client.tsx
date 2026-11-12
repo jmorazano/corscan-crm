@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Braces, RefreshCw, Trash2 } from "lucide-react";
+import { Braces, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import type { TemplateDto } from "@/lib/types";
 import {
   countVariables,
@@ -103,7 +103,7 @@ export function TemplatesClient() {
       </div>
       {syncMsg && <p className="text-xs text-muted-foreground">{syncMsg}</p>}
 
-      <CreateForm onCreated={() => void refetch()} />
+      <TemplateEditor onSaved={() => void refetch()} />
 
       <div className="space-y-3">
         {templates.map((t) => (
@@ -112,6 +112,11 @@ export function TemplatesClient() {
             template={t}
             onDeleted={(id) =>
               setTemplates((prev) => prev.filter((x) => x.id !== id))
+            }
+            onUpdated={(updated) =>
+              setTemplates((prev) =>
+                prev.map((x) => (x.id === updated.id ? updated : x))
+              )
             }
           />
         ))}
@@ -133,13 +138,53 @@ const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   paused: "pausada",
 };
 
+/** Campañas que bloquean el borrado o la edición, con enlace a cada una. */
+function CampaignLinks({
+  campaigns,
+}: {
+  campaigns: { id: string; name: string; status: string }[];
+}) {
+  return (
+    <ul className="flex flex-wrap gap-1.5 text-xs" data-testid="blocked-by">
+      {campaigns.map((c) => (
+        <li key={c.id}>
+          <a
+            href={`/campaigns?campaign=${encodeURIComponent(c.id)}`}
+            className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground hover:border-brand/60"
+          >
+            {c.name}
+            <span className="text-muted-foreground">
+              · {CAMPAIGN_STATUS_LABELS[c.status] ?? c.status}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** «13 nov, 14:05 h.» en la hora del navegador (24 h: sin «a. m.»). */
+function formatNextEdit(iso: string): string {
+  const when = new Date(iso).toLocaleString("es-AR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return `${when} h.`;
+}
+
 function TemplateRow({
   template: t,
   onDeleted,
+  onUpdated,
 }: {
   template: TemplateDto;
   onDeleted: (id: string) => void;
+  onUpdated: (updated: TemplateDto) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blockedBy, setBlockedBy] = useState<
@@ -175,6 +220,27 @@ function TemplateRow({
     onDeleted(t.id);
   }
 
+  if (editing) {
+    return (
+      <TemplateEditor
+        template={t}
+        onCancel={() => setEditing(false)}
+        onSaved={(updated) => {
+          setEditing(false);
+          if (updated) onUpdated(updated);
+        }}
+      />
+    );
+  }
+
+  const editBlocked = !t.edit.canEdit
+    ? `${t.edit.message ?? "No se puede editar ahora."}${
+        t.edit.nextEditAt
+          ? ` Podés editarla de nuevo desde el ${formatNextEdit(t.edit.nextEditAt)}`
+          : ""
+      }`
+    : null;
+
   return (
     <div
       data-testid="template-row"
@@ -200,24 +266,24 @@ function TemplateRow({
           </p>
         )}
         {error && <p className="text-xs text-destructive">{error}</p>}
-        {blockedBy.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5 text-xs" data-testid="blocked-by">
-            {blockedBy.map((c) => (
-              <li key={c.id}>
-                <a
-                  href={`/campaigns?campaign=${encodeURIComponent(c.id)}`}
-                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground hover:border-brand/60"
-                >
-                  {c.name}
-                  <span className="text-muted-foreground">
-                    · {CAMPAIGN_STATUS_LABELS[c.status] ?? c.status}
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
+        {blockedBy.length > 0 && <CampaignLinks campaigns={blockedBy} />}
+        {editBlocked && (
+          <p className="text-xs text-text-3" data-testid="edit-blocked">
+            {editBlocked}
+          </p>
         )}
-        <div className="pt-1">
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!t.edit.canEdit || deleting}
+            title={editBlocked ?? undefined}
+            onClick={() => setEditing(true)}
+            aria-label={`Editar plantilla ${t.name}`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Editar
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -248,18 +314,43 @@ function TemplateRow({
 const HEADER_IMAGE_MAX = 5 * 1024 * 1024;
 const HEADER_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
 
-function CreateForm({ onCreated }: { onCreated: () => void }) {
-  const [name, setName] = useState("");
-  const [language, setLanguage] = useState("es_MX");
-  const [category, setCategory] = useState<"UTILITY" | "MARKETING">("UTILITY");
-  const [body, setBody] = useState("");
+type BlockingCampaign = { id: string; name: string; status: string };
+
+/**
+ * Editor de plantilla (alta y, desde 052, edición). En edición el nombre y
+ * el idioma son de solo lectura (Meta no los cambia), la categoría se
+ * bloquea si está aprobada y el encabezado se conserva, reemplaza o quita.
+ */
+function TemplateEditor({
+  template,
+  onSaved,
+  onCancel,
+}: {
+  /** Presente = edición de esa plantilla. */
+  template?: TemplateDto;
+  onSaved: (updated?: TemplateDto) => void;
+  onCancel?: () => void;
+}) {
+  const editing = !!template;
+  const [name, setName] = useState(template?.name ?? "");
+  const [language, setLanguage] = useState(template?.language ?? "es_MX");
+  const [category, setCategory] = useState<"UTILITY" | "MARKETING">(
+    template?.category === "MARKETING" ? "MARKETING" : "UTILITY"
+  );
+  const [body, setBody] = useState(template?.body ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blockedBy, setBlockedBy] = useState<BlockingCampaign[]>([]);
   const [headerImage, setHeaderImage] = useState<File | null>(null);
+  const [removeExisting, setRemoveExisting] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [bindings, setBindings] = useState<string[]>([]);
+  const [bindings, setBindings] = useState<string[]>(
+    template?.variableBindings ?? []
+  );
   const fileInput = useRef<HTMLInputElement>(null);
+  const existingImage = template?.headerImageUrl ?? null;
+  const categoryLocked = template?.edit.categoryLocked ?? false;
 
   // El objectURL del preview se libera al reemplazarlo o desmontar.
   useEffect(() => {
@@ -293,6 +384,14 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
     [bindings, varCount]
   );
 
+  const headerMode: "keep" | "remove" | "replace" = headerImage
+    ? "replace"
+    : existingImage && removeExisting
+      ? "remove"
+      : "keep";
+  const previewImage =
+    imagePreview ?? (existingImage && !removeExisting ? existingImage : null);
+
   function pickImage(file: File | null) {
     setImageError(null);
     if (!file) {
@@ -314,82 +413,130 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
     setHeaderImage(file);
   }
 
-  async function create() {
+  async function save() {
+    if (
+      template?.status === "approved" &&
+      !window.confirm(
+        `«${template.name}» vuelve a revisión de Meta y, hasta que la apruebe, no se puede usar para campañas ni envíos. Meta permite editar una plantilla aprobada una vez por día (10 cada 30 días). ¿Guardar los cambios?`
+      )
+    ) {
+      return;
+    }
     setSaving(true);
     setError(null);
+    setBlockedBy([]);
     const form = new FormData();
-    form.set("name", name);
-    form.set("language", language);
     form.set("category", category);
     form.set("body", body);
     if (varCount > 0) form.set("variables", JSON.stringify(bindings));
-    if (headerImage) form.set("headerImage", headerImage);
-    const res = await fetch("/api/templates", {
-      method: "POST",
-      body: form,
-    }).catch(() => null);
+    if (editing) {
+      form.set("headerMode", headerMode);
+      if (headerImage) form.set("headerImage", headerImage);
+    } else {
+      form.set("name", name);
+      form.set("language", language);
+      if (headerImage) form.set("headerImage", headerImage);
+    }
+    const res = await fetch(
+      editing ? `/api/templates/${template.id}` : "/api/templates",
+      { method: editing ? "PATCH" : "POST", body: form }
+    ).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
       const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: { message?: string; campaigns?: BlockingCampaign[] };
       } | null;
-      setError(data?.error?.message ?? "No se pudo crear la plantilla");
+      setError(
+        data?.error?.message ??
+          (editing ? "No se pudo editar la plantilla" : "No se pudo crear la plantilla")
+      );
+      setBlockedBy(data?.error?.campaigns ?? []);
+      return;
+    }
+    if (editing) {
+      const data = (await res.json()) as { template: TemplateDto };
+      onSaved(data.template);
       return;
     }
     setName("");
     setBody("");
     setHeaderImage(null);
     if (fileInput.current) fileInput.current.value = "";
-    onCreated();
+    onSaved();
   }
 
   return (
-    <Card>
+    <Card data-testid={editing ? "template-editor" : undefined}>
       <CardHeader>
-        <CardTitle>Nueva plantilla</CardTitle>
+        <CardTitle>
+          {editing ? `Editar «${template.name}»` : "Nueva plantilla"}
+        </CardTitle>
         <CardDescription>
-          Escribí <code>{"{{"}</code> para insertar una variable (hasta{" "}
-          {MAX_TEMPLATE_VARIABLES}) y elegí su origen: nombre del contacto, su
-          teléfono, tu empresa o texto libre. Se envía a aprobación de Meta al
-          crearla.
+          {editing ? (
+            <>
+              El nombre y el idioma no se cambian (para eso, creá otra). Al
+              guardar vuelve a revisión de Meta
+              {template.status === "approved"
+                ? "; la categoría de una aprobada es fija y se puede editar una vez por día (10 cada 30 días)."
+                : "."}
+            </>
+          ) : (
+            <>
+              Escribí <code>{"{{"}</code> para insertar una variable (hasta{" "}
+              {MAX_TEMPLATE_VARIABLES}) y elegí su origen: nombre del contacto,
+              su teléfono, tu empresa o texto libre. Se envía a aprobación de
+              Meta al crearla.
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="tpl-name">Nombre</Label>
+                <Label htmlFor={editing ? `tpl-name-${template?.id}` : "tpl-name"}>Nombre</Label>
                 <Input
-                  id="tpl-name"
+                  id={editing ? `tpl-name-${template?.id}` : "tpl-name"}
                   placeholder="seguimiento_cotizacion"
                   value={name}
+                  disabled={editing}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="tpl-lang">Idioma</Label>
+                <Label htmlFor={editing ? `tpl-lang-${template?.id}` : "tpl-lang"}>Idioma</Label>
                 <select
-                  id="tpl-lang"
+                  id={editing ? `tpl-lang-${template?.id}` : "tpl-lang"}
                   value={language}
+                  disabled={editing}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
+                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm disabled:opacity-60 md:h-9"
                 >
-                  <option value="es_MX">es_MX</option>
-                  <option value="es">es</option>
-                  <option value="es_AR">es_AR</option>
-                  <option value="en_US">en_US</option>
+                  {[language, "es_MX", "es", "es_AR", "en_US"]
+                    .filter((l, i, all) => all.indexOf(l) === i)
+                    .map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="tpl-cat">Categoría</Label>
+                <Label htmlFor={editing ? `tpl-cat-${template?.id}` : "tpl-cat"}>Categoría</Label>
                 <select
-                  id="tpl-cat"
+                  id={editing ? `tpl-cat-${template?.id}` : "tpl-cat"}
                   value={category}
+                  disabled={categoryLocked}
+                  title={
+                    categoryLocked
+                      ? "Meta no permite cambiar la categoría de una plantilla aprobada"
+                      : undefined
+                  }
                   onChange={(e) =>
                     setCategory(e.target.value as "UTILITY" | "MARKETING")
                   }
-                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm md:h-9"
+                  className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm disabled:opacity-60 md:h-9"
                 >
                   <option value="UTILITY">UTILITY (seguimiento)</option>
                   <option value="MARKETING">MARKETING</option>
@@ -398,6 +545,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             </div>
 
             <BodyEditor
+              id={editing ? `tpl-body-${template?.id}` : "tpl-body"}
               value={body}
               onChange={setBody}
               error={variableError}
@@ -445,11 +593,32 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="tpl-image">Imagen de encabezado (opcional)</Label>
+              <Label htmlFor={editing ? `tpl-image-${template?.id}` : "tpl-image"}>
+                {editing && existingImage
+                  ? "Imagen de encabezado"
+                  : "Imagen de encabezado (opcional)"}
+              </Label>
+              {editing && existingImage && !headerImage && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-text-3">
+                  <span data-testid="header-image-state">
+                    {removeExisting
+                      ? "Se va a quitar la imagen actual."
+                      : "Se conserva la imagen actual (elegí otra para reemplazarla)."}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRemoveExisting((v) => !v)}
+                  >
+                    {removeExisting ? "Conservarla" : "Quitar imagen"}
+                  </Button>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInput}
-                  id="tpl-image"
+                  id={editing ? `tpl-image-${template?.id}` : "tpl-image"}
                   type="file"
                   accept="image/jpeg,image/png"
                   onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
@@ -480,12 +649,26 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button
-              disabled={saving || !name.trim() || !body.trim() || !!variableError}
-              onClick={() => void create()}
-            >
-              {saving ? "Enviando a Meta…" : "Crear y enviar a aprobación"}
-            </Button>
+            {blockedBy.length > 0 && <CampaignLinks campaigns={blockedBy} />}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={
+                  saving || !name.trim() || !body.trim() || !!variableError
+                }
+                onClick={() => void save()}
+              >
+                {saving
+                  ? "Enviando a Meta…"
+                  : editing
+                    ? "Guardar y enviar a revisión"
+                    : "Crear y enviar a aprobación"}
+              </Button>
+              {onCancel && (
+                <Button variant="outline" disabled={saving} onClick={onCancel}>
+                  Cancelar
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -495,7 +678,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             <TemplatePreview
               body={body}
               variableValues={previewValues}
-              headerImageUrl={imagePreview}
+              headerImageUrl={previewImage}
             />
             <p className="text-xs text-text-3">
               Formato admitido: *negrita*, _cursiva_, ~tachado~ y ```código```.
@@ -514,12 +697,14 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
  * origen por defecto (nombre del contacto para {{1}}, texto libre después).
  */
 function BodyEditor({
+  id,
   value,
   onChange,
   error,
   nextIndex,
   onPickOrigin,
 }: {
+  id: string;
   value: string;
   onChange: (next: string) => void;
   error: string | null;
@@ -591,7 +776,7 @@ function BodyEditor({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label htmlFor="tpl-body">Cuerpo</Label>
+        <Label htmlFor={id}>Cuerpo</Label>
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -625,13 +810,13 @@ function BodyEditor({
       <div className="relative">
         <Textarea
           ref={ref}
-          id="tpl-body"
+          id={id}
           rows={4}
           placeholder="Hola {{1}}, seguimos disponibles. ¿Retomamos tu cotización?"
           value={value}
           aria-autocomplete="list"
           aria-expanded={!!menu}
-          aria-controls="tpl-variable-menu"
+          aria-controls={`${id}-variable-menu`}
           onChange={(e) => {
             onChange(e.target.value);
             refreshMenu(e.target.value, e.target.selectionStart ?? e.target.value.length);
@@ -644,7 +829,7 @@ function BodyEditor({
         />
         {menu && (
           <div
-            id="tpl-variable-menu"
+            id={`${id}-variable-menu`}
             role="listbox"
             data-testid="template-variable-menu"
             className="absolute left-2 top-full z-20 mt-1 w-[min(100%,360px)] overflow-hidden rounded-md border border-border-strong bg-popover shadow-md"

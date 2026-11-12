@@ -841,6 +841,12 @@ export const template = pgTable(
     /** 009: origen de cada variable ({{i+1}} ↔ posición i). NULL = plantilla
      * anterior a la feature: conserva el flujo legado completo. */
     variableBindings: jsonb("variable_bindings").$type<string[] | null>(),
+    /** 052: marcas ISO de las ediciones hechas a la plantilla APROBADA (Meta:
+     * 1 cada 24 h, 10 cada 30 días). Solo se guardan las de los últimos 30. */
+    approvedEdits: jsonb("approved_edits")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

@@ -40,6 +40,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Campañas (runner, cupo 24h, elegibilidad) | `src/server/campaigns/` (runner at-most-once + quota con reserva + recipients) + `/api/campaigns` + `src/components/campaigns/` |
 | Import de contactos / tags / opt-out | `src/server/contacts-import.ts` + `src/lib/phone.ts` (wa_id, regla AR del 9) + `src/lib/import-columns.ts` + wizard en `src/components/contacts/` |
 | Plantillas de WhatsApp (alta, sync, borrado, preview/variables) | `src/server/whatsapp/templates.ts` + `src/lib/template-body.ts` (reglas puras compartidas con el editor) + `/api/templates` + `src/components/settings/templates-client.tsx` + `src/components/templates/template-preview.tsx` |
+| Editar plantillas (052) | reglas PURAS en `src/lib/template-edit.ts` (`templateEditability`: en revisión no; rechazada sin tope; aprobada 1 cada 24 h y 10 cada 30 días con `nextEditAt` y categoría fija; `editBlockingCampaigns`: en curso/pausada siempre, borrador solo si cambian los orígenes) · `template.approved_edits` jsonb (migración 0039) · `editTemplate` en `src/server/whatsapp/templates.ts` (Meta-primero: `POST /{wa_template_id}` con TODOS los componentes —la imagen conservada vuelve a subir—, después `GET /{id}?fields=status` y la fila; «No cambiaste nada» no gasta la edición; helpers compartidos con el alta `validateBindings`/`templateComponents`/`metaTemplateError`) · `PATCH /api/templates/[id]` multipart `withOwner` (`headerMode` keep/remove/replace) · DTO `edit` · UI: `TemplateEditor` compartido alta/edición + «Editar» por fila en `templates-client.tsx` · wa-mock `POST`/`GET /{tplmock_…}` + knob `failTemplateEdit` · guion `tests/e2e/052-template-edit.md` |
 | Imagen de encabezado de plantillas (008) | `src/lib/template-header.ts` (validación magic bytes/5MB) · `uploadResumable` en `src/lib/meta/client.ts` (ejemplo a Meta) · tabla `template_media` (blob 1:1, cascade) · `GET /api/template-media/[id]` (binario PÚBLICO — Meta lo baja en cada envío) · `POST /api/templates` es multipart · header en `sendTemplateCore`/`buildTemplateSendPayload` |
 | Variables de plantillas con origen (009) | catálogo `VARIABLE_ORIGINS` + validación contiguas ≤5 + `resolveVariableValues`/`renderBody(values[])` en `src/lib/template-body.ts` (puro, compartido con previews) · `template.variable_bindings` y `campaign.variable_values` (jsonb; NULL = flujo legado INTACTO) · resolución por destinatario en `sendTemplateCore` (contacto/`formatPhone`/nombre de la org) · `freeTexts` en `/api/campaigns`, `/api/conversations` y `/api/conversations/[id]/messages/template` |
 | Agente paciente + baja visible (011) | debounce que RE-espera tras cada turno (`executeTurn`) y `AGENT_COALESCE_MS` default 20s · guardas `conversationalReplyDecision`/`deliverConversationalReply` (descarta contexto viejo, nunca repite el último saliente; confirmaciones de turno exentas) · BAJA → lead a etapa `kind='lost'` (side-effects) + badge «Dado de baja» en la bandeja + agente mudo (ingest + guard en runAgentTurn) |
@@ -205,7 +206,10 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **051-ical-availability** (disponibilidad por los
+Feature en curso: **052-template-edit** (editar plantillas de WhatsApp
+desde Ajustes → Plantillas con las reglas de Meta; migración 0039) —
+[specs/052-template-edit/spec.md](specs/052-template-edit/spec.md).
+Anterior: **051-ical-availability** (disponibilidad por los
 calendarios iCal de Airbnb para complejos sin API: el propietario carga el
 enlace de cada publicación, el agente nombra las unidades libres y manda el
 enlace propio del complejo; constitución 1.16.0, migración 0038) —

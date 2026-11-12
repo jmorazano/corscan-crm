@@ -24,6 +24,8 @@ const bodySchema = z.object({
   mediaTooLarge: z.boolean().optional(),
   /** 026: la próxima subida de medios (`POST {pn}/media`) falla con 131053. */
   mediaUploadFails: z.boolean().optional(),
+  /** 052: la próxima edición de plantilla la rechaza Meta (400). */
+  failTemplateEdit: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -54,6 +56,9 @@ export async function POST(req: Request) {
   }
   if (body.data.mediaUploadFails !== undefined) {
     state.mediaUploadFails = body.data.mediaUploadFails;
+  }
+  if (body.data.failTemplateEdit !== undefined) {
+    state.failTemplateEdit = body.data.failTemplateEdit;
   }
   return Response.json({
     failUploads: state.failUploads,

@@ -1,6 +1,7 @@
 /** DTOs que viajan por la API interna (lado cliente). */
 import type { MessageDetails } from "@/lib/instagram/types";
 import type { ConversationOriginDto } from "@/lib/conversation-origin";
+import type { TemplateEditability } from "@/lib/template-edit";
 
 export type ConversationDto = {
   id: string;
@@ -94,6 +95,8 @@ export type TemplateDto = {
   headerImageUrl: string | null;
   /** 009: origen de cada variable ({{i+1}} ↔ posición i); null = legada. */
   variableBindings: string[] | null;
+  /** 052: si se puede editar y, si no, por qué y desde cuándo. */
+  edit: TemplateEditability;
 };
 
 export type StageDto = {

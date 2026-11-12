@@ -38,6 +38,8 @@ export type MockTemplate = {
   body: string;
   /** Components crudos del alta (008): el guion E2E verifica el HEADER. */
   components?: unknown;
+  /** 052: ediciones recibidas. */
+  edits?: number;
 };
 
 type WaMockState = {
@@ -62,6 +64,8 @@ type WaMockState = {
   mediaUploads: MockMediaUpload[];
   /** Knob 026: la próxima subida de medios falla con 131053. */
   mediaUploadFails: boolean;
+  /** Knob 052: la próxima edición de plantilla (`POST /{id}`) la rechaza Meta. */
+  failTemplateEdit: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -81,6 +85,7 @@ export function getWaMockState(): WaMockState {
       mediaTooLarge: false,
       mediaUploads: [],
       mediaUploadFails: false,
+      failTemplateEdit: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
@@ -111,6 +116,9 @@ export function getWaMockState(): WaMockState {
   if (globalForMock.__waMockState.mediaUploadFails === undefined) {
     globalForMock.__waMockState.mediaUploadFails = false;
   }
+  if (globalForMock.__waMockState.failTemplateEdit === undefined) {
+    globalForMock.__waMockState.failTemplateEdit = false;
+  }
   return globalForMock.__waMockState;
 }
 
@@ -132,6 +140,7 @@ export function resetWaMockState(): void {
     mediaTooLarge: false,
     mediaUploads: [],
     mediaUploadFails: false,
+    failTemplateEdit: false,
   };
 }
 

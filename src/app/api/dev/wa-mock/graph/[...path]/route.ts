@@ -37,6 +37,14 @@ function invalidTokenResponse(): Response {
   );
 }
 
+/** Plantilla que el mock no conoce (p. ej. creada antes de reiniciar). */
+function templateMissing(): Response {
+  return Response.json(
+    { error: { message: "Template does not exist", type: "OAuthException", code: 100 } },
+    { status: 400 }
+  );
+}
+
 /** Quita el segmento de versión (v25.0/...) si viene en la ruta. */
 function normalizePath(path: string[]): string[] {
   return path[0] && /^v\d+/.test(path[0]) ? path.slice(1) : path;
@@ -86,6 +94,21 @@ export async function GET(req: Request, ctx: Params) {
         status: t.status,
         components: [{ type: "BODY", text: t.body }],
       })),
+    });
+  }
+
+  // GET {templateId}?fields=status,… → estado tras una edición (052).
+  if (path.length === 1 && path[0]!.startsWith("tplmock_")) {
+    const tpl = getWaMockState().templates.find((t) => t.id === path[0]);
+    if (!tpl) return templateMissing();
+    return Response.json({
+      id: tpl.id,
+      name: tpl.name,
+      language: tpl.language,
+      category: tpl.category,
+      status: tpl.status,
+      components: tpl.components,
+      edits: tpl.edits ?? 0,
     });
   }
 
@@ -259,6 +282,52 @@ export async function POST(req: Request, ctx: Params) {
     };
     state.templates.push(tpl);
     return Response.json({ id: tpl.id, status: "PENDING", category: tpl.category });
+  }
+
+  // POST {templateId} → edición (052). Como Meta: reemplaza TODOS los
+  // componentes, no edita las que están en revisión ni cambia la categoría
+  // de una aprobada, y la plantilla vuelve a revisión (PENDING).
+  if (path.length === 1 && path[0]!.startsWith("tplmock_")) {
+    const state = getWaMockState();
+    if (state.failTemplateEdit) {
+      state.failTemplateEdit = false;
+      return Response.json(
+        {
+          error: {
+            message:
+              "Message template has reached the maximum number of edits allowed",
+            type: "OAuthException",
+            code: 100,
+            error_subcode: 2388299,
+            fbtrace_id: "mock",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    const tpl = state.templates.find((t) => t.id === path[0]);
+    if (!tpl) return templateMissing();
+    if (tpl.status === "PENDING") {
+      return Response.json(
+        { error: { message: "Template is in review and can't be edited", code: 100 } },
+        { status: 400 }
+      );
+    }
+    if (body.category !== undefined && tpl.status === "APPROVED") {
+      return Response.json(
+        { error: { message: "Category of an approved template can't be edited", code: 100 } },
+        { status: 400 }
+      );
+    }
+    const bodyComponent = (
+      body.components as { type?: string; text?: string }[] | undefined
+    )?.find((c) => (c.type ?? "").toUpperCase() === "BODY");
+    if (body.category !== undefined) tpl.category = String(body.category);
+    tpl.body = bodyComponent?.text ?? tpl.body;
+    tpl.components = body.components;
+    tpl.status = "PENDING";
+    tpl.edits = (tpl.edits ?? 0) + 1;
+    return Response.json({ success: true });
   }
 
   // POST {wabaId}/subscribed_apps → suscripción (con o sin override)

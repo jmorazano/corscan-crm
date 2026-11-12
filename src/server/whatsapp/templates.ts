@@ -32,7 +32,8 @@ export class TemplateError extends Error {
     | "not_found"
     | "meta_error"
     | "meta_unavailable"
-    | "in_use";
+    | "in_use"
+    | "not_editable";
 
   /** Datos extra para el cliente (p. ej. las campañas que bloquean el borrado). */
   extra: Record<string, unknown> | undefined;
@@ -57,6 +58,7 @@ const TEMPLATE_ERROR_STATUS: Record<TemplateError["code"], number> = {
   meta_error: 422,
   meta_unavailable: 503,
   in_use: 409,
+  not_editable: 409,
 };
 
 export function templateErrorStatus(err: TemplateError): number {
@@ -77,12 +79,19 @@ import {
   VARIABLE_ORIGIN_KEYS,
 } from "@/lib/template-body";
 import { formatPhone } from "@/lib/utils";
+import {
+  editBlockingCampaigns,
+  pruneApprovedEdits,
+  sameBindings,
+  templateEditability,
+} from "@/lib/template-edit";
 
 type TemplateRow = typeof schema.template.$inferSelect;
 
 export function serializeTemplate(
   t: TemplateRow,
-  headerMediaId?: string | null
+  headerMediaId?: string | null,
+  now: Date = new Date()
 ) {
   return {
     id: t.id,
@@ -94,7 +103,83 @@ export function serializeTemplate(
     rejectionReason: t.rejectionReason,
     headerImageUrl: headerMediaId ? headerMediaUrl(headerMediaId) : null,
     variableBindings: t.variableBindings ?? null,
+    // 052: si se puede editar y, si no, por qué y desde cuándo.
+    edit: templateEditability(t.status, t.approvedEdits, now),
   };
+}
+
+/**
+ * 009: valida los orígenes contra el cuerpo (mismos criterios en alta y
+ * edición). Devuelve lo que se guarda: `null` si el cuerpo no tiene variables.
+ */
+function validateBindings(
+  body: string,
+  variables: string[] | undefined
+): string[] | null {
+  const variableError = validateBodyVariables(body);
+  if (variableError) throw new TemplateError("invalid", variableError);
+  const variableCount = countVariables(body);
+  const bindings = variables ?? [];
+  if (bindings.length !== variableCount) {
+    throw new TemplateError(
+      "invalid",
+      variableCount === 0
+        ? "El cuerpo no tiene variables: no corresponde definir orígenes"
+        : `Definí el origen de cada variable del cuerpo (${variableCount})`
+    );
+  }
+  for (const b of bindings) {
+    if (!(VARIABLE_ORIGIN_KEYS as readonly string[]).includes(b)) {
+      throw new TemplateError("invalid", `Origen de variable desconocido: ${b}`);
+    }
+  }
+  return variableCount > 0 ? bindings : null;
+}
+
+/** Componentes HEADER (imagen opcional) + BODY con ejemplos (008/009). */
+function templateComponents(
+  body: string,
+  bindings: string[] | null,
+  headerHandle: string | null
+) {
+  return [
+    ...(headerHandle
+      ? [
+          {
+            type: "HEADER",
+            format: "IMAGE",
+            example: { header_handle: [headerHandle] },
+          },
+        ]
+      : []),
+    {
+      type: "BODY",
+      text: body,
+      // 009: una muestra por variable, coherente con su origen — el revisor
+      // de Meta ve el mensaje como lo verá el cliente.
+      ...(bindings && bindings.length > 0
+        ? { example: { body_text: [sampleValuesFor(bindings)] } }
+        : {}),
+    },
+  ];
+}
+
+/** MetaApiError → TemplateError (marca reconexión si el token venció). */
+async function metaTemplateError(
+  organizationId: string,
+  err: unknown
+): Promise<never> {
+  if (err instanceof MetaApiError) {
+    if (err.isAuthError) {
+      await markReconnectRequired(organizationId);
+      throw new TemplateError("reconnect_required", "El token expiró: reconecta el número");
+    }
+    if (err.status === 0 || err.status >= 500) {
+      throw new TemplateError("meta_unavailable", "Meta no está disponible ahora");
+    }
+    throw new TemplateError("meta_error", err.message);
+  }
+  throw err;
 }
 
 /** Ruta RELATIVA del binario; el envío la absolutiza con APP_BASE_URL. */
@@ -140,25 +225,8 @@ export async function createTemplate(
     variables?: string[];
   }
 ): Promise<{ row: TemplateRow; headerMediaId: string | null }> {
-  const variableError = validateBodyVariables(input.body);
-  if (variableError) throw new TemplateError("invalid", variableError);
-
   // 009: bindings obligatorios y exactos cuando el cuerpo tiene variables.
-  const variableCount = countVariables(input.body);
-  const bindings = input.variables ?? [];
-  if (bindings.length !== variableCount) {
-    throw new TemplateError(
-      "invalid",
-      variableCount === 0
-        ? "El cuerpo no tiene variables: no corresponde definir orígenes"
-        : `Definí el origen de cada variable del cuerpo (${variableCount})`
-    );
-  }
-  for (const b of bindings) {
-    if (!(VARIABLE_ORIGIN_KEYS as readonly string[]).includes(b)) {
-      throw new TemplateError("invalid", `Origen de variable desconocido: ${b}`);
-    }
-  }
+  const bindings = validateBindings(input.body, input.variables);
 
   let headerImage: { bytes: Buffer; mime: "image/jpeg" | "image/png" } | null =
     null;
@@ -215,42 +283,13 @@ export async function createTemplate(
           name,
           language: input.language,
           category: input.category,
-          components: [
-            ...(headerHandle
-              ? [
-                  {
-                    type: "HEADER",
-                    format: "IMAGE",
-                    example: { header_handle: [headerHandle] },
-                  },
-                ]
-              : []),
-            {
-              type: "BODY",
-              text: input.body,
-              // 009: una muestra por variable, coherente con su origen —
-              // el revisor de Meta ve el mensaje como lo verá el cliente.
-              ...(variableCount > 0
-                ? { example: { body_text: [sampleValuesFor(bindings)] } }
-                : {}),
-            },
-          ],
+          components: templateComponents(input.body, bindings, headerHandle),
         },
       }
     );
     waTemplateId = res.id ?? null;
   } catch (err) {
-    if (err instanceof MetaApiError) {
-      if (err.isAuthError) {
-        await markReconnectRequired(organizationId);
-        throw new TemplateError("reconnect_required", "El token expiró: reconecta el número");
-      }
-      if (err.status === 0 || err.status >= 500) {
-        throw new TemplateError("meta_unavailable", "Meta no está disponible ahora");
-      }
-      throw new TemplateError("meta_error", err.message);
-    }
-    throw err;
+    await metaTemplateError(organizationId, err);
   }
 
   const db = getDb();
@@ -266,7 +305,7 @@ export async function createTemplate(
         body: input.body,
         status: "pending",
         waTemplateId,
-        variableBindings: variableCount > 0 ? bindings : null,
+        variableBindings: bindings,
       })
       .onConflictDoUpdate({
         target: [
@@ -280,7 +319,7 @@ export async function createTemplate(
           status: "pending",
           rejectionReason: null,
           waTemplateId,
-          variableBindings: variableCount > 0 ? bindings : null,
+          variableBindings: bindings,
           updatedAt: new Date(),
         },
       })
@@ -303,6 +342,250 @@ export async function createTemplate(
         mime: headerImage.mime,
         byteSize: headerImage.bytes.byteLength,
         bytes: headerImage.bytes,
+      });
+    }
+    return { row, headerMediaId };
+  });
+}
+
+/** 052: qué hacer con el encabezado de imagen al editar. */
+export type HeaderEdit =
+  | { mode: "keep" }
+  | { mode: "remove" }
+  | { mode: "replace"; image: HeaderImageInput };
+
+/**
+ * 052: edita la plantilla en Meta (`POST /{template-id}`) y después en el
+ * CRM. Meta reemplaza TODOS los componentes, así que la imagen que se
+ * conserva vuelve a subir como ejemplo. Orden Meta-primero (como el alta):
+ * si Meta falla, la fila local queda intacta. Reglas puras en
+ * `src/lib/template-edit.ts`.
+ */
+export async function editTemplate(
+  organizationId: string,
+  templateId: string,
+  input: {
+    category: string;
+    body: string;
+    variables?: string[];
+    header: HeaderEdit;
+  },
+  now: Date = new Date()
+): Promise<{ row: TemplateRow; headerMediaId: string | null }> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      template: schema.template,
+      mediaId: schema.templateMedia.id,
+      mediaMime: schema.templateMedia.mime,
+      mediaBytes: schema.templateMedia.bytes,
+    })
+    .from(schema.template)
+    .leftJoin(
+      schema.templateMedia,
+      eq(schema.templateMedia.templateId, schema.template.id)
+    )
+    .where(
+      scoped(
+        schema.template.organizationId,
+        organizationId,
+        eq(schema.template.id, templateId)
+      )
+    )
+    .limit(1);
+  const current = rows[0];
+  if (!current) throw new TemplateError("not_found", "Plantilla no encontrada");
+  const template = current.template;
+
+  const editability = templateEditability(
+    template.status,
+    template.approvedEdits,
+    now
+  );
+  if (!editability.canEdit) {
+    throw new TemplateError("not_editable", editability.message ?? "No se puede editar", {
+      reason: editability.reason,
+      nextEditAt: editability.nextEditAt,
+    });
+  }
+  if (editability.categoryLocked && input.category !== template.category) {
+    throw new TemplateError(
+      "invalid",
+      "Meta no permite cambiar la categoría de una plantilla aprobada"
+    );
+  }
+
+  const bindings = validateBindings(input.body, input.variables);
+
+  let newImage: { bytes: Buffer; mime: "image/jpeg" | "image/png" } | null = null;
+  if (input.header.mode === "replace") {
+    const check = validateHeaderImage(
+      input.header.image.bytes,
+      input.header.image.mime
+    );
+    if (!check.ok) throw new TemplateError("invalid", check.error);
+    newImage = { bytes: input.header.image.bytes, mime: check.mime };
+  }
+  const hadImage = current.mediaId !== null;
+  const headerChanged =
+    input.header.mode === "replace" || (input.header.mode === "remove" && hadImage);
+  const bindingsUnchanged = sameBindings(template.variableBindings, bindings);
+  if (
+    !headerChanged &&
+    bindingsUnchanged &&
+    input.body === template.body &&
+    input.category === template.category
+  ) {
+    throw new TemplateError("invalid", "No cambiaste nada");
+  }
+
+  const campaigns = await db
+    .select({
+      id: schema.campaign.id,
+      name: schema.campaign.name,
+      status: schema.campaign.status,
+    })
+    .from(schema.campaign)
+    .where(
+      scoped(
+        schema.campaign.organizationId,
+        organizationId,
+        and(
+          eq(schema.campaign.templateId, templateId),
+          inArray(schema.campaign.status, ["draft", "running", "paused"])
+        )
+      )
+    )
+    .limit(20);
+  const blocking = editBlockingCampaigns(campaigns, bindingsUnchanged);
+  if (blocking.length > 0) {
+    throw new TemplateError(
+      "in_use",
+      blocking.some((c) => c.status !== "draft")
+        ? "La plantilla la usa una campaña en curso o pausada: terminala o cancelala antes de editarla"
+        : "Cambiaste las variables y la plantilla la usa un borrador de campaña: borralo o dejá las mismas variables",
+      { campaigns: blocking }
+    );
+  }
+
+  if (!template.waTemplateId) {
+    throw new TemplateError(
+      "invalid",
+      "Esta plantilla no tiene su id de Meta: tocá Sincronizar y probá de nuevo"
+    );
+  }
+
+  const creds = await getCredentialsByOrg(organizationId);
+  if (!creds) {
+    throw new TemplateError("not_connected", "Conecta tu número de WhatsApp primero");
+  }
+  if (creds.status === "reconnect_required") {
+    throw new TemplateError("reconnect_required", "Reconecta tu número antes de editar plantillas");
+  }
+
+  // La imagen que se manda: la nueva, la que ya tenía (keep) o ninguna.
+  const imageToSend: { bytes: Buffer; mime: string } | null =
+    newImage ??
+    (input.header.mode === "keep" && current.mediaBytes && current.mediaMime
+      ? { bytes: current.mediaBytes, mime: current.mediaMime }
+      : null);
+  const appId = getEnv().META_APP_ID;
+  if (imageToSend && !appId) {
+    throw new TemplateError(
+      "invalid",
+      "Esta instancia no tiene META_APP_ID configurado: no se pueden subir imágenes de encabezado"
+    );
+  }
+
+  let status: TemplateRow["status"] = "pending";
+  let rejectionReason: string | null = null;
+  try {
+    const headerHandle = imageToSend
+      ? await uploadResumable({
+          appId: appId!,
+          token: creds.token,
+          bytes: imageToSend.bytes,
+          mime: imageToSend.mime,
+        })
+      : null;
+    await graphRequest(template.waTemplateId, {
+      method: "POST",
+      token: creds.token,
+      body: {
+        // La categoría de una aprobada no se manda (Meta la rechaza).
+        ...(editability.categoryLocked ? {} : { category: input.category }),
+        components: templateComponents(input.body, bindings, headerHandle),
+      },
+    });
+  } catch (err) {
+    await metaTemplateError(organizationId, err);
+  }
+
+  // Estado que informa Meta tras la edición; si no se puede leer, pendiente.
+  try {
+    const remote = await graphRequest<{
+      status?: string;
+      rejected_reason?: string;
+    }>(`${template.waTemplateId}?fields=status,rejected_reason`, {
+      token: creds.token,
+    });
+    const mapped = mapMetaStatus(remote.status);
+    if (mapped) {
+      status = mapped;
+      rejectionReason =
+        mapped === "rejected" && remote.rejected_reason && remote.rejected_reason !== "NONE"
+          ? remote.rejected_reason
+          : null;
+    }
+  } catch {
+    // Se queda en «pendiente»: el webhook o Sincronizar lo corrigen.
+  }
+
+  const approvedEdits =
+    template.status === "approved"
+      ? [...pruneApprovedEdits(template.approvedEdits, now), now.toISOString()]
+      : pruneApprovedEdits(template.approvedEdits, now);
+
+  return db.transaction(async (tx) => {
+    const updated = await tx
+      .update(schema.template)
+      .set({
+        category: input.category,
+        body: input.body,
+        variableBindings: bindings,
+        status,
+        rejectionReason,
+        approvedEdits,
+        updatedAt: now,
+      })
+      .where(
+        scoped(
+          schema.template.organizationId,
+          organizationId,
+          eq(schema.template.id, templateId)
+        )
+      )
+      .returning();
+    const row = updated[0];
+    if (!row) throw new TemplateError("not_found", "Plantilla no encontrada");
+
+    let headerMediaId: string | null = current.mediaId;
+    if (input.header.mode !== "keep") {
+      await tx
+        .delete(schema.templateMedia)
+        .where(eq(schema.templateMedia.templateId, row.id));
+      headerMediaId = null;
+    }
+    if (newImage) {
+      // Id nuevo: la URL pública cambia y ningún caché sirve la imagen vieja.
+      headerMediaId = newId("templateMedia");
+      await tx.insert(schema.templateMedia).values({
+        id: headerMediaId,
+        organizationId,
+        templateId: row.id,
+        mime: newImage.mime,
+        byteSize: newImage.bytes.byteLength,
+        bytes: newImage.bytes,
       });
     }
     return { row, headerMediaId };
