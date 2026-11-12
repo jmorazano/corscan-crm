@@ -26,6 +26,8 @@ const bodySchema = z.object({
   mediaUploadFails: z.boolean().optional(),
   /** 052: la próxima edición de plantilla la rechaza Meta (400). */
   failTemplateEdit: z.boolean().optional(),
+  /** El número figura en la app del celular (`is_on_biz_app`), alta con QR. */
+  onBizApp: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -60,7 +62,11 @@ export async function POST(req: Request) {
   if (body.data.failTemplateEdit !== undefined) {
     state.failTemplateEdit = body.data.failTemplateEdit;
   }
+  if (body.data.onBizApp !== undefined) {
+    state.onBizApp = body.data.onBizApp;
+  }
   return Response.json({
+    onBizApp: state.onBizApp,
     failUploads: state.failUploads,
     failNextSend: state.failNextSend,
     failSends: state.failSends,

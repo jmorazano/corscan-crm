@@ -5,6 +5,11 @@ export type ConnectionCheck =
       ok: true;
       displayPhoneNumber: string;
       verifiedName: string | null;
+      /**
+       * El número también vive en la app WhatsApp Business del celular
+       * (coexistence). Lo informa Meta (`is_on_biz_app`); ausente = false.
+       */
+      onBizApp: boolean;
     }
   | { ok: false; code: "invalid_token" | "meta_unavailable" | "meta_error"; message: string };
 
@@ -20,8 +25,9 @@ export async function testConnection(
     const res = await graphRequest<{
       display_phone_number?: string;
       verified_name?: string;
+      is_on_biz_app?: boolean;
       id: string;
-    }>(`${phoneNumberId}?fields=display_phone_number,verified_name`, {
+    }>(`${phoneNumberId}?fields=display_phone_number,verified_name,is_on_biz_app`, {
       token,
     });
     if (!res.display_phone_number) {
@@ -36,6 +42,7 @@ export async function testConnection(
       ok: true,
       displayPhoneNumber: res.display_phone_number,
       verifiedName: res.verified_name ?? null,
+      onBizApp: res.is_on_biz_app === true,
     };
   } catch (err) {
     if (err instanceof MetaApiError) {
@@ -64,6 +71,7 @@ export type WabaPhoneNumber = {
   id: string;
   displayPhoneNumber: string;
   verifiedName: string | null;
+  onBizApp: boolean;
 };
 
 export type PhoneNumberDiscovery =
@@ -89,19 +97,28 @@ export async function listWabaPhoneNumbers(
         id?: string;
         display_phone_number?: string;
         verified_name?: string;
+        is_on_biz_app?: boolean;
       }[];
-    }>(`${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`, {
+    }>(`${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,is_on_biz_app`, {
       token,
     });
     const numbers: WabaPhoneNumber[] = (res.data ?? [])
       .filter(
-        (n): n is { id: string; display_phone_number: string; verified_name?: string } =>
+        (
+          n
+        ): n is {
+          id: string;
+          display_phone_number: string;
+          verified_name?: string;
+          is_on_biz_app?: boolean;
+        } =>
           Boolean(n.id) && Boolean(n.display_phone_number)
       )
       .map((n) => ({
         id: n.id,
         displayPhoneNumber: n.display_phone_number,
         verifiedName: n.verified_name ?? null,
+        onBizApp: n.is_on_biz_app === true,
       }));
     return { ok: true, numbers };
   } catch (err) {

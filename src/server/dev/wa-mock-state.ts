@@ -66,6 +66,11 @@ type WaMockState = {
   mediaUploadFails: boolean;
   /** Knob 052: la próxima edición de plantilla (`POST /{id}`) la rechaza Meta. */
   failTemplateEdit: boolean;
+  /**
+   * Knob: el número responde `is_on_biz_app: true` (coexistence) aunque el
+   * popup haya informado el phone_number_id — como el alta real con QR.
+   */
+  onBizApp: boolean;
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -86,6 +91,7 @@ export function getWaMockState(): WaMockState {
       mediaUploads: [],
       mediaUploadFails: false,
       failTemplateEdit: false,
+      onBizApp: false,
     };
   }
   // Migración suave del estado en caliente (dev recarga módulos).
@@ -119,6 +125,9 @@ export function getWaMockState(): WaMockState {
   if (globalForMock.__waMockState.failTemplateEdit === undefined) {
     globalForMock.__waMockState.failTemplateEdit = false;
   }
+  if (globalForMock.__waMockState.onBizApp === undefined) {
+    globalForMock.__waMockState.onBizApp = false;
+  }
   return globalForMock.__waMockState;
 }
 
@@ -141,6 +150,7 @@ export function resetWaMockState(): void {
     mediaUploads: [],
     mediaUploadFails: false,
     failTemplateEdit: false,
+    onBizApp: false,
   };
 }
 

@@ -123,6 +123,8 @@ export async function GET(req: Request, ctx: Params) {
           id: "pn_mock_1",
           display_phone_number: "+52 55 0000 0000",
           verified_name: "Número de prueba Vocero",
+          // El flujo de coexistence siempre conecta un número de la app.
+          is_on_biz_app: true,
         },
       ],
     });
@@ -153,6 +155,7 @@ export async function GET(req: Request, ctx: Params) {
     return Response.json({
       display_phone_number: "+52 55 0000 0000",
       verified_name: "Número de prueba Vocero",
+      is_on_biz_app: getWaMockState().onBizApp,
       id: path[0],
     });
   }

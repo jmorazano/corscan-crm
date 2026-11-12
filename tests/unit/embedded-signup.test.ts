@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.doUnmock("@/server/whatsapp/connect");
   vi.doUnmock("@/server/whatsapp/credentials");
   vi.doUnmock("@/lib/api");
+  vi.doUnmock("@/server/whatsapp/history-sync");
   setEnv();
 });
 
@@ -388,6 +389,7 @@ describe("listWabaPhoneNumbers", () => {
                   id: "pn_1",
                   display_phone_number: "+54 9 351 688-2234",
                   verified_name: "CorScan",
+                  is_on_biz_app: true,
                 },
                 { id: "pn_sin_numero" },
               ],
@@ -407,6 +409,7 @@ describe("listWabaPhoneNumbers", () => {
           id: "pn_1",
           displayPhoneNumber: "+54 9 351 688-2234",
           verifiedName: "CorScan",
+          onBizApp: true,
         },
       ],
     });
@@ -512,5 +515,85 @@ describe("isEmbeddedSignupConfigured", () => {
     delete process.env.META_ES_CONFIG_ID;
     const { isEmbeddedSignupConfigured } = await import("@/lib/env");
     expect(isEmbeddedSignupConfigured()).toBe(false);
+  });
+});
+
+/**
+ * 017 + fix 12-nov-2026: la sincronización del historial se pide sola cuando
+ * el número está en la app del celular. Coexistence se reconoce por lo que
+ * Meta dice del número (`is_on_biz_app`), no por la forma del evento del
+ * popup: el alta con QR de Bosque Douglas llegó CON phone_number_id y la
+ * regla vieja no pidió nada (las 24 h de Meta corren igual).
+ */
+describe("completeEmbeddedSignup: pedido automático del historial", () => {
+  async function run(opts: {
+    phoneNumberId?: string;
+    onBizApp: boolean;
+  }) {
+    const requestHistorySync = vi.fn(async () => ({}));
+    vi.doMock("@/lib/meta/client", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/meta/client")>(
+        "@/lib/meta/client"
+      );
+      return { ...actual, exchangeCodeForToken: vi.fn(async () => "EAAG-ok") };
+    });
+    vi.doMock("@/server/whatsapp/connect", () => ({
+      testConnection: vi.fn(async () => ({
+        ok: true,
+        displayPhoneNumber: "+54 9 351 865-1775",
+        verifiedName: "Bosque Douglas",
+        onBizApp: opts.onBizApp,
+      })),
+      listWabaPhoneNumbers: vi.fn(async () => ({
+        ok: true,
+        numbers: [
+          {
+            id: "pn_1",
+            displayPhoneNumber: "+54 9 351 865-1775",
+            verifiedName: "Bosque Douglas",
+            onBizApp: opts.onBizApp,
+          },
+        ],
+      })),
+      subscribeAppToWaba: vi.fn(async () => undefined),
+    }));
+    vi.doMock("@/server/whatsapp/credentials", () => ({
+      saveCredentials: vi.fn(async () => undefined),
+    }));
+    vi.doMock("@/server/whatsapp/history-sync", () => ({ requestHistorySync }));
+
+    const { completeEmbeddedSignup } = await import(
+      "@/server/whatsapp/embedded-signup"
+    );
+    const res = await completeEmbeddedSignup({
+      organizationId: "org_1",
+      code: "code-1",
+      wabaId: "waba_1",
+      ...(opts.phoneNumberId ? { phoneNumberId: opts.phoneNumberId } : {}),
+    });
+    return { res, requestHistorySync };
+  }
+
+  it("alta con QR que informa el phone_number_id y el número está en la app → lo pide", async () => {
+    const { res, requestHistorySync } = await run({
+      phoneNumberId: "pn_1",
+      onBizApp: true,
+    });
+    expect(res.ok).toBe(true);
+    expect(requestHistorySync).toHaveBeenCalledWith("org_1");
+  });
+
+  it("alta común (número solo en la API) → NO lo pide", async () => {
+    const { res, requestHistorySync } = await run({
+      phoneNumberId: "pn_1",
+      onBizApp: false,
+    });
+    expect(res.ok).toBe(true);
+    expect(requestHistorySync).not.toHaveBeenCalled();
+  });
+
+  it("evento de coexistence sin phone_number_id → lo pide (comportamiento de siempre)", async () => {
+    const { requestHistorySync } = await run({ onBizApp: true });
+    expect(requestHistorySync).toHaveBeenCalledWith("org_1");
   });
 });

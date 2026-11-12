@@ -99,10 +99,13 @@ export async function completeEmbeddedSignup(input: {
   // la suscripción se puede reintentar desde el panel de Meta.
   await subscribeAppToWaba(input.wabaId, token);
 
-  // 017: en coexistence (el popup no trae phone_number_id) Meta solo permite
-  // pedir la sincronización dentro de las 24 h del onboarding — se pide sola,
-  // en segundo plano; el estado queda en Ajustes → WhatsApp.
-  if (!input.phoneNumberId) {
+  // 017: en coexistence Meta solo permite pedir la sincronización dentro de
+  // las 24 h del onboarding — se pide sola, en segundo plano; el estado queda
+  // en Ajustes → WhatsApp. Coexistence se reconoce por lo que dice META del
+  // número (`is_on_biz_app`), no por la forma del evento del popup: el
+  // 12-nov-2026 un alta con QR (Bosque Douglas) llegó CON phone_number_id y
+  // la regla vieja («sin phone_number_id = coexistence») no pidió nada.
+  if (!input.phoneNumberId || resolved.onBizApp) {
     void requestHistorySync(input.organizationId).catch((err) =>
       console.warn(
         "[historial] auto-sync tras el onboarding falló:",
@@ -126,6 +129,8 @@ type ResolvedNumber =
       phoneNumberId: string;
       displayPhoneNumber: string;
       verifiedName: string | null;
+      /** El número también está en la app del celular (coexistence). */
+      onBizApp: boolean;
     }
   | Extract<EmbeddedSignupResult, { ok: false }>;
 
@@ -151,6 +156,7 @@ async function verifyReportedNumber(
     phoneNumberId,
     displayPhoneNumber: check.displayPhoneNumber,
     verifiedName: check.verifiedName,
+    onBizApp: check.onBizApp,
   };
 }
 
@@ -194,5 +200,6 @@ async function discoverSingleNumber(
     phoneNumberId: only.id,
     displayPhoneNumber: only.displayPhoneNumber,
     verifiedName: only.verifiedName,
+    onBizApp: only.onBizApp,
   };
 }
