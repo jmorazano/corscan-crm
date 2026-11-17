@@ -39,6 +39,7 @@ import { agentTextFor, isCustomerTurnMessage } from "@/lib/inbound-media";
 import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
+import { repeatsPreviousReply } from "@/lib/reply-repeat";
 import {
   lastConversationEvent,
   lastTeamMessageAt,
@@ -1712,7 +1713,8 @@ export type ReplyDecision = "send" | "stale" | "duplicate";
  * Decisión PURA de entrega conversacional (011, unit-testeable):
  * - "stale": llegó un inbound nuevo mientras el modelo pensaba — la
  *   respuesta se descarta y el turno se regenera con el contexto completo.
- * - "duplicate": el texto es idéntico al último saliente — jamás repetir.
+ * - "duplicate": el texto repite el último saliente (idéntico o casi: el
+ *   mismo mensaje con un «¡Hasta luego!» agregado) — jamás repetir.
  */
 export function conversationalReplyDecision(input: {
   turnInboundId: string;
@@ -1723,10 +1725,7 @@ export function conversationalReplyDecision(input: {
   if (input.latestInboundId && input.latestInboundId !== input.turnInboundId) {
     return "stale";
   }
-  if (
-    input.lastOutboundText !== null &&
-    input.lastOutboundText.trim() === input.text.trim()
-  ) {
+  if (repeatsPreviousReply(input.lastOutboundText, input.text)) {
     return "duplicate";
   }
   return "send";
@@ -1781,7 +1780,7 @@ async function deliverConversationalReply(
     }
     if (decision === "duplicate") {
       const lastOut = recent.find((m) => m.direction === "out")?.text ?? null;
-      if (fallbackOnDuplicate && fallbackOnDuplicate.trim() !== (lastOut ?? "").trim()) {
+      if (fallbackOnDuplicate && !repeatsPreviousReply(lastOut, fallbackOnDuplicate)) {
         console.warn(
           `[agente] respuesta idéntica en ${conversation.id}: se manda la alternativa`
         );

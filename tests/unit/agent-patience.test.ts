@@ -47,3 +47,43 @@ describe("conversationalReplyDecision (011)", () => {
     ).toBe("stale");
   });
 });
+
+describe("conversationalReplyDecision — casi igual (fix 17-nov-2026)", () => {
+  const prev =
+    "Gracias, María Soledad. Te enviaré el link del llamado a la casilla que me pasaste. Hoy a las 14:30 podrás discutir todos los detalles sobre el curso con Juan Manuel.";
+  const base = { turnInboundId: "msg_a", latestInboundId: "msg_a", lastOutboundText: prev };
+
+  it("el mismo mensaje con «¡Hasta luego!» agregado → duplicate", () => {
+    expect(conversationalReplyDecision({ ...base, text: `${prev} ¡Hasta luego!` })).toBe("duplicate");
+  });
+
+  it("igual salvo mayúsculas, tildes y signos → duplicate", () => {
+    expect(
+      conversationalReplyDecision({ ...base, text: prev.toUpperCase().replace(/[.,!]/g, "").replace("í", "i") })
+    ).toBe("duplicate");
+  });
+
+  it("una despedida corta distinta → send", () => {
+    expect(
+      conversationalReplyDecision({ ...base, text: "¡Gracias a vos, María Soledad! Nos vemos hoy a las 14:30." })
+    ).toBe("send");
+  });
+
+  it("un mensaje nuevo que retoma una parte → send", () => {
+    expect(
+      conversationalReplyDecision({
+        ...base,
+        text: "Hoy a las 14:30 Juan Manuel te cuenta el temario. Mientras tanto, ¿qué versión de AutoCAD usás?",
+      })
+    ).toBe("send");
+  });
+
+  it("textos cortos solo cuentan si son iguales", () => {
+    expect(
+      conversationalReplyDecision({ ...base, lastOutboundText: "¡Perfecto!", text: "¡Perfecto, gracias!" })
+    ).toBe("send");
+    expect(
+      conversationalReplyDecision({ ...base, lastOutboundText: "¡Perfecto!", text: "perfecto" })
+    ).toBe("duplicate");
+  });
+});

@@ -361,6 +361,7 @@ export function buildAgentSystemPrompt(input: {
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
       '- {"action":"none","reason":"..."} — no responder nada (reason: el porqué en pocas palabras; lo ve solo el equipo, nunca el cliente).',
       '- {"action":"reply","text":"..."} — responder al cliente.',
+      "- Nunca repitas un mensaje que ya le mandaste, ni casi igual. Si el cliente solo agradece o se despide y no quedó nada pendiente, alcanza con una despedida de una línea («¡Gracias a vos! Cualquier cosa, escribime.») o none.",
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       // 021: el nombre viaja con la respuesta. Con una acción por turno, una
       // acción propia para esto perdería siempre contra contestar.
