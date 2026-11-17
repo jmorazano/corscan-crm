@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { TemplateDto } from "@/lib/types";
+import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { originByKey, sampleValuesFor } from "@/lib/template-body";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,7 +122,7 @@ export function TemplateSender({
         const data = (await res.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;
-        setError(data?.error?.message ?? "No se pudo enviar la plantilla");
+        setError(friendlyDeliveryError(data?.error?.message) ?? "No se pudo enviar la plantilla");
         return;
       }
     }

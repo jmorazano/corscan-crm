@@ -488,7 +488,8 @@ export function InboxClient() {
         const data = (await res.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;
-        return data?.error?.message ?? "No se pudo enviar el mensaje";
+        // El rechazo de Meta llega en inglés: misma traducción que la burbuja.
+        return friendlyDeliveryError(data?.error?.message) ?? "No se pudo enviar el mensaje";
       }
       if (selectedIdRef.current) void refetchMessages(selectedIdRef.current);
       void refetchConversations();

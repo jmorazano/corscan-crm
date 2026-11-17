@@ -7,6 +7,8 @@
  * castellano llano. Nunca el cuerpo crudo de un proveedor.
  */
 
+import { friendlyDeliveryError } from "@/lib/meta-errors";
+
 export type ConversationEventKind =
   | "ai_toggled"
   | "ai_silent"
@@ -281,8 +283,13 @@ export function friendlySendError(code: string, message: string): string {
       return "no hay número de WhatsApp conectado";
     case "opted_out":
       return "el contacto se dio de baja";
-    case "meta_error":
+    case "meta_error": {
+      // Un rechazo catalogado se explica en criollo (sin el punto final: la
+      // línea del hilo agrega el suyo); el resto se muestra crudo y recortado.
+      const friendly = friendlyDeliveryError(message);
+      if (friendly && friendly !== message.trim()) return friendly.replace(/\.$/, "");
       return `Meta rechazó el envío (${message.slice(0, 160)})`;
+    }
     default:
       return message.slice(0, 160) || "falló el envío";
   }

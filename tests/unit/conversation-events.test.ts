@@ -69,6 +69,19 @@ describe("eventText", () => {
         .text
     ).toBe("La respuesta de la IA no salió: Meta no está disponible ahora.");
   });
+
+  it("meta_error catalogado → explicación en criollo, sin el inglés de Meta ni doble punto", () => {
+    const detail = friendlySendError(
+      "meta_error",
+      "Application does not have permission for this action: You do not have the necessary permission to send messages on behalf of this WhatsApp Business Account"
+    );
+    expect(detail).toMatch(/línea de crédito/);
+    expect(detail).not.toMatch(/Application does not have/);
+    const text = eventText({ kind: "ai_error", reason: "send", actorName: null, details: { detail } }, hhmm).text;
+    expect(text.endsWith("..")).toBe(false);
+    // Lo no catalogado sigue mostrándose crudo.
+    expect(friendlySendError("meta_error", "Algo rarísimo")).toBe("Meta rechazó el envío (Algo rarísimo)");
+  });
 });
 
 describe("friendlyProviderError", () => {

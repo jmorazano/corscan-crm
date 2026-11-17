@@ -9,6 +9,16 @@
 
 const KNOWN: { pattern: RegExp; friendly: string }[] = [
   {
+    // #10 subcode 2593184 — Meta niega TODO envío de la cuenta aunque el token
+    // y los permisos estén bien. Caso real (Bosque Douglas, nov-2026, confirmado
+    // por Meta Support): la cuenta de mensajes seguía pagando con la línea de
+    // crédito del proveedor anterior (ManyChat). Reconectar o cargar una
+    // tarjeta NO la saca: el proveedor anterior tiene que revocarla.
+    pattern: /necessary permission to send messages on behalf of|2593184/i,
+    friendly:
+      "Meta no deja enviar desde esta cuenta de WhatsApp. La causa más común es que la cuenta todavía paga con la línea de crédito de un proveedor anterior (por ejemplo ManyChat): se ve en Meta Business → Facturación y pagos → Líneas de crédito. El proveedor anterior tiene que revocarla y después el dueño carga su propio método de pago; reconectar el número no lo arregla.",
+  },
+  {
     // 131042 — falta o falla el método de pago de la WABA. Meta frena TODO
     // envío de la cuenta (también el texto libre, que es gratis): el aviso no
     // debe sugerir que es culpa de un tipo de mensaje.
