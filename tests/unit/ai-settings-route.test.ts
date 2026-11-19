@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   role: "owner" as string,
   saved: [] as Record<string, unknown>[],
+  modelsUpdated: [] as Record<string, unknown>[],
   deleted: [] as string[],
   settings: null as Record<string, unknown> | null,
 }));
@@ -44,6 +45,11 @@ vi.mock("@/server/ai/credentials", async (importOriginal) => {
       state.saved.push(input);
       return Promise.resolve();
     },
+    updateAiModels: (input: Record<string, unknown>) => {
+      if (!state.settings) return Promise.resolve(false);
+      state.modelsUpdated.push(input);
+      return Promise.resolve(true);
+    },
     deleteAiConfig: (organizationId: string) => {
       state.deleted.push(organizationId);
       return Promise.resolve();
@@ -70,6 +76,7 @@ function put(body: unknown): Promise<Response> {
 beforeEach(() => {
   state.role = "owner";
   state.saved.length = 0;
+  state.modelsUpdated.length = 0;
   state.deleted.length = 0;
   state.settings = null;
 });
@@ -117,9 +124,29 @@ describe("PUT /api/settings/ai", () => {
     });
   });
 
-  it("token vacío → 422 sin guardar", async () => {
+  it("token vacío sin IA configurada → 422 sin guardar", async () => {
     const res = await put({ token: "   " });
     expect(res.status).toBe(422);
+    expect(state.saved).toHaveLength(0);
+    expect(state.modelsUpdated).toHaveLength(0);
+  });
+
+  it("con IA configurada, sin token → cambia SOLO los modelos y conserva el token", async () => {
+    state.settings = { tokenLast4: "154f", model: "openai/gpt-4o", judgeModel: null };
+    const res = await put({ model: "openai/gpt-5.6-luna", transcriptionModel: "google/gemini-2.5-flash" });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown).toEqual({ ok: true });
+    expect(state.saved).toHaveLength(0);
+    expect(state.modelsUpdated[0]).toEqual({
+      organizationId: "org_1",
+      model: "openai/gpt-5.6-luna",
+      judgeModel: null,
+      transcriptionModel: "google/gemini-2.5-flash",
+      visionModel: null,
+    });
+    // Un token en blanco cuenta como «sin token»: tampoco pisa el guardado.
+    const res2 = await put({ token: "  ", model: "a/b" });
+    expect(res2.status).toBe(200);
     expect(state.saved).toHaveLength(0);
   });
 

@@ -145,6 +145,33 @@ export async function saveAiConfig(input: {
 }
 
 /**
+ * Cambia SOLO los modelos sin tocar el token guardado (antes había que pegar
+ * el token de nuevo para cambiar un modelo). Vacío/null = default de
+ * producto. Devuelve false si la empresa todavía no configuró la IA.
+ */
+export async function updateAiModels(input: {
+  organizationId: string;
+  model?: string | null;
+  judgeModel?: string | null;
+  transcriptionModel?: string | null;
+  visionModel?: string | null;
+}): Promise<boolean> {
+  const db = getDb();
+  const rows = await db
+    .update(schema.aiCredentials)
+    .set({
+      model: input.model ?? null,
+      judgeModel: input.judgeModel ?? null,
+      transcriptionModel: input.transcriptionModel ?? null,
+      visionModel: input.visionModel ?? null,
+      updatedAt: new Date(),
+    })
+    .where(scoped(schema.aiCredentials.organizationId, input.organizationId))
+    .returning({ id: schema.aiCredentials.id });
+  return rows.length > 0;
+}
+
+/**
  * Borra la config (DELETE físico, data-model): el agente y el Laboratorio de
  * la empresa quedan inactivos con aviso. Idempotente: borrar lo que no existe
  * no es error.

@@ -9,6 +9,7 @@ import {
   getAiSettings,
   saveAiConfig,
   tokenLast4,
+  updateAiModels,
 } from "@/server/ai/credentials";
 import { publish } from "@/server/events/bus";
 
@@ -43,9 +44,11 @@ export const GET = withAuth(async (session) => {
 });
 
 const putSchema = z.object({
-  // Token vacío → 422 (contrato); el formato no se valida contra el
-  // proveedor: el primer turno del agente valida en la práctica (FR-010).
-  token: z.string().trim().min(1).max(512),
+  // Sin token (o vacío) = cambiar SOLO los modelos y conservar el guardado;
+  // si la empresa todavía no tiene IA configurada → 422. El formato no se
+  // valida contra el proveedor: el primer turno del agente valida en la
+  // práctica (FR-010).
+  token: z.string().trim().max(512).optional(),
   model: z.string().trim().min(1).max(200).optional(),
   judgeModel: z.string().trim().min(1).max(200).optional(),
   /** 015: modelo con entrada de audio (notas de voz del entrenador). */
@@ -65,20 +68,33 @@ export const PUT = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 
-  await saveAiConfig({
+  const models = {
     organizationId: session.organizationId,
-    token: body.data.token,
     model: body.data.model ?? null,
     judgeModel: body.data.judgeModel ?? null,
     transcriptionModel: body.data.transcriptionModel ?? null,
     visionModel: body.data.visionModel ?? null,
-  });
+  };
+  const token = body.data.token?.trim();
+  if (!token) {
+    const updated = await updateAiModels(models);
+    if (!updated) {
+      return apiError(
+        422,
+        "invalid_body",
+        "Pegá el token del proveedor para activar la IA"
+      );
+    }
+    return Response.json({ ok: true });
+  }
+
+  await saveAiConfig({ ...models, token });
   // 015: la conversación con el agente aparece/desaparece con la config.
   publish(session.organizationId, {
     type: "conversations.updated",
     data: { conversationIds: [] },
   });
-  return Response.json({ ok: true, tokenLast4: tokenLast4(body.data.token) });
+  return Response.json({ ok: true, tokenLast4: tokenLast4(token) });
 });
 
 /** Apaga la IA de la empresa. Idempotente: 200 aunque no hubiera config. */

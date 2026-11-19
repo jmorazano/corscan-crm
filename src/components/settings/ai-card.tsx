@@ -83,7 +83,8 @@ export function AiCard() {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        token,
+        // Sin token nuevo se cambian solo los modelos (el guardado se conserva).
+        token: token.trim() || undefined,
         model: model.trim() || undefined,
         judgeModel: judgeModel.trim() || undefined,
         transcriptionModel: transcriptionModel.trim() || undefined,
@@ -98,8 +99,12 @@ export function AiCard() {
       setError(data?.error?.message ?? "No se pudo guardar la configuración");
       return;
     }
+    setNotice(
+      token.trim() || !configured
+        ? "Configuración guardada. El agente ya puede usar la IA de tu empresa."
+        : "Modelos guardados. El token no cambió."
+    );
     setToken("");
-    setNotice("Configuración guardada. El agente ya puede usar la IA de tu empresa.");
     void refetch();
   }
 
@@ -254,10 +259,16 @@ export function AiCard() {
 
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              disabled={saving || !token.trim()}
+              disabled={saving || (!configured && !token.trim())}
               onClick={() => void save()}
             >
-              {saving ? "Guardando…" : configured ? "Rotar token" : "Guardar y activar"}
+              {saving
+                ? "Guardando…"
+                : !configured
+                  ? "Guardar y activar"
+                  : token.trim()
+                    ? "Guardar y rotar token"
+                    : "Guardar cambios"}
             </Button>
             {configured && (
               <Button
