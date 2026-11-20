@@ -46,7 +46,7 @@ export async function processInstagramWebhook(body: unknown): Promise<void> {
     const kinds = events.map((e) =>
       e.kind === "message" && e.isEcho
         ? "eco"
-        : (e.kind === "message" || e.kind === "postback") && e.standby
+        : (e.kind === "message" || e.kind === "postback" || e.kind === "reaction") && e.standby
           ? `${e.kind}(standby)`
           : e.kind
     );
@@ -79,7 +79,7 @@ export async function processInstagramWebhook(body: unknown): Promise<void> {
 async function handleEvent(integration: InstagramIntegration, ev: InstagramEvent) {
   // 030: otra app maneja el hilo (Conversation Routing). Se guarda igual,
   // pero el agente no responde y Ajustes avisa.
-  if ((ev.kind === "message" || ev.kind === "postback") && ev.standby) {
+  if ((ev.kind === "message" || ev.kind === "postback" || ev.kind === "reaction") && ev.standby) {
     await markInstagramStandbySeen(integration.organizationId).catch(() => {});
   }
   switch (ev.kind) {
@@ -437,7 +437,7 @@ async function handleDeleted(organizationId: string, mid: string) {
 
 async function findConversation(organizationId: string, igsid: string) {
   const rows = await getDb()
-    .select({ id: schema.conversation.id })
+    .select({ id: schema.conversation.id, lastInboundAt: schema.conversation.lastInboundAt })
     .from(schema.conversation)
     .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
     .where(
@@ -504,7 +504,7 @@ async function handleRead(
 
 /**
  * Reacción del cliente: queda como nota en el hilo (tipo `reaction`) sin
- * sumar no leídos, sin lead y sin despertar al agente. Quitar la reacción
+ * sumar no leídos y sin lead; despierta al agente como en WhatsApp (CRM-5). Quitar la reacción
  * no genera nada. 038: el registro es común con WhatsApp.
  */
 async function handleReaction(
@@ -522,6 +522,8 @@ async function handleReaction(
     emoji: ev.emoji ?? "❤️",
     reactedProviderMessageId: ev.mid,
     at: ev.at,
+    lastInboundAt: conversation.lastInboundAt,
+    standby: ev.standby,
   });
 }
 

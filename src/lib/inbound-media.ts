@@ -291,7 +291,7 @@ export const REACTION_MARKER = "[REACCIÓN]";
 
 /**
  * 038: cómo ve el agente una reacción (tipo `reaction`, WhatsApp o
- * Instagram). Es contexto: una reacción NUNCA despierta al agente.
+ * Instagram). Una reacción despierta al agente (CRM-5).
  */
 export function reactionAgentText(m: { text: string | null; reactionTo?: string | null }): string {
   const emoji = m.text?.trim() || "❤️";
@@ -300,13 +300,23 @@ export function reactionAgentText(m: { text: string | null; reactionTo?: string 
 }
 
 /**
- * 038: ¿el mensaje es algo que el cliente le ESCRIBIÓ al negocio (y por lo
- * tanto puede esperar respuesta)? Una reacción no: si contara, un 👍 al
- * mensaje del equipo haría «retomar» al agente, y uno que llega mientras
- * el agente genera dejaría su respuesta como vieja para siempre.
+ * 038: ¿el mensaje es algo que el cliente le ESCRIBIÓ al negocio? Una
+ * reacción no. Lo usan 048 (esperas de atención), el seguimiento, las
+ * métricas y la lista de pendientes de la retoma de 036. El turno del agente
+ * usa `isAgentTurnMessage` (CRM-5), donde la reacción SÍ cuenta.
  */
 export function isCustomerTurnMessage(m: { direction: string; type: string }): boolean {
   return m.direction === "in" && m.type !== "reaction";
+}
+
+/**
+ * CRM-5: ¿el mensaje es un turno del cliente para el AGENTE? Una reacción
+ * (WhatsApp o Instagram) es la respuesta del cliente a ese mensaje («👍 a una
+ * pregunta = sí»). Distinto de `isCustomerTurnMessage`, que siguen usando
+ * 048, el seguimiento y las métricas.
+ */
+export function isAgentTurnMessage(m: { direction: string; type: string }): boolean {
+  return m.direction === "in";
 }
 
 const REACTION_SNIPPET_MAX = 80;

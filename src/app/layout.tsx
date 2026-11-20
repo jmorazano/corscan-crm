@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 import {
   accentCssVariables,
   DEFAULT_BRANDING,
@@ -20,9 +20,11 @@ async function resolveBranding() {
   return getBranding(session?.organizationId).catch(() => DEFAULT_BRANDING);
 }
 
-// next/font descarga la fuente en BUILD y la sirve self-hosted (sin CDN).
-const geist = Geist({
-  subsets: ["latin"],
+// Fuente local en el repo: el build no tiene red (no puede bajar de Google
+// Fonts). Geist variable (latin), self-hosted (sin CDN).
+const geist = localFont({
+  src: "./fonts/geist-latin.woff2",
+  weight: "100 900",
   variable: "--font-geist",
   display: "swap",
 });
