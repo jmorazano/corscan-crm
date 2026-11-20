@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentTextFor,
   attachmentMarker,
+  isAgentTurnMessage,
   isCustomerTurnMessage,
   reactionAgentText,
   reactionSnippet,
@@ -16,6 +17,7 @@ import {
   searchEmojis,
 } from "@/lib/emoji-catalog";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import { conversationalReplyDecision } from "@/server/ai/pipeline";
 
 /**
  * 038: el reclamo de los clientes era que ante un emoji (en la práctica, un
@@ -81,6 +83,32 @@ describe("reacciones", () => {
   });
 });
 
+describe("CRM-5: reacciones", () => {
+  it("isAgentTurnMessage: la reacción del cliente despierta al agente", () => {
+    expect(isAgentTurnMessage({ direction: "in", type: "reaction" })).toBe(true);
+    expect(isAgentTurnMessage({ direction: "in", type: "text" })).toBe(true);
+    expect(isAgentTurnMessage({ direction: "out", type: "text" })).toBe(false);
+  });
+
+  it("el agente recibe el emoji y la pregunta completa", () => {
+    const q = "¿Te busco del 05/01 al 08/01/2027, 3 noches para 5 personas?";
+    const t = reactionAgentText({ text: "👍🏻", reactionTo: q });
+    expect(t).toContain("👍🏻");
+    expect(t).toContain(q);
+  });
+
+  it("la reacción como último inbound no deja la respuesta vieja", () => {
+    expect(
+      conversationalReplyDecision({
+        turnInboundId: "r1",
+        latestInboundId: "r1",
+        lastOutboundText: "¿Te busco del 05/01 al 08/01?",
+        text: "Perfecto, te paso las opciones.",
+      })
+    ).toBe("send");
+  });
+});
+
 describe("Instagram", () => {
   const ACCOUNT = "17841400000000001";
   const CUSTOMER = "998877665544";
@@ -119,6 +147,8 @@ describe("prompt", () => {
     expect(prompt).toMatch(/solo con emojis o con un sticker/);
     expect(prompt).toMatch(/nunca digas que no podés verlos/);
     expect(prompt).toContain("[REACCIÓN]");
+    expect(prompt).not.toContain("no algo que haya que contestar");
+    expect(prompt).toMatch(/👍 a tu pregunta = sí/);
   });
 });
 

@@ -57,6 +57,8 @@ export type ConversationEventDetails = {
   /** 044: días sin respuesta de la regla y etapa a la que pasó. */
   days?: number;
   stage?: string;
+  /** CRM-5: el mensaje del cliente (una reacción) al que respondió el turno. */
+  inboundId?: string;
 };
 
 export type ConversationEventDto = {
