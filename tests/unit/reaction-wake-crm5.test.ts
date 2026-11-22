@@ -8,6 +8,7 @@ import type { WebhookValue } from "@/server/inbox/webhook";
  */
 
 const state = vi.hoisted(() => ({
+  organizationId: "org_1",
   conversation: null as { id: string; lastInboundAt: Date | null } | null,
   duplicate: false,
   inserted: [] as { table: unknown; values: Record<string, unknown> }[],
@@ -34,11 +35,11 @@ vi.mock("@/server/push/events", () => ({
 }));
 
 vi.mock("@/server/whatsapp/credentials", () => ({
-  getCredentialsByPhoneNumberId: () => Promise.resolve({ organizationId: "org_1" }),
+  getCredentialsByPhoneNumberId: () => Promise.resolve({ organizationId: state.organizationId }),
 }));
 
 vi.mock("@/server/instagram/integration", () => ({
-  getInstagramIntegrationByAccount: () => Promise.resolve({ organizationId: "org_1" }),
+  getInstagramIntegrationByAccount: () => Promise.resolve({ organizationId: state.organizationId }),
   markInstagramStandbySeen: () => {
     state.standbySeen++;
     return Promise.resolve();
@@ -86,6 +87,7 @@ const NOW = () => new Date();
 const HOURS = (n: number) => new Date(Date.now() - n * 3_600_000);
 
 beforeEach(() => {
+  state.organizationId = "org_1";
   state.conversation = { id: "cv_1", lastInboundAt: NOW() };
   state.duplicate = false;
   state.inserted.length = 0;
@@ -233,6 +235,21 @@ describe("CRM-5: Instagram", () => {
       await instagramReaction({ action });
       expect(state.inserted).toHaveLength(0);
       expect(state.agentTurns).toHaveLength(0);
+    }
+  );
+});
+
+describe("CRM-5: cualquier empresa", () => {
+  it.each([["org_altos_ciudad"], ["org_cualquiera"], ["org_sin_conector"]])(
+    "%s: la reacción despierta al agente en WhatsApp e Instagram",
+    async (org) => {
+      state.organizationId = org;
+      await whatsappReaction("👍");
+      await instagramReaction();
+      const notes = state.inserted.filter((i) => i.values.type === "reaction");
+      expect(notes).toHaveLength(2);
+      for (const n of notes) expect(n.values.organizationId).toBe(org);
+      expect(state.agentTurns).toEqual([`${org}:cv_1`, `${org}:cv_1`]);
     }
   );
 });

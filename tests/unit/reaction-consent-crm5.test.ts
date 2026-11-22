@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isExplicitConsent } from "@/lib/mcp/consent";
 import { customerSinceLastReply, transactionalContext } from "@/server/ai/pipeline";
 
 /**
@@ -43,6 +44,26 @@ describe("customerSinceLastReply (consentimiento para escribir)", () => {
 
   it("un 👍 a un mensaje desconocido (sin reactionToId) no autoriza nada", () => {
     expect(customerSinceLastReply([out("summary"), reaction("r1")])).toEqual([]);
+  });
+
+  it.each([["whatsapp"], ["instagram"]])(
+    "%s: 👍 y después 👎 (o ❓, 🤷) sobre el mismo resumen REVOCA la aprobación",
+    (_canal) => {
+      const hist = (emoji: string) => [
+        out("summary"),
+        reaction("r1", "summary"),
+        { ...reaction("r2", "summary"), text: emoji },
+      ];
+      expect(isExplicitConsent(customerSinceLastReply(hist("👍")))).toBe(true);
+      for (const e of ["👎", "❓", "🤷"]) {
+        expect(isExplicitConsent(customerSinceLastReply(hist(e)))).toBe(false);
+      }
+    }
+  );
+
+  it("un 👎 a otro mensaje (no al resumen) no cambia nada", () => {
+    const h = [out("greet"), out("summary"), reaction("r1", "summary"), { ...reaction("r2", "greet"), text: "👎" }];
+    expect(isExplicitConsent(customerSinceLastReply(h))).toBe(true);
   });
 
   it("el texto escrito sigue contando como siempre", () => {

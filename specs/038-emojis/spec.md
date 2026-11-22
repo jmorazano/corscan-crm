@@ -46,6 +46,10 @@ Sin migración (`details` jsonb ya existe).
 
 Reemplaza el «SIN despertar al agente» para WhatsApp e Instagram.
 
+- Aplica a TODAS las empresas del CRM con el agente prendido y la IA configurada.
+  No depende del negocio, del conector (perfil MCP) ni de las instrucciones propias
+  de cada agente: la regla «👍 a tu pregunta = sí» está en el prompt base
+  (`[REACCIÓN]`). No hay flag por empresa.
 - Una reacción agenda un turno si la ventana de 24 h (por `lastInboundAt`)
   está abierta. Un duplicado o una reacción quitada nunca lo agenda.
 - En el pipeline la reacción cuenta como turno del cliente en ambos canales
@@ -58,5 +62,6 @@ Reemplaza el «SIN despertar al agente» para WhatsApp e Instagram.
 
 ## Verificación
 
-- Unit: `tests/unit/emojis-038.test.ts` + ajustes en `inbound-media` y 036.
+- Unit: `tests/unit/reaction-wake-crm5.test.ts` y `tests/unit/emojis-038.test.ts`
+  («cualquier empresa») + ajustes en `inbound-media` y 036.
 - E2E con mocks: guion `tests/e2e/038-emojis.md`.

@@ -22,6 +22,12 @@ const h = vi.hoisted(() => ({
   byId: [] as unknown[],
   /** Qué diría la clasificación de difusión (036) para un mensaje sin marca. */
   detectedBroadcast: false,
+  /** Código con el que falla el envío (null = sale bien). */
+  sendFail: null as string | null,
+  /** Usa el `recordSilence` real (con su deduplicación) en vez del espía. */
+  useRealSilence: false,
+  /** Tablas donde se insertó algo. */
+  inserted: [] as string[],
 }));
 
 vi.mock("@/lib/ai", () => ({ chatJson: h.chatJson }));
@@ -36,7 +42,8 @@ vi.mock("@/server/ai/events", async (importOriginal) => {
     lastTeamMessageAt: () => Promise.resolve(h.lastTeamAt),
     isTeamBroadcastMessage: (_o: string, _c: string, row: { details: { broadcast?: boolean } | null }) =>
       Promise.resolve(Boolean(row.details?.broadcast) || h.detectedBroadcast),
-    recordSilence: (input: { reason: string; reaction?: { id: string }; details?: unknown }) => {
+    recordSilence: (input: Parameters<typeof actual.recordSilence>[0]) => {
+      if (h.useRealSilence) return actual.recordSilence(input);
       h.silences.push(input);
       return Promise.resolve();
     },
@@ -61,11 +68,18 @@ vi.mock("@/server/inbox/lead-stage", () => ({
 
 vi.mock("@/server/inbox/send", () => ({
   SendError: class SendError extends Error {
-    code = "x";
+    code: string;
+    constructor(code = "x") {
+      super(code);
+      this.code = code;
+    }
   },
-  sendText: (input: { text: string }) => {
+  sendText: async (input: { text: string }) => {
+    if (h.sendFail) {
+      const { SendError } = await import("@/server/inbox/send");
+      throw new SendError(h.sendFail as never, h.sendFail);
+    }
     h.sent.push(input.text);
-    return Promise.resolve();
   },
 }));
 
@@ -108,7 +122,10 @@ vi.mock("@/lib/db", () => {
   return {
     getDb: () => ({
       select: () => ({ from: (t: { __name: string }) => chain(t.__name) }),
-      insert: () => writeChain(),
+      insert: (t?: { __name: string }) => {
+        h.inserted.push(t?.__name ?? "");
+        return writeChain();
+      },
       update: () => writeChain(),
     }),
     schema: new Proxy({}, { get: (_t, n) => table(String(n)) }),
@@ -205,6 +222,9 @@ beforeEach(() => {
   h.byId = [];
   h.detectedBroadcast = false;
   h.events.length = 0;
+  h.sendFail = null;
+  h.useRealSilence = false;
+  h.inserted.length = 0;
 });
 
 /** Contenido de los mensajes `user` (el historial del cliente) de la llamada n al modelo. */
@@ -499,6 +519,162 @@ describe("CRM-5: runAgentTurn con una reacción", () => {
     await turn();
     expect(userMessagesOf(0).some((c) => c.startsWith("[REACCIÓN]") && c.includes("👍"))).toBe(true);
     expect(h.sent).toEqual(["Perfecto, te paso las opciones."]);
+  });
+});
+
+describe("CRM-5: reacciones negativas o de duda llegan al modelo", () => {
+  const cases = [
+    ["whatsapp", "👎"],
+    ["whatsapp", "❓"],
+    ["instagram", "👎"],
+    ["instagram", "❓"],
+  ] as const;
+
+  it.each(cases)("%s: %s a un mensaje del equipo con su ventana vencida NO se silencia", async (kind, emoji) => {
+    h.lastTeamAt = t(0);
+    const team = msg({ id: "t1", direction: "out", type: "text", source: "phone", text: "Hola, te cotizo", createdAt: t(0) });
+    const r = { ...reaction("r_neg", 12, { reactionToId: "t1" }), text: emoji };
+    arrange({ conv: { ...conv, kind }, desc: [r, team] });
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "Contame qué pasó." }, raw: "{}" });
+    await turn();
+    expect(h.chatJson).toHaveBeenCalledTimes(1);
+    expect(h.silences).toHaveLength(0);
+    expect(h.sent).toEqual(["Contame qué pasó."]);
+  });
+
+  it.each(cases)("%s: %s a una notificación por API NO es un acuse", async (_kind, emoji) => {
+    const { transactionalContext } = await import("@/server/ai/pipeline");
+    const notice = { id: "n1", direction: "out" as const, type: "template", text: "Tu check-in", apiKeyId: "key_1" };
+    const r = (text: string) => ({ id: "r", direction: "in" as const, type: "reaction", text, apiKeyId: null, details: { reactionToId: "n1" } });
+    expect(transactionalContext([notice, r("👍")])?.allAcknowledgments).toBe(true);
+    expect(transactionalContext([notice, r(emoji)])?.allAcknowledgments).toBe(false);
+  });
+});
+
+describe("CRM-5: la traza de la reacción seguida de texto", () => {
+  it("👍 y después «ok» con un silencio anterior igual: la reacción deja su línea (deduplicación real)", async () => {
+    h.useRealSilence = true;
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({ desc: [ok, reaction("r_txt", 1, { reactionToId: "q1" }), question] });
+    // Silencio previo del mismo motivo, sin marca de reacción: no debe fundirse.
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "no_reply_needed", details: { detail: "antes" } }]];
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "none", reason: "solo confirmó" }, raw: "{}" });
+    await turn();
+    expect(h.chatJson).toHaveBeenCalledTimes(1);
+    expect(h.inserted).toContain("conversationEvent");
+  });
+
+  it("el turno marca la reacción pendiente aunque el último entrante sea texto", async () => {
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({ desc: [ok, reaction("r_txt2", 1, { reactionToId: "q1" }), question] });
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "none", reason: "solo confirmó" }, raw: "{}" });
+    await turn();
+    expect(h.silences[0]).toMatchObject({ reason: "no_reply_needed", reaction: { id: "r_txt2" } });
+  });
+});
+
+describe("CRM-5: la reacción pendiente deja su línea en todos los caminos (deduplicación real)", () => {
+  const priorSilence = () => {
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "known_contact", details: {} }]];
+  };
+
+  it("contacto conocido: 👍 y después «ok»: la reacción tiene su línea", async () => {
+    h.useRealSilence = true;
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({
+      contact: contact(new Date("2026-09-25")),
+      profile: profile({ sharedPersonalNumber: true }),
+      desc: [ok, reaction("r_kc", 1), question],
+    });
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "known_contact", details: {} }]];
+    await turn();
+    expect(h.chatJson).not.toHaveBeenCalled();
+    expect(h.inserted).toContain("conversationEvent");
+  });
+
+  it("opted_out: 👍 y después «ok»: la reacción tiene su línea", async () => {
+    h.useRealSilence = true;
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({
+      contact: { ...contact(), optedOutAt: new Date(), optedOutSource: "keyword" },
+      desc: [ok, reaction("r_oo", 1), question],
+    });
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "opted_out", details: {} }]];
+    await turn();
+    expect(h.inserted).toContain("conversationEvent");
+  });
+
+  it("respuesta duplicada suprimida con 👍 y «ok»: la traza lleva la reacción", async () => {
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({ desc: [ok, reaction("r_dup", 1, { reactionToId: "q1" }), question] });
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "¿Te busco del 05/01?" }, raw: "{}" });
+    await turn();
+    expect(h.sent).toHaveLength(0);
+    expect(h.silences[0]).toMatchObject({ reason: "duplicate", reaction: { id: "r_dup" } });
+  });
+
+  it("respuesta duplicada suprimida con 👍 y «ok»: línea nueva aunque haya un silencio anterior igual", async () => {
+    h.useRealSilence = true;
+    priorSilence();
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "duplicate", details: {} }]];
+    const ok = msg({ id: "m_ok", direction: "in", type: "text", text: "ok", createdAt: t(2) });
+    arrange({ desc: [ok, reaction("r_dup2", 1, { reactionToId: "q1" }), question] });
+    h.tables.conversationEvent = [[{ kind: "ai_silent", reason: "duplicate", details: {} }]];
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "¿Te busco del 05/01?" }, raw: "{}" });
+    await turn();
+    expect(h.inserted).toContain("conversationEvent");
+  });
+});
+
+describe("CRM-5: reacciones ambiguas o negativas no se descartan como acuse", () => {
+  it.each([["🤷"], ["😥"], ["🖕"]])("%s: no es acuse; ✅ ❤️ 👍🏻 sí", async (emoji) => {
+    const { isAcknowledgingReaction } = await import("@/server/ai/acknowledgment");
+    expect(isAcknowledgingReaction(emoji)).toBe(false);
+    for (const ok of ["👍", "👍🏻", "❤️", "✅", "🙏"]) expect(isAcknowledgingReaction(ok)).toBe(true);
+    expect(isAcknowledgingReaction("")).toBe(false);
+    expect(isAcknowledgingReaction("👍🤷")).toBe(false);
+  });
+
+  it.each([
+    ["whatsapp", "🤷"],
+    ["instagram", "😥"],
+  ] as const)("%s: %s al mensaje del equipo llega al modelo (retoma)", async (kind, emoji) => {
+    h.lastTeamAt = t(0);
+    const team = msg({ id: "t1", direction: "out", type: "text", source: "phone", text: "Hola, te cotizo", createdAt: t(0) });
+    const r = { ...reaction("r_amb", 12, { reactionToId: "t1" }), text: emoji };
+    arrange({ conv: { ...conv, kind }, desc: [r, team] });
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "¿Qué dudás?" }, raw: "{}" });
+    await turn();
+    expect(h.chatJson).toHaveBeenCalledTimes(1);
+    expect(h.sent).toEqual(["¿Qué dudás?"]);
+  });
+
+  it("🤷 a una notificación por API no es acuse (transactionalContext)", async () => {
+    const { transactionalContext } = await import("@/server/ai/pipeline");
+    const notice = { id: "n1", direction: "out" as const, type: "template", text: "Tu check-in", apiKeyId: "key_1" };
+    const r = { id: "r", direction: "in" as const, type: "reaction", text: "🤷", apiKeyId: null, details: { reactionToId: "n1" } };
+    expect(transactionalContext([notice, r])?.allAcknowledgments).toBe(false);
+  });
+});
+
+describe("CRM-5: la ventana vence durante la generación de la respuesta a una reacción", () => {
+  it.each([["whatsapp"], ["instagram"]])("%s: sin handoff «ventana»; deja la línea", async (kind) => {
+    arrange({ conv: { ...conv, kind }, desc: [reaction("r_w", 5, { reactionToId: "q1" }), question] });
+    h.sendFail = "window_closed";
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "Dale." }, raw: "{}" });
+    await turn();
+    expect(h.chatJson).toHaveBeenCalledTimes(1);
+    expect(h.events).toEqual([]);
+    expect(h.silences[0]).toMatchObject({ reason: "no_reply_needed", reaction: { id: "r_w" } });
+  });
+
+  it("control: con un texto del cliente, el vencimiento sigue derivando a «ventana»", async () => {
+    arrange({ desc: [typed, question] });
+    h.sendFail = "window_closed";
+    h.chatJson.mockResolvedValue({ ok: true, data: { action: "reply", text: "Dale." }, raw: "{}" });
+    await turn();
+    expect(h.silences).toHaveLength(0);
+    expect(h.events.length).toBeGreaterThan(0);
   });
 });
 

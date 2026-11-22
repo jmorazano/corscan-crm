@@ -18,6 +18,12 @@ Mocks: `WA_MOCK_ENABLED=true`, Graph → wa-mock, OpenRouter → ai-mock.
      05/01 al 08/01?» (ai-mock); `{"type":"reaction","reactTo":"<wamid de la
      pregunta>","emoji":"👍"}` → nota «Reaccionó 👍 a «¿Te busco…»», y el agente
      responde tomándolo como un sí (o queda «decidió no responder»).
+   - CRM-5, otra empresa: una empresa nueva (no Altos) con WhatsApp en wa-mock,
+     el agente prendido, sin conector MCP e instrucciones que no mencionan
+     reacciones. El agente pregunta (ai-mock) y el cliente manda
+     `{"type":"reaction","reactTo":"<wamid>","emoji":"👍"}` → nota «Reaccionó 👍
+     a «…»», y el agente responde tomándolo como un sí (o aparece «decidió no
+     responder»). Resultado: pendiente de verificación humana.
    - CRM-5, 👍 al mensaje del equipo con su ventana ya vencida: el equipo
      escribe desde el CRM, se espera más que la ventana del equipo y llega
      la reacción al mensaje del equipo → NO responde; queda la línea «La IA

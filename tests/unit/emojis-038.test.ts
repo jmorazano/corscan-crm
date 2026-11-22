@@ -150,6 +150,26 @@ describe("prompt", () => {
     expect(prompt).not.toContain("no algo que haya que contestar");
     expect(prompt).toMatch(/👍 a tu pregunta = sí/);
   });
+
+  it.each([["whatsapp"], ["instagram"]])(
+    "cualquier empresa: la regla de la reacción está en el prompt base (%s)",
+    (channel) => {
+      const prompt = buildAgentSystemPrompt({
+        profile: {
+          name: "Ari",
+          tone: "",
+          instructions: "Vendemos herramientas.",
+          escalationRules: "",
+          businessName: "Ferretería Don Pepe",
+        } as never,
+        kb: [],
+        stages: [],
+        channel,
+      } as never);
+      expect(prompt).toContain("[REACCIÓN]");
+      expect(prompt).toMatch(/👍 a tu pregunta = sí/);
+    }
+  );
 });
 
 describe("selector de emojis", () => {

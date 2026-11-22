@@ -43,6 +43,29 @@ function normalize(text: string): string {
 }
 
 /**
+ * CRM-5: reacciones que SÍ son un acuse (conformidad, gracias, cariño). Lista
+ * explícita: cualquier otro emoji (negativo, de duda o ambiguo: 👎 ❓ 🤷 😥…)
+ * llega al modelo y nunca se silencia como «confirmó».
+ */
+const ACK_REACTIONS = new Set(
+  [
+    "👍", "👌", "✅", "✔", "🙌", "🙏", "👏", "🤝", "💪", "💯", "🎉", "🥳", "👋",
+    "❤", "🧡", "💛", "💚", "💙", "💜", "🤍", "🖤", "🩷", "♥", "😊", "🙂", "😀",
+    "😃", "😄", "😁", "😉", "☺", "😍", "🥰", "😘", "🤗", "😎", "🫡", "🫶", "✨",
+    "🔥",
+  ].map((e) => e.codePointAt(0)!)
+);
+
+/**
+ * CRM-5: ¿el emoji de una reacción vale como acuse/confirmación? Solo si TODOS
+ * sus emojis son de la lista de acuses (sin contar tonos de piel ni variantes).
+ */
+export function isAcknowledgingReaction(emoji: string | null | undefined): boolean {
+  const cps = Array.from((emoji ?? "").replace(/[\s️‍\u{1F3FB}-\u{1F3FF}]/gu, ""));
+  return cps.length > 0 && cps.every((c) => ACK_REACTIONS.has(c.codePointAt(0)!));
+}
+
+/**
  * true si el texto es SOLO un acuse de recibo/agradecimiento/confirmación.
  * Sin texto (media) → false: puede ser una pregunta en audio o una foto
  * del problema; que decida el modelo.
