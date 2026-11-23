@@ -190,6 +190,8 @@ export type InstagramEvent =
       action: "react" | "unreact";
       emoji: string | null;
       at: Date;
+      /** CRM-5: llegó como `standby` (otra app maneja el hilo). */
+      standby: boolean;
     }
   | {
       kind: "postback";
@@ -401,14 +403,18 @@ function normalize(
     return { kind: "read", accountId, customerId, mid: m.read.mid ?? null, at };
   }
   if (m.reaction) {
+    // CRM-5: solo «react» / «unreact» son acciones válidas; una acción vacía,
+    // ausente o desconocida no puede pasar por una reacción (despertaría al agente).
+    if (m.reaction.action !== "react" && m.reaction.action !== "unreact") return null;
     return {
       kind: "reaction",
       accountId,
       customerId,
       mid: m.reaction.mid ?? null,
-      action: m.reaction.action === "unreact" ? "unreact" : "react",
+      action: m.reaction.action,
       emoji: m.reaction.emoji ?? null,
       at,
+      standby,
     };
   }
   if (m.postback) {

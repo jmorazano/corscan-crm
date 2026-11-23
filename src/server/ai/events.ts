@@ -85,7 +85,50 @@ export async function recordSilence(input: {
   conversationId: string;
   reason: SilentReason;
   details?: ConversationEventDetails;
+  /**
+   * CRM-5: el turno responde a esta reacción. Cada reacción deja SU línea
+   * (queda marcada con `details.inboundId`) aunque repita el motivo del
+   * silencio anterior; solo se deduplica un turno repetido de la MISMA reacción.
+   */
+  reaction?: { id: string; createdAt: Date };
 }): Promise<void> {
+  if (input.reaction) {
+    const { id, createdAt } = input.reaction;
+    try {
+      const events = await getDb()
+        .select({
+          kind: schema.conversationEvent.kind,
+          reason: schema.conversationEvent.reason,
+          details: schema.conversationEvent.details,
+        })
+        .from(schema.conversationEvent)
+        .where(
+          scoped(
+            schema.conversationEvent.organizationId,
+            input.organizationId,
+            eq(schema.conversationEvent.conversationId, input.conversationId),
+            gte(schema.conversationEvent.createdAt, createdAt)
+          )
+        )
+        .orderBy(desc(schema.conversationEvent.createdAt))
+        .limit(50);
+      if (
+        events.some((e) => e.kind === "ai_silent" && e.reason === input.reason && e.details?.inboundId === id)
+      ) {
+        return;
+      }
+    } catch (err) {
+      console.error("[eventos] no se pudo leer los eventos de la reacción:", err instanceof Error ? err.message : err);
+    }
+    await recordConversationEvent({
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      kind: "ai_silent",
+      reason: input.reason,
+      details: { ...(input.details ?? {}), inboundId: id },
+    });
+    return;
+  }
   try {
     const db = getDb();
     const [lastEvent] = await db

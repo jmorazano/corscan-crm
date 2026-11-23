@@ -1,4 +1,4 @@
-import { asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
@@ -35,12 +35,13 @@ import { canFillContactField, normalizeContactPhone, normalizeEmail } from "@/li
 import { visitNote } from "@/lib/meli/render";
 import { normalizeContactName } from "@/lib/contact-name";
 import { canOverwriteContactName } from "@/lib/history-import";
-import { agentTextFor, isCustomerTurnMessage } from "@/lib/inbound-media";
+import { agentTextFor, isAgentTurnMessage, isCustomerTurnMessage } from "@/lib/inbound-media";
 import { outboundAgentText } from "@/lib/outbound-media";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
-import { isPlainAcknowledgment } from "@/server/ai/acknowledgment";
+import { isAcknowledgingReaction, isPlainAcknowledgment } from "@/server/ai/acknowledgment";
 import { repeatsPreviousReply } from "@/lib/reply-repeat";
 import {
+  isTeamBroadcastMessage,
   lastConversationEvent,
   lastTeamMessageAt,
   recordConversationEvent,
@@ -380,10 +381,41 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // motivo en el hilo (solo conversaciones reales: el Laboratorio tiene su
   // propio informe). Sin IA configurada o con el agente apagado no hay
   // líneas: ahí no es «no respondió», es «no hay agente».
+  // CRM-5: cuando el turno responde a una reacción, su traza no se funde con
+  // la de un silencio anterior igual (cada reacción deja su línea).
+  // Se fija al arrancar el turno (antes de cualquier silencio) con el último
+  // entrante, y se confirma con `lastInbound`: identifica la reacción de ESTE
+  // turno, así otra reacción que llegue en el medio no se funde con ella.
+  let turnReaction: { id: string; createdAt: Date } | undefined;
+  if (!conversation.isTest) {
+    const [latestIn] = await db
+      .select({ id: schema.message.id, type: schema.message.type, createdAt: schema.message.createdAt })
+      .from(schema.message)
+      .where(and(eq(schema.message.conversationId, conversationId), eq(schema.message.direction, "in")))
+      .orderBy(desc(schema.message.createdAt))
+      .limit(1);
+    if (latestIn?.type === "reaction") turnReaction = { id: latestIn.id, createdAt: latestIn.createdAt };
+  }
   const silence = async (reason: SilentReason, details?: ConversationEventDetails): Promise<void> => {
     if (conversation.isTest) return;
-    await recordSilence({ organizationId, conversationId, reason, details });
+    await recordSilence({ organizationId, conversationId, reason, details, reaction: turnReaction });
   };
+
+  const history = await db
+    .select()
+    .from(schema.message)
+    .where(eq(schema.message.conversationId, conversationId))
+    .orderBy(desc(schema.message.createdAt))
+    .limit(20);
+  history.reverse();
+  // La reacción que atiende este turno es la última pendiente (posterior a lo
+  // último que mandó el negocio), aunque después haya llegado un texto durante
+  // el debounce: así su línea no se funde con un silencio anterior igual. Se
+  // resuelve ANTES de cualquier corte (contacto conocido, baja, equipo…).
+  if (!conversation.isTest) {
+    const pending = pendingReactionOf(history);
+    if (pending) turnReaction = { id: pending.id, createdAt: pending.createdAt };
+  }
 
   // 042 (decisión del dueño): la baja que declaró el AGENTE bloquea lo que
   // inicia la empresa (seguimientos, campañas), pero si el cliente vuelve a
@@ -404,16 +436,21 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
-  const history = await db
-    .select()
-    .from(schema.message)
-    .where(eq(schema.message.conversationId, conversationId))
-    .orderBy(desc(schema.message.createdAt))
-    .limit(20);
-  history.reverse();
-  // 038: una reacción (👍 a un mensaje) es contexto, no algo que responder.
-  const lastInbound = [...history].reverse().find(isCustomerTurnMessage);
-  if (!lastInbound) return;
+  // CRM-5: una reacción (👍 a un mensaje) cuenta como turno del cliente.
+  const lastInbound = [...history].reverse().find(isAgentTurnMessage);
+  if (!lastInbound) {
+    // CRM-5: la reacción del turno quedó fuera de los últimos 20 mensajes (el
+    // negocio escribió mucho después): igual deja su línea.
+    if (turnReaction) {
+      await silence("no_reply_needed", {
+        detail: "la reacción quedó atrás de los últimos mensajes del negocio; no se responde.",
+      });
+    }
+    return;
+  }
+  if (!turnReaction && lastInbound.type === "reaction") {
+    turnReaction = { id: lastInbound.id, createdAt: lastInbound.createdAt };
+  }
 
   // 031 (decisión del dueño): el equipo presente calla al agente N minutos;
   // el switch apagado dura hasta que lo prendan; la atención humana espera a
@@ -450,7 +487,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // respondió desde el celular, o alguien mandó algo desde el CRM), el
   // agente no habla encima.
   const lastMessage = history[history.length - 1];
-  if (lastMessage && lastMessage.direction === "out") return;
+  if (lastMessage && lastMessage.direction === "out") {
+    // CRM-5: la reacción no se queda sin traza (p. ej. salió una plantilla
+    // automática o respondió el equipo durante el debounce).
+    if (turnReaction) {
+      await silence("no_reply_needed", {
+        detail: "el negocio ya había escrito después de la reacción; no se responde encima.",
+      });
+    }
+    return;
+  }
   // 030: otra app (p. ej. ManyChat) maneja este hilo de Instagram: el
   // agente no puede responder (Instagram rechazaría el envío).
   if (lastInbound.details?.standby) {
@@ -468,6 +514,60 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
+  // CRM-5: una reacción al mensaje del EQUIPO es una confirmación, aunque la
+  // ventana del equipo ya haya vencido (pendingAfterTeam solo mira dentro de
+  // ella): no se llama al modelo y queda la línea de «decidió no responder».
+  // La regla mira el mensaje REALMENTE reaccionado (`details.reactionToId`),
+  // no el último saliente, y deja afuera las difusiones (036): `lastTeamAt`
+  // ya las excluye, así que una difusión posterior a él no cuenta.
+  // Los pendientes pueden ser solo acuses escritos («ok»): también confirman.
+  // Con una ráfaga se miran TODAS las reacciones pendientes (las posteriores a
+  // lo último que mandó el negocio): basta una que apunte a otro mensaje (p. ej.
+  // el 👍 a la pregunta de la IA) para que el turno siga y la atienda.
+  const confirmsTeam = async (r: {
+    text?: string | null;
+    details?: { reactionToId?: string } | null;
+  }): Promise<boolean> => {
+    // Un 👎, un ❓ o similar no confirma nada: llega al modelo.
+    if (!isAcknowledgingReaction(r.text)) return false;
+    const targetId = r.details?.reactionToId;
+    let target = targetId ? history.find((m) => m.id === targetId) : undefined;
+    // El mensaje reaccionado puede ser anterior a los últimos 20: se busca
+    // por id, con scope de empresa y conversación.
+    if (targetId && !target) target = await loadMessageById(organizationId, conversationId, targetId);
+    // El mensaje reaccionado se clasifica por sí mismo (humano y no difusión),
+    // sin depender de `lastTeamAt`: ese solo mira los últimos 10 del equipo y
+    // puede ser null si todos fueron difusiones.
+    return Boolean(
+      target &&
+        isTeamMessage(target) &&
+        !(await isTeamBroadcastMessage(organizationId, conversationId, target))
+    );
+  };
+  // Las dos reglas de silencio (esta y la retoma de 036, abajo) usan la misma
+  // decisión sobre las reacciones pendientes, sea cual sea el orden de llegada
+  // de los acuses escritos y las reacciones.
+  let reactionsAllToTeam = true;
+  if (!conversation.isTest) {
+    const lastOutIdx = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
+    for (const r of history.slice(lastOutIdx + 1)) {
+      if (r.direction !== "in" || r.type !== "reaction") continue;
+      if (!(await confirmsTeam(r))) {
+        reactionsAllToTeam = false;
+        break;
+      }
+    }
+  }
+  const pendingAreAcks = pendingCustomerMessages(history).every(
+    (m) => m.type === "text" && isPlainAcknowledgment(m.text)
+  );
+  if (!conversation.isTest && lastInbound.type === "reaction" && pendingAreAcks && reactionsAllToTeam) {
+    await silence("no_reply_needed", {
+      detail: "el cliente solo agradeció o confirmó lo que le dijo el equipo; no quedó esperando respuesta.",
+    });
+    return;
+  }
+
   // 036: RETOMA — el cliente escribió mientras el equipo atendía y nadie le
   // contestó. Se responde solo si quedó esperando algo.
   const resuming =
@@ -476,10 +576,19 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (resuming) {
     if (!isWindowOpen(conversation.lastInboundAt)) {
       // El equipo ya estaba ahí: no se deriva por la ventana de 24 h.
+      // CRM-5: si lo que se atiende es una reacción, queda la línea.
+      if (turnReaction) {
+        await silence("no_reply_needed", {
+          detail: "la ventana de 24 h se cerró mientras tanto y el equipo ya estaba atendiendo; no se responde a la reacción.",
+        });
+      }
       return;
     }
     const pending = pendingCustomerMessages(history);
-    if (pending.length > 0 && pending.every((m) => m.type === "text" && isPlainAcknowledgment(m.text))) {
+    // (Una reacción sola al mensaje del equipo ya se silenció arriba.) Los
+    // acuses escritos solo callan si TODAS las reacciones pendientes también
+    // confirman al equipo: un 👍 a otra pregunta sigue requiriendo respuesta.
+    if (pending.length > 0 && pendingAreAcks && reactionsAllToTeam) {
       await silence("no_reply_needed", {
         detail: "el cliente solo agradeció o confirmó lo que le dijo el equipo; no quedó esperando respuesta.",
       });
@@ -495,6 +604,15 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
+    // CRM-5: una reacción no abre ni cierra la ventana: si estaba cerrada (o
+    // venció durante el debounce, o la tomó una retoma ya programada), no se
+    // deriva por «ventana» por un 👍; queda la línea y nada más.
+    if (lastInbound.type === "reaction") {
+      await silence("no_reply_needed", {
+        detail: "la ventana de 24 h ya estaba cerrada y una reacción no la reabre; no se responde.",
+      });
+      return;
+    }
     await applyHandoff(conversationId, organizationId, "ventana");
     return;
   }
@@ -558,12 +676,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // 032: lo que escribió el cliente DESPUÉS de la última respuesta del
   // agente (o del equipo). Es lo único que vale como conformidad para una
   // herramienta que escribe en el sistema del negocio.
-  const lastOutboundIndex = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
-  const customerSinceLastReply = history
-    .slice(lastOutboundIndex + 1)
-    .filter((m) => m.direction === "in")
-    .map((m) => m.text ?? "")
-    .filter((t) => t.trim().length > 0);
+  const customerConsent = customerSinceLastReply(history);
   // Los importes que la guarda de precios deja salir: los montos fijos que el
   // negocio escribió (cochera, ropa blanca, transfer) y, se suman más abajo,
   // los que devolvió una herramienta genérica EN ESTE TURNO (032, el resumen
@@ -672,6 +785,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return interactive;
   };
 
+  // CRM-5: solo si lo último que escribió el cliente fue la reacción: ahí el
+  // vencimiento de la ventana no deriva a «ventana» (una reacción no la abre).
+  const windowReaction = () => (lastInbound.type === "reaction" ? turnReaction : undefined);
+
   const say = async (
     raw: string,
     extrasRaw?: {
@@ -694,7 +811,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     // del complejo, nunca el agente.
     if (!mcp && !stays) {
       await afterDelivery(
-        await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive, details)
+        await deliverConversationalReply(conversation, text, lastInbound.id, null, interactive, details, windowReaction(), turnReaction)
       );
       return;
     }
@@ -737,7 +854,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       finalText = priced.text;
     }
     await afterDelivery(
-      await deliverConversationalReply(conversation, finalText, lastInbound.id, fallback, interactive, details)
+      await deliverConversationalReply(
+        conversation,
+        finalText,
+        lastInbound.id,
+        fallback,
+        interactive,
+        details,
+        windowReaction(),
+        turnReaction
+      )
     );
   };
 
@@ -1035,7 +1161,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
               conversationId,
               sandbox: conversation.isTest,
               budgetMs: Math.max(0, toolDeadline - Date.now()),
-              customerSinceLastReply,
+              customerSinceLastReply: customerConsent,
               writesThisTurn,
             }
           );
@@ -1164,12 +1290,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       // Sin agenda (o agendado deshabilitado para reservas): el modelo no
       // debió elegir esto — degradar a derivación amable.
       if (!calendar || calendar.integration.status === "reconnect_required") {
-        await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
+        await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.", null, null, windowReaction());
         await applyHandoff(conversationId, organizationId, "modelo");
         return;
       }
       if (action.action === "book_appointment" && !calendar.integration.rules.agentBookingEnabled) {
-        await deliverReply(conversation, "Perfecto, un compañero del equipo te confirma ese turno enseguida.");
+        await deliverReply(
+          conversation,
+          "Perfecto, un compañero del equipo te confirma ese turno enseguida.",
+          null,
+          null,
+          windowReaction()
+        );
         await applyHandoff(conversationId, organizationId, "modelo");
         return;
       }
@@ -1196,7 +1328,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           const reply = action.reply?.trim()
             ? guardPrivacy(action.reply)
             : `¡Listo! Tu turno quedó confirmado para el ${out.appointment.whenText}.`;
-          await deliverReply(conversation, reply);
+          await deliverReply(conversation, reply, null, null, windowReaction());
           if (!conversation.isTest) {
             await appendLeadNote(
               organizationId,
@@ -1211,7 +1343,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           return;
         }
         if (out.kind === "escalate") {
-          await deliverReply(conversation, out.text);
+          await deliverReply(conversation, out.text, null, null, windowReaction());
           await applyHandoff(conversationId, organizationId, "error", "no se pudo reservar el turno en el calendario");
           return;
         }
@@ -1408,11 +1540,14 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     if (lastAvailabilityText) {
       await deliverReply(
         conversation,
-        `Tengo estos horarios disponibles: ${lastAvailabilityText}. ¿Cuál te queda mejor?`
+        `Tengo estos horarios disponibles: ${lastAvailabilityText}. ¿Cuál te queda mejor?`,
+        null,
+        null,
+        windowReaction()
       );
       return;
     }
-    await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.");
+    await deliverReply(conversation, "Te confirmo el turno con el equipo en un momento.", null, null, windowReaction());
     await applyHandoff(conversationId, organizationId, "modelo");
     return;
   }
@@ -1426,6 +1561,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       // respuesta que lo acompaña.
       if (action.reply) {
         await say(action.reply, action);
+      } else if (turnReaction) {
+        await silence("no_reply_needed", { detail: "movió la etapa del lead y no hacía falta contestar." });
       }
       return;
     }
@@ -1455,6 +1592,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       await saveLeadNote(action.note);
       if (action.reply) {
         await say(action.reply, action);
+      } else if (turnReaction) {
+        await silence("no_reply_needed", { detail: "anotó el dato del lead y no hacía falta contestar." });
       }
       return;
     }
@@ -1531,6 +1670,20 @@ async function resumeIfSilenced(
 }
 
 /**
+ * CRM-5, PURA: la última reacción del cliente posterior a lo último que mandó
+ * el negocio (la que atiende el turno, aunque después llegue un texto).
+ */
+export function pendingReactionOf<T extends { direction: string; type: string }>(
+  history: readonly T[]
+): T | undefined {
+  const lastOut = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
+  return history
+    .slice(lastOut + 1)
+    .reverse()
+    .find((m) => m.direction === "in" && m.type === "reaction");
+}
+
+/**
  * 036, PURA: lo que escribió el cliente DESPUÉS del último mensaje del negocio
  * (agente o equipo), en orden.
  */
@@ -1585,6 +1738,9 @@ export function transactionalContext(
     type: string;
     text: string | null;
     apiKeyId: string | null;
+    /** CRM-5: para saber a qué mensaje apunta una reacción. */
+    id?: string;
+    details?: { reactionToId?: string } | null;
   }[]
 ): TransactionalContext | null {
   let lastOut = -1;
@@ -1601,8 +1757,58 @@ export function transactionalContext(
   if (inbounds.length === 0) return null;
   return {
     notice: (outbound.text ?? "").slice(0, 300),
-    allAcknowledgments: inbounds.every((m) => isPlainAcknowledgment(m.text)),
+    // CRM-5: una reacción solo es el acuse de la NOTIFICACIÓN si apunta a ella;
+    // un 👍 a otro mensaje (o a uno desconocido) no se silencia por esta regla.
+    allAcknowledgments: inbounds.every(
+      (m) =>
+        (m.type === "reaction"
+          ? isAcknowledgingReaction(m.text) &&
+            outbound.id !== undefined &&
+            m.details?.reactionToId === outbound.id
+          : isPlainAcknowledgment(m.text))
+    ),
   };
+}
+
+/**
+ * 032 + CRM-5: lo que el cliente escribió después de la última respuesta del
+ * negocio y vale como conformidad para una escritura en su sistema. Una
+ * reacción solo vale si confirma ESA última respuesta (la que mostró el
+ * resumen): un 👍 a un saludo anterior o a un mensaje desconocido no autoriza nada.
+ */
+export function customerSinceLastReply(
+  history: readonly { id: string; direction: string; type: string; text: string | null; details?: { reactionToId?: string } | null }[]
+): string[] {
+  const lastOutboundIndex = history.reduce((acc, m, i) => (m.direction === "out" ? i : acc), -1);
+  const lastOutboundId = lastOutboundIndex >= 0 ? history[lastOutboundIndex]!.id : null;
+  return history
+    .slice(lastOutboundIndex + 1)
+    .filter((m) => m.direction === "in")
+    .filter((m) => m.type !== "reaction" || (lastOutboundId !== null && m.details?.reactionToId === lastOutboundId))
+    // Una reacción negativa, de duda o ambigua al resumen REVOCA la aprobación
+    // (el 👎 no tiene texto para la barrera: se la traduce a una negación).
+    .map((m) => (m.type === "reaction" && !isAcknowledgingReaction(m.text) ? "no (reacción negativa)" : (m.text ?? "")))
+    .filter((t) => t.trim().length > 0);
+}
+
+/** CRM-5: un mensaje de la conversación por id (empresa + conversación). */
+async function loadMessageById(
+  organizationId: string,
+  conversationId: string,
+  messageId: string
+): Promise<typeof schema.message.$inferSelect | undefined> {
+  const rows = await getDb()
+    .select()
+    .from(schema.message)
+    .where(
+      scoped(
+        schema.message.organizationId,
+        organizationId,
+        eq(schema.message.conversationId, conversationId),
+        eq(schema.message.id, messageId)
+      )
+    );
+  return rows[0];
 }
 
 async function loadContact(
@@ -1737,7 +1943,7 @@ export function conversationalReplyDecision(input: {
  * ejecutadas (turno reservado) usan deliverReply directo — la acción
  * ocurrió y el cliente debe enterarse igual (FR-004).
  */
-async function deliverConversationalReply(
+export async function deliverConversationalReply(
   conversation: Conversation,
   text: string,
   turnInboundId: string,
@@ -1750,7 +1956,11 @@ async function deliverConversationalReply(
   /** 030: extras de Instagram (botones, tarjetas, respuestas rápidas). */
   interactive: Interactive | null = null,
   /** 042: marca «espera respuesta» del agente. */
-  details: SendDetails = null
+  details: SendDetails = null,
+  /** CRM-5: la reacción que atiende el turno (si el último entrante es una). */
+  reaction?: { id: string; createdAt: Date },
+  /** CRM-5: la reacción pendiente que el turno atiende (aunque haya texto después): su traza. */
+  traceReaction?: { id: string; createdAt: Date }
 ): Promise<boolean> {
   if (!conversation.isTest) {
     const db = getDb();
@@ -1760,6 +1970,7 @@ async function deliverConversationalReply(
         direction: schema.message.direction,
         type: schema.message.type,
         text: schema.message.text,
+        createdAt: schema.message.createdAt,
       })
       .from(schema.message)
       .where(eq(schema.message.conversationId, conversation.id))
@@ -1767,9 +1978,9 @@ async function deliverConversationalReply(
       .limit(6);
     const decision = conversationalReplyDecision({
       turnInboundId,
-      // 038: una reacción que llega mientras el agente genera no vuelve
-      // vieja su respuesta (el turno se reprogramaría para siempre).
-      latestInboundId: recent.find(isCustomerTurnMessage)?.id ?? null,
+      // CRM-5: mismo criterio que `lastInbound` (si no, el turno de una
+      // reacción siempre parecería viejo y se reprogramaría para siempre).
+      latestInboundId: recent.find(isAgentTurnMessage)?.id ?? null,
       lastOutboundText: recent.find((m) => m.direction === "out")?.text ?? null,
       text,
     });
@@ -1784,7 +1995,7 @@ async function deliverConversationalReply(
         console.warn(
           `[agente] respuesta idéntica en ${conversation.id}: se manda la alternativa`
         );
-        return deliverReply(conversation, fallbackOnDuplicate, null, details);
+        return deliverReply(conversation, fallbackOnDuplicate, null, details, reaction);
       }
       console.warn(
         `[agente] respuesta idéntica suprimida en ${conversation.id}`
@@ -1793,11 +2004,13 @@ async function deliverConversationalReply(
         organizationId: conversation.organizationId,
         conversationId: conversation.id,
         reason: "duplicate",
+        // CRM-5: si el turno respondía a una reacción, deja su propia línea.
+        reaction: traceReaction ?? recent.find((m) => m.id === turnInboundId && m.type === "reaction"),
       });
       return false;
     }
   }
-  return deliverReply(conversation, text, interactive, details);
+  return deliverReply(conversation, text, interactive, details, reaction);
 }
 
 /** 042: lo que el agente le agrega al mensaje para el seguimiento. */
@@ -1808,7 +2021,13 @@ async function deliverReply(
   conversation: Conversation,
   text: string,
   interactive: Interactive | null = null,
-  details: SendDetails = null
+  details: SendDetails = null,
+  /**
+   * CRM-5: el turno responde a esta reacción. Una reacción no reabre la
+   * ventana de 24 h: si venció durante la generación o los reintentos, no hay
+   * handoff «ventana», solo la línea de que no se responde.
+   */
+  reaction?: { id: string; createdAt: Date }
 ): Promise<boolean> {
   if (conversation.isTest) {
     await persistTestOutbound(conversation, text);
@@ -1835,6 +2054,18 @@ async function deliverReply(
     );
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {
+      if (reaction) {
+        await recordSilence({
+          organizationId: conversation.organizationId,
+          conversationId: conversation.id,
+          reason: "no_reply_needed",
+          details: {
+            detail: "la ventana de 24 h se cerró mientras se preparaba la respuesta y una reacción no la reabre; no se responde.",
+          },
+          reaction,
+        });
+        return false;
+      }
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
       return false;
     }

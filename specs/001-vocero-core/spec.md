@@ -356,8 +356,10 @@ Ruta B literalmente (modo de pruebas interno) hasta ver la bandeja funcionando.
 
 - **Webhook**: evento duplicado (mismo ID de mensaje) → un solo mensaje persistido;
   segmento de token incorrecto → 404 sin efectos; firma inválida (cuando el secreto está
-  configurado) → 401; payloads de eventos no soportados (reacciones, stickers) → se
-  ignoran sin error.
+  configurado) → 401; payloads de eventos no soportados → se
+  ignoran sin error. Los stickers se procesan (038). Las reacciones quedan como nota
+  en el hilo y, con la ventana de 24 h abierta, despiertan al agente en cualquier
+  empresa (038, CRM-5).
 - **Ventana de 24h**: exactamente en el límite; conversación sin ningún mensaje entrante
   (iniciada por plantilla); el agente NUNCA envía texto libre con ventana cerrada.
 - **Agente**: proveedor caído o respuesta no parseable → reintento con extracción

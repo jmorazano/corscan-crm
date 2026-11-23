@@ -28,12 +28,12 @@ llama «emoji» y el agente «no podía ver» eran:
 - `like_heart` → entra como el texto «❤️».
 - Reacción de WhatsApp → nota `reaction` en el hilo (como Instagram) con el
   comienzo del mensaje reaccionado (`message.details.reactionTo`). Sin no
-  leídos, sin ventana, sin lead y SIN despertar al agente; quitarla no
-  genera nada. El agente la ve como `[REACCIÓN]` en el historial.
-- Una reacción no cuenta como «el cliente escribió»: `isCustomerTurnMessage`
-  la excluye de `lastInbound`, de la retoma de 036 y del chequeo de
-  respuesta vieja (antes, en Instagram, una reacción durante la generación
-  dejaba el turno reprogramándose).
+  leídos, sin ventana y sin lead; quitarla no genera nada (CRM-5: ahora
+  despierta al agente, ver abajo). El agente la ve como `[REACCIÓN]` en el historial.
+- Una reacción no cuenta como «el cliente escribió» para 048, el seguimiento,
+  las métricas ni la lista de pendientes de 036 (`isCustomerTurnMessage`).
+  Desde CRM-5 el turno del agente sí la toma como `lastInbound` y en el
+  chequeo de respuesta vieja (`isAgentTurnMessage`, mismo criterio en ambos).
 - Prompt: interpretar emojis/stickers por contexto, nunca decir que no se
   ven; `[REACCIÓN]` es contexto.
 - Composer: selector de emojis propio (escritorio; en el celular está el
@@ -42,7 +42,26 @@ llama «emoji» y el agente «no podía ver» eran:
 
 Sin migración (`details` jsonb ya existe).
 
+## CRM-5 — la reacción del cliente despierta al agente (nov-2026)
+
+Reemplaza el «SIN despertar al agente» para WhatsApp e Instagram.
+
+- Aplica a TODAS las empresas del CRM con el agente prendido y la IA configurada.
+  No depende del negocio, del conector (perfil MCP) ni de las instrucciones propias
+  de cada agente: la regla «👍 a tu pregunta = sí» está en el prompt base
+  (`[REACCIÓN]`). No hay flag por empresa.
+- Una reacción agenda un turno si la ventana de 24 h (por `lastInboundAt`)
+  está abierta. Un duplicado o una reacción quitada nunca lo agenda.
+- En el pipeline la reacción cuenta como turno del cliente en ambos canales
+  (`isAgentTurnMessage`; `lastInbound` y el chequeo de respuesta vieja usan el
+  mismo criterio).
+- En la retoma de 036 una reacción cuenta como confirmación (no responde y
+  deja la línea «decidió no responder»).
+- El prompt trata `[REACCIÓN]` como una respuesta corta (👍 a una pregunta = sí).
+- No leídos, lead, push y 048 quedan como estaban.
+
 ## Verificación
 
-- Unit: `tests/unit/emojis-038.test.ts` + ajustes en `inbound-media` y 036.
+- Unit: `tests/unit/reaction-wake-crm5.test.ts` y `tests/unit/emojis-038.test.ts`
+  («cualquier empresa») + ajustes en `inbound-media` y 036.
 - E2E con mocks: guion `tests/e2e/038-emojis.md`.

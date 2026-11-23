@@ -43,8 +43,8 @@ envíos y suscripciones. **Knobs** (`POST /api/dev/ig-mock/state`, one-shot):
 5. **Eco desde la app de Instagram** → saliente «Desde Instagram»
    (`source=phone`) EN VIVO por SSE.
 6. **Foto** → se baja de la CDN simulada, `media_state=ready`, descripción del
-   ai-mock bajo la imagen; **reacción** → nota «Reaccionó 😍 a un mensaje» sin
-   despertar al agente; **borrado** → «Mensaje eliminado por el cliente» y el
+   ai-mock bajo la imagen; **reacción** → nota «Reaccionó 😍 a un mensaje» y el
+   agente responde (o queda la línea «decidió no responder»); **borrado** → «Mensaje eliminado por el cliente» y el
    contenido se borra de la BD.
 7. **Texto largo** (2.640 bytes) → 4 mensajes de ≤1.000 bytes cortados en
    párrafo/oración; 4 filas `cloud`, sin duplicados por los ecos.

@@ -14,6 +14,7 @@ import { mediaLabel } from "@/components/inbox/helpers";
 import { processInboundMedia, type InboundMediaSource } from "@/server/inbox/media";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
+import { isWindowOpen } from "@/server/inbox/window";
 import {
   isOptOutMessage,
   onInboundSideEffects,
@@ -137,7 +138,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
 
   for (const msg of value.messages ?? []) {
     // 038: la reacción del cliente (👍 a un mensaje) queda en el hilo como
-    // nota; antes se descartaba y el equipo no la veía.
+    // nota; CRM-5: además despierta al agente (si la ventana está abierta).
     if (msg.type === "reaction") {
       await ingestWhatsAppReaction(organizationId, msg);
       continue;
@@ -176,7 +177,7 @@ async function ingestWhatsAppReaction(organizationId: string, msg: WebhookMessag
   const emoji = msg.reaction?.emoji?.trim();
   if (!emoji) return;
   const rows = await getDb()
-    .select({ id: schema.conversation.id })
+    .select({ id: schema.conversation.id, lastInboundAt: schema.conversation.lastInboundAt })
     .from(schema.conversation)
     .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
     .where(
@@ -198,14 +199,15 @@ async function ingestWhatsAppReaction(organizationId: string, msg: WebhookMessag
     emoji,
     reactedProviderMessageId: msg.reaction?.message_id ?? null,
     at: toDate(msg.timestamp),
+    lastInboundAt: conversation.lastInboundAt,
   });
 }
 
 /**
  * 038, COMÚN a WhatsApp e Instagram (023): la reacción del cliente queda
  * como nota en el hilo (tipo `reaction`) con el comienzo del mensaje al que
- * reaccionó. Sin no leídos, sin lead, sin abrir la ventana y SIN despertar
- * al agente: es contexto para el próximo turno, no algo que contestar.
+ * reaccionó. Sin no leídos, sin lead, sin abrir la ventana; despierta al
+ * agente como un mensaje (CRM-5) si la ventana está abierta.
  * Idempotente por el id del proveedor.
  */
 export async function recordCustomerReaction(input: {
@@ -216,12 +218,18 @@ export async function recordCustomerReaction(input: {
   /** wamid (WhatsApp) o mid (Instagram) del mensaje reaccionado. */
   reactedProviderMessageId: string | null;
   at: Date;
+  lastInboundAt: Date | null;
+  /** CRM-5: Instagram `standby` (otra app maneja el hilo): se guarda marcada; el agente no envía y deja la línea «standby». */
+  standby?: boolean;
 }): Promise<void> {
   const db = getDb();
   let reactionTo: string | null = null;
+  // CRM-5: la identidad del mensaje reaccionado (no solo su texto), para que
+  // el agente sepa de quién era (equipo, agente, difusión) y no del «último saliente».
+  let reactionToId: string | null = null;
   if (input.reactedProviderMessageId) {
     const target = await db
-      .select({ type: schema.message.type, text: schema.message.text })
+      .select({ id: schema.message.id, type: schema.message.type, text: schema.message.text })
       .from(schema.message)
       .where(
         scoped(
@@ -233,7 +241,10 @@ export async function recordCustomerReaction(input: {
       )
       .limit(1);
     const t = target[0];
-    if (t) reactionTo = reactionSnippet(t.text) ?? mediaLabel(t.type);
+    if (t) {
+      reactionTo = reactionSnippet(t.text) ?? mediaLabel(t.type);
+      reactionToId = t.id;
+    }
   }
   const inserted = await db
     .insert(schema.message)
@@ -246,7 +257,14 @@ export async function recordCustomerReaction(input: {
       type: "reaction",
       text: input.emoji,
       status: "delivered",
-      details: reactionTo ? { reactionTo } : null,
+      details:
+        reactionTo || input.standby
+          ? {
+              ...(reactionTo ? { reactionTo } : {}),
+              ...(reactionToId ? { reactionToId } : {}),
+              ...(input.standby ? { standby: true } : {}),
+            }
+          : null,
       waTimestamp: input.at,
     })
     .onConflictDoNothing({
@@ -259,6 +277,14 @@ export async function recordCustomerReaction(input: {
     type: "message.new",
     data: { conversationId: input.conversationId, message: serializeMessage(message) },
   });
+  // CRM-5: la reacción no actualiza `lastInboundAt` (no cuenta como mensaje
+  // para la ventana); con la ventana cerrada no se despierta al agente, así
+  // un 👍 no provoca un handoff «ventana».
+  // Standby (Instagram, otra app maneja el hilo): el turno corre igual para
+  // dejar su traza — el pipeline lo corta antes de enviar y registra «standby».
+  if (isWindowOpen(input.lastInboundAt)) {
+    await maybeRunAgentTurn(input.organizationId, input.conversationId);
+  }
 }
 
 /**
