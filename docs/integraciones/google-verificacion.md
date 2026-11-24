@@ -82,15 +82,22 @@ Narrower scopes are not sufficient: calendar.app.created only works on calendars
 1. **Idioma de Google en inglés** (temporal): <https://myaccount.google.com/language>
    con la cuenta dueña del calendario. Así la pantalla de consentimiento sale
    en inglés. Al terminar, lo volvés a español.
-2. Empresa: **«Negocio de Juan Morazano»** en `crm.corscan.com.ar` (ya tiene
-   Calendar «Turnos Corscan CRM», agente prendido y WhatsApp).
+2. Empresa: **«Negocio de Juan Morazano»** en `crm.corscan.com.ar`. Revisado
+   en producción el 24-nov-2026: Calendar «Turnos Corscan CRM» conectado,
+   lunes 9 a 19, agente prendido, WhatsApp reconectado y entregando.
+   ⚠️ **«El agente puede agendar turnos por su cuenta» está APAGADO**: hay que
+   encenderlo en Integraciones → Google Calendar (Guardar) o en el paso 6 el
+   agente informa horarios y deriva, sin crear el evento. Volvelo a como
+   estaba al terminar.
 3. En Google Calendar, en «Turnos Corscan CRM», creá un evento **«Busy»
    mañana 10:00–11:00**: sirve para mostrar que ese horario no se ofrece.
-4. Un celular para escribirle al WhatsApp del negocio que **no** sea un
-   contacto conocido del celular del negocio y cuya conversación tenga la IA
-   prendida (si no, el agente calla a propósito). **Hacé una prueba completa
-   antes de grabar** y cancelá ese turno.
-5. Chrome en una sola ventana, barra de direcciones visible, zoom 110–125 %.
+4. Un celular para escribirle al WhatsApp del negocio, en una conversación
+   con la IA prendida, sin atención humana pendiente y donde **nadie del
+   equipo haya escrito en los últimos 10 minutos** (si no, el agente calla a
+   propósito). **Hacé una prueba completa antes de grabar** y cancelá ese turno.
+5. Elegí un día con horario de atención: si mañana es sábado o domingo, usá
+   el lunes en el evento «Busy» y en el mensaje.
+6. Chrome en una sola ventana, barra de direcciones visible, zoom 110–125 %.
    Grabación: ⌘⇧5 → «Grabar toda la pantalla». Opcional: Duplicación del
    iPhone (macOS) para mostrar el chat del celular al costado.
 
@@ -104,7 +111,7 @@ Narrower scopes are not sufficient: calendar.app.created only works on calendars
 | 4 | De vuelta en el CRM: el selector de calendario con «Turnos Corscan CRM» | "The owner chooses which calendar receives the bookings." |
 | 5 | Tarjeta «Vista previa: próximos horarios libres» + pestaña de Google Calendar con el evento «Busy» de mañana 10:00 | "We only read busy/free intervals. Tomorrow 10:00 is busy in Google Calendar, so it is not offered." |
 | 6 | En el celular: «Hola, quiero agendar una llamada para mañana» → el agente ofrece horarios (sin las 10:00) → elegir uno → confirma. Mostrar la conversación en la Bandeja del CRM | "A customer asks for an appointment over WhatsApp. The assistant offers free slots and books the one the customer confirms." |
-| 7 | Google Calendar → refrescar → abrir el evento nuevo (título y descripción creados por Corscan CRM) | "calendar.events is used to create exactly one event on the selected calendar, with the customer's name, phone and note." |
+| 7 | Google Calendar → refrescar → abrir el evento nuevo (título «Turno: …» y descripción; hoy la descripción termina en «Agendado desde Vocero CRM», un nombre distinto al de la pantalla de permisos) | "calendar.events is used to create exactly one event on the selected calendar, with the customer's name, phone and note." |
 | 8 | CRM → Integraciones → Google Calendar → «Turnos agendados desde el CRM» → Cancelar → refrescar Google Calendar: desapareció | "If the business cancels the booking in the CRM, we delete that same event. We never read, edit or delete events we did not create." |
 | 9 | Mostrar el botón «Desconectar» (sin tocarlo) y `myaccount.google.com/permissions` | "The business can disconnect at any time from the CRM or revoke access from their Google account." |
 
