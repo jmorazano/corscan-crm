@@ -16,6 +16,7 @@ import {
   instagramSendMode,
   splitInstagramText,
 } from "@/lib/instagram/messaging";
+import type { MessageDetails } from "@/lib/instagram/types";
 import { isInstagramHumanAgentEnabled } from "@/lib/env";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
@@ -46,6 +47,8 @@ export async function sendInstagramConversationText(input: {
   interactive?: Interactive | null;
   /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
   sentByUserId?: string | null;
+  /** CRM-6: marca del acuse de comprobante (se combina con la del formato). */
+  details?: Pick<MessageDetails, "receiptAck"> | null;
 }): Promise<{ messageId: string }> {
   const { organizationId, conversation, contact } = input;
 
@@ -80,6 +83,8 @@ export async function sendInstagramConversationText(input: {
   const interactive = input.interactive ?? EMPTY_INTERACTIVE;
   let plan: PlannedIgMessage[] = planIgMessages(chunks, interactive);
   const db = getDb();
+  const storedDetails = (planned: MessageDetails | null): MessageDetails | null =>
+    input.details?.receiptAck ? { ...(planned ?? {}), receiptAck: true } : planned;
   let lastId: string | null = null;
   for (let index = 0; index < plan.length; index++) {
     const planned = plan[index]!;
@@ -126,7 +131,7 @@ export async function sendInstagramConversationText(input: {
         direction: "out",
         type: "text",
         text: chunk,
-        details: planned.details,
+        details: storedDetails(planned.details),
         // Instagram no avisa «entregado»: aceptado = enviado; el «visto»
         // llega por `messaging_seen`.
         status: "sent",
@@ -151,7 +156,7 @@ export async function sendInstagramConversationText(input: {
           aiGenerated: input.aiGenerated,
           sentByUserId: input.sentByUserId ?? null,
           sentByName: await authorName(input.sentByUserId),
-          details: planned.details,
+          details: storedDetails(planned.details),
           text: chunk,
           type: "text",
         })

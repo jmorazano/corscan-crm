@@ -72,6 +72,10 @@ export type MessageDetails = {
   awaitingReply?: boolean;
   /** 042: este mensaje es un seguimiento automático (1 o 2). */
   followUp?: { step: number };
+  /** CRM-6: acuse automático de comprobante; no cierra la espera de 048. */
+  receiptAck?: boolean;
+  /** CRM-6: adjunto que solo se guarda (026): su descarga no reprograma el turno. */
+  storeOnly?: boolean;
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */
