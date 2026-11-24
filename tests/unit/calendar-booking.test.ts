@@ -51,6 +51,11 @@ vi.mock("@/lib/db", async (importOriginal) => {
   };
 });
 
+// El nombre público de la instancia (APP_PUBLIC_NAME).
+vi.mock("@/server/branding", () => ({
+  getPublicBranding: () => ({ name: "Corscan CRM", accent: "#3f5972" }),
+}));
+
 vi.mock("@/server/calendar/availability", () => ({
   isStartAvailable: () => Promise.resolve(state.available),
   getAvailability: () =>
@@ -144,6 +149,14 @@ describe("bookAppointment", () => {
     }
     expect(state.insertedEvents).toEqual([]);
     expect(state.inserted).toEqual([]);
+  });
+
+  it("el evento dice el nombre público de la instancia, no el del producto", async () => {
+    const { bookAppointment } = await import("@/server/calendar/booking");
+    await bookAppointment({ ...base, startLocal: "2026-09-08T10:00", sandbox: false });
+    const description = String(state.insertedEvents[0]?.description);
+    expect(description).toContain("Agendado desde Corscan CRM");
+    expect(description).not.toContain("Vocero");
   });
 
   it("camino feliz: evento en Google + fila con org/contacto/inicio en UTC + texto de confirmación", async () => {

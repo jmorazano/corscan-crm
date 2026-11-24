@@ -14,7 +14,7 @@ Inbounds vía `POST /api/dev/wa-mock/inbound` (`phoneNumberId: 111111111`,
 2. Inbound "Dale, el de las 11".
    ✅ Saliente de confirmación "…lun 7 sep 11:00…"; `GET
    /api/dev/google-mock/state` muestra el evento `Turno: <nombre>` con
-   descripción (cliente, WhatsApp, motivo, "Agendado desde Vocero CRM")
+   descripción (cliente, WhatsApp, motivo, "Agendado desde <nombre público: APP_PUBLIC_NAME>")
    en 14:00Z–14:30Z; tabla `appointment` con la fila confirmed/agent;
    `contact.notes` con "[IA] Turno agendado: lunes 7 de septiembre a las
    11:00 — …"; la lista "Turnos agendados desde el CRM" lo muestra.
