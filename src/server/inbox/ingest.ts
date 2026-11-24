@@ -474,7 +474,9 @@ export async function ingestInboundCore(input: {
       details:
         plan.kind === "process" && plan.type === "video"
           ? { ...(input.details ?? {}), videoRead: true }
-          : (input.details ?? null),
+          : plan.kind === "store"
+            ? { ...(input.details ?? {}), storeOnly: true }
+            : (input.details ?? null),
       waTimestamp,
     })
     .onConflictDoNothing({

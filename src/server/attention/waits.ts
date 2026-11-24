@@ -89,6 +89,7 @@ export async function reconcileWait(row: WaitRow, now: Date = new Date()): Promi
       source: m.source,
       status: m.status,
       broadcast,
+      receiptAck: Boolean(m.details?.receiptAck),
     });
   }
 

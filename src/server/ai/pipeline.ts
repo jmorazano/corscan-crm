@@ -54,6 +54,7 @@ import {
   resolveTeamSilenceMs,
 } from "@/lib/agent-presence";
 import { withSendRetry } from "@/lib/send-retry";
+import { hasPendingAttachment, needsReceiptAck, RECEIPT_ACK_TEXT } from "@/lib/receipt-ack";
 import type { MessageDetails } from "@/lib/instagram/types";
 import { applyOptOut } from "@/server/inbox/side-effects";
 import { advanceLeadStage, loadLeadStageState, type StageTarget } from "@/server/inbox/lead-stage";
@@ -467,6 +468,31 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     windowMs,
   });
   const windowMinutes = Math.round(windowMs / 60_000);
+  const ackCandidate =
+    !conversation.isTest && profile.tagPaymentReceipts && (!conversation.aiEnabled || conversation.handoffAt !== null);
+  // CRM-6: con una imagen o PDF todavía en lectura no se decide nada (ni el
+  // acuse ni la retoma): al terminar, media.ts suelta otro turno.
+  if (ackCandidate && hasPendingAttachment(history, new Date())) return;
+  // CRM-6: con «Etiquetar comprobantes de pago» encendido, un comprobante en
+  // atención humana o con la IA del chat apagada recibe un acuse fijo (sin
+  // modelo) y nada más: la marca de atención humana y el switch quedan.
+  if (
+    ackCandidate &&
+    isWindowOpen(conversation.lastInboundAt) &&
+    !lastInbound.details?.standby &&
+    needsReceiptAck({
+      enabled: profile.tagPaymentReceipts,
+      history,
+      aiEnabled: conversation.aiEnabled,
+      handoffAt: conversation.handoffAt,
+      // Un envío fallido del equipo no le llegó al cliente: no cuenta.
+      lastTeamAt: await lastTeamMessageAt(organizationId, conversationId, { skipFailed: true }),
+      now: new Date(),
+    })
+  ) {
+    await deliverReply(conversation, RECEIPT_ACK_TEXT, null, { receiptAck: true });
+    return;
+  }
   if (presence.silent) {
     // 036: al vencer la ventana del equipo, otro turno decide si el cliente
     // quedó esperando una respuesta.
@@ -2014,7 +2040,7 @@ export async function deliverConversationalReply(
 }
 
 /** 042: lo que el agente le agrega al mensaje para el seguimiento. */
-type SendDetails = Pick<MessageDetails, "awaitingReply" | "followUp"> | null;
+type SendDetails = Pick<MessageDetails, "awaitingReply" | "followUp" | "receiptAck"> | null;
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(

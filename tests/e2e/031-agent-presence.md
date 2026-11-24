@@ -66,7 +66,9 @@ verifica en el Browser pane (escritorio 1400 px y móvil 375 px).
    cliente escribe desde las HH:MM».
 4. «Al otro día» (9 h) llega el PDF `Transferencia_a_Otras_Cuentas.pdf` → la
    IA lo lee y responde «Recibí el comprobante, gracias…»; `handoff_at=null`
-   y línea «La IA retomó la conversación…».
+   y línea «La IA retomó la conversación…». Vale con «Etiquetar comprobantes
+   de pago» apagado: encendido (053), el PDF recibe el acuse fijo y `handoff_at`
+   queda; la retoma se prueba entonces con un texto.
 
 (Primera versión del guion, antes de la aclaración del dueño: la pausa y la
 atención humana vencían a los 10 min sin más; el C viejo falla ahora a

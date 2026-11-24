@@ -84,6 +84,8 @@ export type OutgoingForWait = {
   status: string;
   /** 036: el mismo texto a muchos chats no es atención. */
   broadcast: boolean;
+  /** CRM-6: el acuse automático de comprobante no atiende a nadie. */
+  receiptAck?: boolean;
 };
 
 export type WaitClosure =
@@ -123,7 +125,7 @@ export function closeWait(
   const person = sorted.find(isPersonReply);
   const agentFrom = wait.startReason === "handoff" ? start + AGENT_GRACE_MS : start;
   const agent = sorted.find(
-    (m) => m.aiGenerated && m.status !== "failed" && m.createdAt.getTime() >= agentFrom
+    (m) => m.aiGenerated && !m.receiptAck && m.status !== "failed" && m.createdAt.getTime() >= agentFrom
   );
   const windowEnd =
     lastInboundAt !== null ? lastInboundAt.getTime() + ATTENTION_WINDOW_MS : start + ATTENTION_WINDOW_MS;

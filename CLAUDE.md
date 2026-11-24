@@ -44,6 +44,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Imagen de encabezado de plantillas (008) | `src/lib/template-header.ts` (validación magic bytes/5MB) · `uploadResumable` en `src/lib/meta/client.ts` (ejemplo a Meta) · tabla `template_media` (blob 1:1, cascade) · `GET /api/template-media/[id]` (binario PÚBLICO — Meta lo baja en cada envío) · `POST /api/templates` es multipart · header en `sendTemplateCore`/`buildTemplateSendPayload` |
 | Variables de plantillas con origen (009) | catálogo `VARIABLE_ORIGINS` + validación contiguas ≤5 + `resolveVariableValues`/`renderBody(values[])` en `src/lib/template-body.ts` (puro, compartido con previews) · `template.variable_bindings` y `campaign.variable_values` (jsonb; NULL = flujo legado INTACTO) · resolución por destinatario en `sendTemplateCore` (contacto/`formatPhone`/nombre de la org) · `freeTexts` en `/api/campaigns`, `/api/conversations` y `/api/conversations/[id]/messages/template` |
 | Agente paciente + baja visible (011) | debounce que RE-espera tras cada turno (`executeTurn`) y `AGENT_COALESCE_MS` default 20s · guardas `conversationalReplyDecision`/`deliverConversationalReply` (descarta contexto viejo, nunca repite el último saliente; confirmaciones de turno exentas) · BAJA → lead a etapa `kind='lost'` (side-effects) + badge «Dado de baja» en la bandeja + agente mudo (ingest + guard en runAgentTurn) |
+| Acuse de comprobante en atención humana (053, CRM-6) | `src/lib/receipt-ack.ts` (`needsReceiptAck`, `hasPendingAttachment`, `RECEIPT_ACK_TEXT`) · bloque antes de `presence.silent` en `runAgentTurn` (texto fijo vía `deliverReply`, `details.receiptAck`; solo con `tagPaymentReceipts`) · `lastTeamMessageAt(…, { skipFailed })` · `closeWait` ignora `receiptAck` (048) |
 | Motivo de fallo y reintento de fallidos (010) | `src/lib/meta-errors.ts` (`friendlyDeliveryError`, traducciones de 131042/131049/131026/131047) · `MessageDto.error` + línea «No entregado…» en `message-thread.tsx` · `retryFailedRecipients` en `campaigns/manage.ts` (única excepción guardada a la monotonicidad: fallido→pendiente, ambas clases de fallo) · acción `retry_failed` en `/api/campaigns/[id]/actions` · botón «Reintentar fallidos (N)» en el detalle |
 | Gestión de campañas (filtros status/q en la URL, borrado, elegibles en vivo del borrador, ciclo de vida en la UI) | `src/server/campaigns/manage.ts` (filtros puros, `deleteCampaign` guardado por estado) · `GET /api/campaigns?status=&q=` (+ `settings` ritmo/cupo, `eligibleNow`) · `DELETE /api/campaigns/[id]` · `src/components/campaigns/campaigns-client.tsx` (panel «cómo funciona», acciones por fila con confirmación, stepper del detalle) · el 409 `in_use` de plantillas devuelve `campaigns` para enlazarlas |
 | Cupo de envíos por empresa | `src/server/campaigns/quota.ts` + `/api/settings/sending` + Ajustes → Envíos y campañas (`CAMPAIGN_PACE_MS` de instancia) |
@@ -206,7 +207,12 @@ repo ya registra. Los subagentes con `memory: project` usan
 <!-- SPECKIT START -->
 ## Feature activa (Spec Kit)
 
-Feature en curso: **052-template-edit** (editar plantillas de WhatsApp
+Feature en curso: **053-receipt-ack** (CRM-6: con «Etiquetar comprobantes de
+pago» encendido, un comprobante en atención humana o con la IA del chat
+apagada recibe un acuse fijo, sin modelo y sin sacar la marca; reglas en
+`src/lib/receipt-ack.ts`, envío en `runAgentTurn`; sin migración) —
+[specs/053-receipt-ack/spec.md](specs/053-receipt-ack/spec.md).
+Anterior: **052-template-edit** (editar plantillas de WhatsApp
 desde Ajustes → Plantillas con las reglas de Meta; migración 0039) —
 [specs/052-template-edit/spec.md](specs/052-template-edit/spec.md).
 Anterior: **051-ical-availability** (disponibilidad por los

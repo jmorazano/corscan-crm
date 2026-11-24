@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
@@ -239,7 +239,9 @@ const TEAM_CANDIDATES = 10;
  */
 export async function lastTeamMessageAt(
   organizationId: string,
-  conversationId: string
+  conversationId: string,
+  /** CRM-6: un envío fallido no le llegó al cliente, no es una respuesta. */
+  opts: { skipFailed?: boolean } = {}
 ): Promise<Date | null> {
   const db = getDb();
   const rows = await db
@@ -252,7 +254,8 @@ export async function lastTeamMessageAt(
           organizationId,
           eq(schema.message.conversationId, conversationId)
         ),
-        teamAuthored()
+        teamAuthored(),
+        opts.skipFailed ? ne(schema.message.status, "failed") : undefined
       )
     )
     .orderBy(desc(schema.message.createdAt))
