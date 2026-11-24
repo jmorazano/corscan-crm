@@ -6,6 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { GoogleAuthError } from "@/lib/google/oauth";
 import { deleteEvent, GoogleApiError, insertEvent } from "@/lib/google/calendar-client";
 import { formatLocalLong, localDateKey, parseLocalDateTime, zonedToUtc } from "@/lib/time";
+import { getPublicBranding } from "@/server/branding";
 import { getAvailability, isStartAvailable } from "@/server/calendar/availability";
 import { getCalendarIntegration, withAccessToken, type CalendarIntegration } from "@/server/calendar/integration";
 import type { Slot } from "@/server/calendar/slots";
@@ -122,7 +123,9 @@ export async function bookAppointment(input: {
         ? "Contacto: mensaje directo de Instagram"
         : `WhatsApp: +${input.contactPhone}`,
       input.note ? `Motivo: ${input.note}` : null,
-      "Agendado desde Vocero CRM",
+      // El nombre público de la instancia: es el que la persona vio en la
+      // pantalla de permisos de Google (la verificación los compara).
+      `Agendado desde ${getPublicBranding().name}`,
     ]
       .filter(Boolean)
       .join("\n");
