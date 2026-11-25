@@ -225,7 +225,18 @@ async function callProvider(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...extra }),
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: maxTokens,
+        ...extra,
+        // Solo proveedores que no guardan ni entrenan con lo que les mandamos
+        // (conversaciones, horarios de la agenda, planillas). Lo exige la
+        // política de privacidad y el «Limited Use» de los datos de Google.
+        // `zdr` sería más estricto pero deja a Gemini sin proveedor (probado
+        // el 25-nov-2026 con los modelos en uso: todos responden con `deny`).
+        provider: { data_collection: "deny" },
+      }),
       signal: controller.signal,
     });
     if (!res.ok) {

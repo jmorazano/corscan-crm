@@ -115,6 +115,14 @@ describe("chatJson (reintentos y errores tipados)", () => {
     expect(bodies.map((b) => b.max_tokens)).toEqual([1024, 2048, 300]);
   });
 
+  it("todo pedido exige proveedores que no guardan ni entrenan con los datos", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+    await chatJson(config, schema, [{ role: "user", content: "hola" }]);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as { provider?: unknown };
+    expect(body.provider).toEqual({ data_collection: "deny" });
+  });
+
   it("proveedor caído (500 persistente) → error tipado, jamás excepción", async () => {
     const fetchMock = vi
       .fn()
