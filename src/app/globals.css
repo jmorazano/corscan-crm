@@ -97,9 +97,19 @@
     «se quedaba fijo»). Con `contain` el rebote es del propio scroller.
   */
   .overflow-auto,
-  .overflow-y-auto,
-  .overflow-x-auto {
+  .overflow-y-auto {
     overscroll-behavior: contain;
+  }
+  /*
+    Un scroller SOLO horizontal (tablas anchas, filas de chips) contiene su
+    eje y deja pasar el vertical al scroller de la página. Con `contain` en
+    los dos ejes, la rueda o el dedo sobre la tabla no movían la página: en
+    Administración, con muchas empresas, las últimas filas no se alcanzaban
+    (Chrome aplica `contain` aunque el eje vertical no tenga nada que
+    desplazar).
+  */
+  .overflow-x-auto {
+    overscroll-behavior-x: contain;
   }
   button,
   [role="button"],

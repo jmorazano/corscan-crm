@@ -292,7 +292,9 @@ export function PipelineClient() {
       <div
         ref={boardRef}
         onScroll={onBoardScroll}
-        className="min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto p-3 md:snap-none md:p-4"
+        // `overscroll-contain`: el tablero no tiene un scroller vertical
+        // arriba; sin esto el rebote vertical en iOS encadena al documento.
+        className="min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-contain p-3 md:snap-none md:p-4"
       >
         <DndContext
           sensors={sensors}
