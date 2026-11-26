@@ -24,6 +24,7 @@ import {
   type AgentActionType,
 } from "@/server/ai/actions";
 import { stripBookingPromise } from "@/lib/promise-guard";
+import { detectAppointmentClaim, TEAM_CONFIRMS_APPOINTMENT } from "@/lib/appointment-guard";
 import { businessFixedAmounts, safePriceReply, stripPrices } from "@/lib/price-guard";
 import { stripUnknownContactData } from "@/lib/privacy-guard";
 import {
@@ -815,6 +816,38 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // vencimiento de la ventana no deriva a «ventana» (una reacción no la abre).
   const windowReaction = () => (lastInbound.type === "reaction" ? turnReaction : undefined);
 
+  // Agenda conectada con el agendado APAGADO (o pidiendo reconexión): el
+  // servidor rechaza book_appointment, pero el modelo igual podía escribir
+  // «te agendé el martes a las 10». Ese texto no sale: va la frase del equipo
+  // y se deriva, como cuando pide la herramienta. Una sola vez por turno.
+  let appointmentHandedOff = false;
+  const guardAppointmentClaim = async (text: string): Promise<boolean> => {
+    if (!calendar || calendarBookable || appointmentHandedOff) return false;
+    const claim = detectAppointmentClaim(text, { hasOwnAppointment: calendar.nextOwn !== null });
+    if (!claim.claims) return false;
+    appointmentHandedOff = true;
+    console.warn(
+      `[agente] turno afirmado con el agendado apagado en ${conversation.id}: ${claim.match ?? "?"}`
+    );
+    await deliverConversationalReply(
+      conversation,
+      TEAM_CONFIRMS_APPOINTMENT,
+      lastInbound.id,
+      null,
+      null,
+      null,
+      windowReaction(),
+      turnReaction
+    );
+    await applyHandoff(
+      conversationId,
+      organizationId,
+      "modelo",
+      "quiso confirmar un turno, pero el agente no tiene permiso para agendar"
+    );
+    return true;
+  };
+
   const say = async (
     raw: string,
     extrasRaw?: {
@@ -826,6 +859,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     } | null
   ): Promise<void> => {
     const text = guardPrivacy(raw);
+    if (await guardAppointmentClaim(text)) return;
     const interactive = extrasFor(extrasRaw);
     // 042: la marca viaja con el mensaje (sin marca = sin seguimiento).
     const details = extrasRaw?.awaiting_reply === undefined ? null : { awaitingReply: extrasRaw.awaiting_reply };
@@ -1469,7 +1503,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       await learnContactName(organizationId, conversation.contactId, action.contact_name);
     }
     await say(conversationalText(action), action.action === "reply" || action.action === "update_lead" ? action : null);
-    await applyHandoff(conversationId, organizationId, "modelo", "avisó que iba a consultar y no lo hizo");
+    if (!appointmentHandedOff) {
+      await applyHandoff(conversationId, organizationId, "modelo", "avisó que iba a consultar y no lo hizo");
+    }
     return;
   }
 
@@ -1556,7 +1592,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
     }
-    await applyHandoff(conversationId, organizationId, "visita");
+    if (!appointmentHandedOff) await applyHandoff(conversationId, organizationId, "visita");
     return;
   }
 
@@ -1627,7 +1663,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       if (action.farewell) {
         await say(action.farewell);
       }
-      await applyHandoff(conversationId, organizationId, "modelo", clipReason(action.reason));
+      if (!appointmentHandedOff) {
+        await applyHandoff(conversationId, organizationId, "modelo", clipReason(action.reason));
+      }
       return;
     }
   }

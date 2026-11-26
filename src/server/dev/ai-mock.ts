@@ -604,6 +604,16 @@ function aiMockCompletionCore(messages: InMessage[]): string {
     );
   }
 
+  // «[E2E_AGENDE]» (con agenda) → el modelo desobedece «NO podés agendar» y
+  // AFIRMA el turno en un reply: la guarda de turnos sin agendado lo tapa.
+  // Antes que el conector y los calendarios para que gane el desempate.
+  if (text.includes("[e2e_agende]") && system.includes("AGENDA DE TURNOS")) {
+    return JSON.stringify({
+      action: "reply",
+      text: "¡Listo! Te agendé el turno para el martes a las 10. Te esperamos.",
+    });
+  }
+
   // Conector MCP (016): VA ANTES QUE LA AGENDA a propósito. El regex de
   // `mentionsCalendar` incluye "disponibilidad" y "reservar", así que una
   // empresa con agenda Y conector le ofrecería un turno de 30 minutos a

@@ -43,6 +43,14 @@ Inbounds vía `POST /api/dev/wa-mock/inbound` (`phoneNumberId: 111111111`,
    elige.
    ✅ Informa horarios; ante la elección responde que el equipo confirma y
    deriva (handoff), sin crear evento. Volver a encender.
+8b. (fix nov-2026) Con "el agente puede agendar" apagado, el modelo AFIRMA
+   el turno en un `reply` (ai-mock: «[E2E_AGENDE]» en el mensaje del
+   cliente → «¡Listo! Te agendé el turno…»).
+   ✅ Sale «Perfecto, un compañero del equipo te confirma ese turno
+   enseguida.», la conversación queda en handoff `modelo` con el motivo
+   «quiso confirmar un turno, pero el agente no tiene permiso para agendar»,
+   log `[agente] turno afirmado con el agendado apagado…`, sin evento. Con
+   la opción ENCENDIDA el mismo mensaje sale intacto y sin handoff.
 9. Laboratorio: **Ejecutar pruebas**.
    ✅ Corrida verde (6 personas) y el mock NO registra eventos nuevos
    (sandbox offline).
@@ -67,6 +75,10 @@ Inbounds vía `POST /api/dev/wa-mock/inbound` (`phoneNumberId: 111111111`,
   disponibles: mar 15 sep 09:00, 10:00, 11:00" → "Dale, el de las 9" →
   "Perfecto, un compañero del equipo te confirma ese turno enseguida."
   (handoff), sin evento nuevo; la bandera se volvió a encender.
+
+**26-nov-2026 — VERDE paso 8b** (org local con conector: el knob va antes
+que el conector en el ai-mock): apagada → frase del equipo + handoff
+`modelo` con motivo; encendida → «¡Listo! Te agendé…» intacto, sin handoff.
 
 Gotchas de conducción: el ai-mock necesita la fecha en algún mensaje del
 cliente (`YYYY-MM-DD`) para elegir el día; sin ella usa los próximos 3

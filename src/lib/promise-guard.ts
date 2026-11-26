@@ -79,7 +79,7 @@ const SIN_TILDE: Record<string, string> = {
  * los patrones corren sobre esta versión y los índices sirven para el original.
  * Cubre de paso los errores de tilde del modelo («te lo reserve»).
  */
-function normalizar(texto: string): string {
+export function normalizar(texto: string): string {
   let salida = "";
   for (let i = 0; i < texto.length; i += 1) {
     const crudo = texto.charAt(i);
