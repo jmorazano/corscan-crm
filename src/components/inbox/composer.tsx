@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { Clock3, FileText, Film, Mic, Music, Paperclip, Send, Smile, X, Zap } from "lucide-react";
+import { Clock3, Contact, FileText, Film, Mic, Music, Paperclip, Send, Smile, X, Zap } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { quickReplyQuery } from "@/lib/gestures";
@@ -30,6 +30,7 @@ import { formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
 import { QuickReplies } from "./quick-replies";
 import { EmojiPicker } from "./emoji-picker";
+import { ContactPicker } from "./contact-picker";
 import { insertAtCursor } from "@/lib/emoji-catalog";
 import { useVoiceRecorder } from "./use-voice-recorder";
 
@@ -105,6 +106,8 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   // 038: selector de emojis (escritorio; en el celular está el teclado).
   const [emojiOpen, setEmojiOpen] = useState(false);
+  // 054: «Enviar contacto» (tarjeta de WhatsApp; texto en Instagram).
+  const [contactsOpen, setContactsOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaFileRef = useRef<HTMLInputElement>(null);
@@ -134,6 +137,7 @@ export function Composer({
     clearPending();
     setError(null);
     setEmojiOpen(false);
+    setContactsOpen(false);
   }, [conversation.id]);
   useEffect(
     () => () => {
@@ -645,6 +649,23 @@ export function Composer({
             <Paperclip className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
           </button>
         )}
+        {canAttachMedia && channel && (
+          // 054: en el celular deja lugar al texto en cuanto se empieza a
+          // escribir (como la cámara de WhatsApp).
+          <button
+            type="button"
+            aria-label="Enviar contacto"
+            title="Enviar un contacto (nombre y teléfono)"
+            data-testid="contact-attach"
+            onClick={() => setContactsOpen(true)}
+            className={cn(
+              "h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-accent md:flex md:h-[34px] md:w-[34px]",
+              text.trim() || pending ? "hidden" : "flex"
+            )}
+          >
+            <Contact className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.7} />
+          </button>
+        )}
         {canAttach && (
           // 022: visible también en móvil — desde el celular la imagen sale
           // de la cámara o la galería, y es el caso típico del dueño.
@@ -816,6 +837,16 @@ export function Composer({
               : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
         </p>
       </div>
+      {channel && (
+        <ContactPicker
+          open={contactsOpen}
+          conversationId={conversation.id}
+          channel={channel}
+          recipientName={conversation.contact.name}
+          onClose={() => setContactsOpen(false)}
+          onSent={onSent}
+        />
+      )}
     </div>
   );
 }

@@ -1007,7 +1007,15 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
             : // 026: un adjunto que mandó el equipo (o el celular) no
               // desaparece del contexto aunque no tenga epígrafe.
               // 030: y lo que se mostró con botones o tarjetas tampoco.
-              [outboundAgentText({ type: m.type, text: m.text, status: m.status }), interactiveAgentNote(m.details)]
+              [
+                outboundAgentText({
+                  type: m.type,
+                  text: m.text,
+                  status: m.status,
+                  contacts: m.details?.contacts,
+                }),
+                interactiveAgentNote(m.details),
+              ]
                 .filter(Boolean)
                 .join(" ") || null,
       }))

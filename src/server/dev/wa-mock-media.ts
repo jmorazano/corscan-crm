@@ -1,3 +1,5 @@
+import { muxOggOpus } from "@/lib/ogg-opus";
+
 /**
  * Binarios del wa-mock (020): los bytes que el CRM descarga cuando un
  * cliente manda una foto o una nota de voz en el self-test.
@@ -23,6 +25,20 @@ function oggBytes(): Buffer {
 }
 
 /**
+ * 054: nota de voz REAL (contenedor OGG con OpusHead, ~1 s de cuadros que no
+ * son silencio), como las que manda WhatsApp. La página mínima de arriba no
+ * pasa la validación de salida («OGG con códec Opus») y no sirve para probar
+ * el reenvío de un audio.
+ */
+function oggOpusBytes(): Buffer {
+  const packets = Array.from({ length: 50 }, (_, i) =>
+    // TOC 0x78: un cuadro de 20 ms; el resto, relleno que no es DTX.
+    Uint8Array.from([0x78, ...Array.from({ length: 12 }, (_, j) => (i * 31 + j * 7 + 1) & 0xff)])
+  );
+  return Buffer.from(muxOggOpus(packets, { channels: 1, inputSampleRate: 16_000 }));
+}
+
+/**
  * El tipo sale del propio id (`mediamock_<tipo>_<n>`), como haría un id
  * opaco de Meta contra su almacenamiento. Un id que contenga `empty`
  * devuelve un archivo que el ai-mock declara ilegible: es la única forma de
@@ -43,6 +59,9 @@ export function mockMediaFor(mediaId: string): MockMedia {
   // 038: sticker = WebP (lleva el id al final, como el JPEG).
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}sticker`) && !unreadable) {
     return { bytes: webpBytes(mediaId), mimeType: "image/webp" };
+  }
+  if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}audio_opus`)) {
+    return { bytes: oggOpusBytes(), mimeType: "audio/ogg; codecs=opus" };
   }
   if (mediaId.startsWith(`${MOCK_MEDIA_PREFIX}audio`)) {
     return unreadable

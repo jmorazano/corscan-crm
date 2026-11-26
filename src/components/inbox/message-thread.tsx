@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Check,
+  ChevronDown,
   CircleDashed,
   CheckCheck,
   Clock3,
@@ -12,6 +13,8 @@ import {
   Download,
   FileText,
   Film,
+  Forward,
+  ListChecks,
   Loader2,
   MessageCircle,
   Mic,
@@ -30,6 +33,8 @@ import { linkifyParts } from "@/lib/linkify";
 import { formatFileSize, formatLabel, OUTBOUND_KINDS } from "@/lib/outbound-media";
 import { formatElapsed } from "@/lib/audio-record";
 import { friendlyDeliveryError } from "@/lib/meta-errors";
+import { cardPhoneDigits, contactCardText, type SharedContact } from "@/lib/contact-card";
+import { forwardabilityOfDto } from "@/lib/forward";
 import { cn } from "@/lib/utils";
 import { useLongPress } from "@/components/gestures";
 import { ActionSheet } from "@/components/ui/action-sheet";
@@ -137,12 +142,36 @@ function mergeThread(messages: MessageDto[], events: ConversationEventDto[]): Th
   return items;
 }
 
+/**
+ * 054: reenviar desde el hilo. `selecting` = modo selección (casillas en las
+ * burbujas; la barra con «Reenviar» la dibuja la Bandeja en lugar del
+ * compositor). Sin esta prop (Entrenador) el menú solo ofrece copiar.
+ */
+export type ThreadForwarding = {
+  selecting: boolean;
+  selectedIds: ReadonlySet<string>;
+  /** Reenviar ESTE mensaje (abre el diálogo de destinos). */
+  onForward: (message: MessageDto) => void;
+  /** Entrar al modo selección con este mensaje marcado. */
+  onStartSelect: (message: MessageDto) => void;
+  onToggle: (message: MessageDto) => void;
+};
+
+/** Lo que copia «Copiar texto»: el texto, o la tarjeta de contacto escrita. */
+function copyableText(m: MessageDto | null): string {
+  if (!m) return "";
+  if (m.text) return m.text;
+  const cards = m.details?.contacts;
+  return m.type === "contacts" && cards?.length ? contactCardText(cards) : "";
+}
+
 export function MessageThread({
   messages,
   events = [],
   kind = "whatsapp",
   thinkingLabel = null,
   onRetry,
+  forwarding,
 }: {
   messages: MessageDto[];
   /** 031: qué pasó con la IA en este chat (líneas grises entre los mensajes). */
@@ -153,6 +182,8 @@ export function MessageThread({
   thinkingLabel?: string | null;
   /** 026: reintenta un adjunto fallido; devuelve un error o null. */
   onRetry?: (messageId: string) => Promise<string | null>;
+  /** 054: reenviar y seleccionar mensajes (no en el Entrenador). */
+  forwarding?: ThreadForwarding;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -164,6 +195,20 @@ export function MessageThread({
   const [pendingNew, setPendingNew] = useState(0);
   const [sheetMsg, setSheetMsg] = useState<MessageDto | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  const flash = useCallback((text: string) => {
+    setNotice(text);
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2200);
+  }, []);
+  useEffect(
+    () => () => {
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    },
+    []
+  );
+  const selecting = forwarding?.selecting ?? false;
+  const sheetForward = sheetMsg ? forwardabilityOfDto(sheetMsg) : null;
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current;
@@ -270,8 +315,20 @@ export function MessageThread({
                 message={m}
                 kind={kind}
                 grouped={grouped}
-                onLongPress={() => setSheetMsg(m)}
+                onMenu={() => setSheetMsg(m)}
                 onRetry={onRetry}
+                selecting={selecting}
+                selected={forwarding?.selectedIds.has(m.id) ?? false}
+                onToggle={() => {
+                  if (!forwarding) return;
+                  const verdict = forwardabilityOfDto(m);
+                  // Deseleccionar siempre se puede; elegir, solo lo reenviable.
+                  if (!verdict.ok && !forwarding.selectedIds.has(m.id)) {
+                    flash(verdict.reason);
+                    return;
+                  }
+                  forwarding.onToggle(m);
+                }}
               />
             </div>
           );
@@ -317,7 +374,8 @@ export function MessageThread({
       {notice && (
         <p
           role="status"
-          className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full border bg-background px-3 py-1 text-xs font-medium shadow-sm"
+          data-testid="thread-notice"
+          className="absolute left-1/2 top-3 z-20 max-w-[90%] -translate-x-1/2 rounded-full border bg-background px-3 py-1 text-center text-xs font-medium shadow-sm"
         >
           {notice}
         </p>
@@ -333,13 +391,31 @@ export function MessageThread({
             key: "copy",
             label: "Copiar texto",
             icon: Copy,
-            disabled: !sheetMsg?.text,
+            disabled: !copyableText(sheetMsg),
             onSelect: async () => {
-              const ok = await copyText(sheetMsg?.text ?? "");
-              setNotice(ok ? "Copiado" : "No se pudo copiar");
-              window.setTimeout(() => setNotice(null), 1600);
+              const ok = await copyText(copyableText(sheetMsg));
+              flash(ok ? "Copiado" : "No se pudo copiar");
             },
           },
+          ...(forwarding && sheetMsg
+            ? [
+                {
+                  key: "forward",
+                  label: "Reenviar",
+                  icon: Forward,
+                  disabled: !sheetForward?.ok,
+                  hint: sheetForward && !sheetForward.ok ? sheetForward.reason : undefined,
+                  onSelect: () => forwarding.onForward(sheetMsg),
+                },
+                {
+                  key: "select",
+                  label: "Seleccionar mensajes",
+                  icon: ListChecks,
+                  disabled: !sheetForward?.ok,
+                  onSelect: () => forwarding.onStartSelect(sheetMsg),
+                },
+              ]
+            : []),
         ]}
       />
     </div>
@@ -1080,20 +1156,103 @@ function InstagramExtras({ message: m }: { message: MessageDto }) {
   );
 }
 
+/**
+ * 054: tarjeta de contacto de WhatsApp (la que manda el cliente, el celular
+ * del negocio o el equipo desde el CRM): nombre, teléfonos y correo, con
+ * «Copiar» por número.
+ */
+function ContactCards({ cards }: { cards: SharedContact[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  return (
+    <div className="flex w-[230px] max-w-full flex-col gap-1.5 md:w-[250px]" data-testid="contact-card-message">
+      {cards.map((card, i) => (
+        <div
+          key={i}
+          data-testid="contact-card"
+          className="rounded-md border border-brand-soft/60 bg-background/70 p-2"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-text">
+              <UserRound className="h-[18px] w-[18px]" strokeWidth={1.7} />
+            </span>
+            <span className="min-w-0">
+              <span
+                className="line-clamp-2 break-words text-[13px] font-medium leading-snug text-foreground"
+                data-testid="contact-card-name"
+              >
+                {card.name}
+              </span>
+              {card.org && <span className="block truncate text-[11px] text-text-3">{card.org}</span>}
+            </span>
+          </div>
+          {(card.phones.length > 0 || (card.emails?.length ?? 0) > 0) && (
+            <ul className="mt-1.5 flex flex-col gap-0.5 border-t border-brand-soft/60 pt-1.5">
+              {card.phones.map((p, j) => {
+                const key = `${i}:${j}`;
+                return (
+                  <li key={key} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 break-all text-[12.5px] tabular-nums" data-testid="contact-card-phone">
+                      {p.phone}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="contact-card-copy"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const ok = await copyText(p.phone.startsWith("+") ? p.phone : cardPhoneDigits(p));
+                        setCopied(ok ? key : null);
+                        window.setTimeout(() => setCopied(null), 1600);
+                      }}
+                      aria-label={`Copiar ${p.phone}`}
+                      title={copied === key ? "Copiado" : "Copiar el número"}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-brand-text hover:bg-brand-tint"
+                    >
+                      {/* Solo el ícono: en una burbuja angosta el número entra entero. */}
+                      {copied === key ? (
+                        <Check className="h-3.5 w-3.5" strokeWidth={2} />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+              {card.emails?.map((email) => (
+                <li key={email} className="truncate text-[12px] text-text-2">
+                  {email}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Bubble({
   message: m,
   kind,
   grouped,
-  onLongPress,
+  onMenu,
   onRetry,
+  selecting = false,
+  selected = false,
+  onToggle,
 }: {
   message: MessageDto;
   kind: "whatsapp" | "trainer" | "instagram";
   grouped: boolean;
-  onLongPress: () => void;
+  /** Abre las acciones del mensaje (mantener apretado, o la flecha en escritorio). */
+  onMenu: () => void;
   onRetry?: (messageId: string) => Promise<string | null>;
+  /** 054: modo selección — tocar la fila marca o desmarca el mensaje. */
+  selecting?: boolean;
+  selected?: boolean;
+  onToggle?: () => void;
 }) {
-  const { handlers } = useLongPress(onLongPress);
+  const { handlers } = useLongPress(onMenu, { enabled: !selecting });
+  const selectable = selecting ? forwardabilityOfDto(m).ok : false;
   const out = m.direction === "out";
   // Canal real (WhatsApp o Instagram, 023): ticks, origen y motivo de fallo.
   const wa = kind !== "trainer";
@@ -1114,23 +1273,78 @@ function Bubble({
   }
   return (
     <div
+      // 054: en modo selección toda la fila es la casilla.
+      onClick={selecting ? onToggle : undefined}
+      role={selecting ? "checkbox" : undefined}
+      aria-checked={selecting ? selected : undefined}
+      aria-disabled={selecting && !selectable && !selected ? true : undefined}
+      data-testid={selecting ? "message-select-row" : undefined}
+      data-selected={selecting ? (selected ? "1" : "0") : undefined}
       className={cn(
-        "flex",
+        "flex items-center",
         out ? "justify-end" : "justify-start",
-        grouped ? "mt-[3px]" : "mt-2.5"
+        grouped ? "mt-[3px]" : "mt-2.5",
+        selecting && "-mx-3 cursor-pointer gap-2 px-3 py-0.5 md:-mx-[6%] md:px-[6%]",
+        selecting && selected && "bg-brand-tint"
       )}
     >
+      {selecting && (
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+            // El saliente sigue pegado a la derecha; la casilla, a la izquierda.
+            out && "mr-auto",
+            selected ? "border-brand bg-brand text-white" : "border-border-strong bg-background",
+            !selectable && !selected && "opacity-30"
+          )}
+        >
+          {selected && <Check className="h-3.5 w-3.5" strokeWidth={2.4} />}
+        </span>
+      )}
       <div
         {...handlers}
         data-message-id={m.id}
         className={cn(
-          "no-callout max-w-[85%] rounded-lg px-3 pb-1.5 pt-2 text-sm leading-[1.45] shadow-sm max-md:select-none md:max-w-[64%]",
+          "group/bubble no-callout relative max-w-[85%] rounded-lg px-3 pb-1.5 pt-2 text-sm leading-[1.45] shadow-sm max-md:select-none md:max-w-[64%]",
           out
             ? "border border-brand-soft bg-bubble-out text-bubble-out-text"
             : "bg-background",
-          !grouped && (out ? "rounded-tr-[5px]" : "rounded-tl-[5px]")
+          !grouped && (out ? "rounded-tr-[5px]" : "rounded-tl-[5px]"),
+          // Los enlaces, reproductores e imágenes no responden mientras se elige.
+          selecting && "pointer-events-none",
+          selecting && !selectable && !selected && "opacity-60"
         )}
       >
+        {!selecting && m.type !== "deleted" && (
+          // En escritorio no hay «mantener apretado»: la flecha abre las
+          // mismas acciones (copiar, reenviar, seleccionar).
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMenu();
+            }}
+            aria-label="Acciones del mensaje"
+            title="Acciones del mensaje"
+            data-testid="message-menu"
+            className={cn(
+              "absolute right-1 top-1 z-10 hidden h-6 w-6 items-center justify-center rounded-full text-text-3 shadow-sm transition-colors hover:text-foreground focus-visible:flex md:group-hover/bubble:flex",
+              out ? "bg-bubble-out" : "bg-background"
+            )}
+          >
+            <ChevronDown className="h-4 w-4" strokeWidth={1.9} />
+          </button>
+        )}
+        {m.details?.forwarded && (
+          <span
+            data-testid="message-forwarded"
+            className="mb-1 flex items-center gap-1 text-[11px] italic leading-none text-text-3"
+            title="Reenviado desde otro chat del CRM (el cliente lo ve como un mensaje común)"
+          >
+            <Forward className="h-3 w-3" strokeWidth={1.8} /> Reenviado
+          </span>
+        )}
         {m.type === "deleted" ? (
           <span data-testid="message-deleted" className="italic text-text-3">
             Mensaje eliminado por el cliente
@@ -1153,6 +1367,8 @@ function Bubble({
           <CommentNote message={m} />
         ) : m.type === "story" ? (
           <StoryAttachment message={m} kind={kind} />
+        ) : m.type === "contacts" && m.details?.contacts?.length ? (
+          <ContactCards cards={m.details.contacts} />
         ) : (
           <span className="inline-flex items-center gap-1.5 text-text-3">
             <Paperclip className="h-3.5 w-3.5" strokeWidth={1.7} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Mail, PanelRight } from "lucide-react";
+import { ChevronLeft, Forward, Mail, PanelRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { serializeTagsParam, type TagOps } from "@/lib/tags";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
@@ -24,7 +24,9 @@ import {
   type ListFilter,
   type RowActions,
 } from "./conversation-list";
-import { MessageThread } from "./message-thread";
+import { MessageThread, type ThreadForwarding } from "./message-thread";
+import { ForwardDialog } from "./forward-dialog";
+import { FORWARD_MAX_MESSAGES, forwardNotice, type ForwardResult } from "@/lib/forward";
 import { Composer, type SendMediaResult } from "./composer";
 import { friendlyDeliveryError } from "@/lib/meta-errors";
 import { ContactPanel } from "./contact-panel";
@@ -92,6 +94,34 @@ export function InboxClient() {
     }
     return last;
   }, [messages]);
+  // 054: reenviar. `selection` = modo selección del hilo (null = apagado);
+  // `forwardIds` = mensajes para los que está abierto el diálogo de destinos.
+  const [selection, setSelection] = useState<string[] | null>(null);
+  const [forwardIds, setForwardIds] = useState<string[] | null>(null);
+  const [forwardNote, setForwardNote] = useState<string | null>(null);
+  // Cambiar de chat suelta la selección: era de otro hilo.
+  useEffect(() => {
+    setSelection(null);
+    setForwardIds(null);
+  }, [selectedId]);
+  // Escape sale del modo selección antes que cerrar el chat (con el diálogo
+  // de destinos abierto, el Escape es del diálogo).
+  useEffect(() => {
+    if (selection === null || forwardIds !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSelection(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selection, forwardIds]);
+  useEffect(() => {
+    if (!forwardNote) return;
+    const timer = window.setTimeout(() => setForwardNote(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [forwardNote]);
   const [panelOpen, setPanelOpen] = useState(true);
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
@@ -640,6 +670,46 @@ export function InboxClient() {
     [refetchMessages]
   );
 
+  // 054: lo que el hilo necesita para reenviar y seleccionar.
+  const selectedSet = useMemo(() => new Set(selection ?? []), [selection]);
+  const forwarding = useMemo<ThreadForwarding>(
+    () => ({
+      selecting: selection !== null,
+      selectedIds: selectedSet,
+      onForward: (m) => setForwardIds([m.id]),
+      onStartSelect: (m) => setSelection([m.id]),
+      onToggle: (m) =>
+        setSelection((prev) => {
+          if (prev === null) return prev;
+          if (prev.includes(m.id)) return prev.filter((id) => id !== m.id);
+          if (prev.length >= FORWARD_MAX_MESSAGES) {
+            setForwardNote(`Podés reenviar hasta ${FORWARD_MAX_MESSAGES} mensajes por vez`);
+            return prev;
+          }
+          return [...prev, m.id];
+        }),
+    }),
+    [selection, selectedSet]
+  );
+
+  const onForwarded = useCallback(
+    (result: ForwardResult) => {
+      setSelection(null);
+      setForwardNote(forwardNotice(result));
+      void refetchConversations();
+      const reached = result.targets.filter((t) => t.sent > 0);
+      // Como en WhatsApp: con un solo destino, se abre ese chat.
+      if (result.failed === 0 && reached.length === 1) {
+        const id = reached[0]!.conversationId;
+        if (id === selectedIdRef.current) void refetchMessages(id);
+        else openThread(id, { push: false });
+      } else if (selectedIdRef.current && reached.some((t) => t.conversationId === selectedIdRef.current)) {
+        void refetchMessages(selectedIdRef.current);
+      }
+    },
+    [refetchConversations, refetchMessages, openThread]
+  );
+
   const patchConversation = useCallback(
     async (patch: {
       aiEnabled?: boolean;
@@ -880,7 +950,7 @@ export function InboxClient() {
       <section
         ref={threadRef}
         className={cn(
-          "min-w-0 flex-1 flex-col bg-background",
+          "relative min-w-0 flex-1 flex-col bg-background",
           view === "thread" ? "flex" : "hidden md:flex"
         )}
         data-testid="inbox-thread"
@@ -991,7 +1061,40 @@ export function InboxClient() {
                   : null
               }
               onRetry={selected.kind === "trainer" ? undefined : retryMessage}
+              forwarding={selected.kind === "trainer" ? undefined : forwarding}
             />
+            {selection !== null && selected.kind !== "trainer" ? (
+              // 054: en modo selección la barra reemplaza al compositor.
+              <div
+                className="safe-bottom flex items-center gap-2 border-t bg-background px-3 py-2.5 md:px-[18px] md:py-3"
+                data-testid="selection-bar"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelection(null)}
+                  aria-label="Cancelar la selección"
+                  title="Cancelar"
+                  data-testid="selection-cancel"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-3 hover:bg-accent md:h-[34px] md:w-[34px]"
+                >
+                  <X className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.8} />
+                </button>
+                <span className="min-w-0 flex-1 truncate text-sm text-text-2" data-testid="selection-count">
+                  {selection.length === 0
+                    ? "Tocá los mensajes que querés reenviar"
+                    : `${selection.length} ${selection.length === 1 ? "seleccionado" : "seleccionados"}`}
+                </span>
+                <button
+                  type="button"
+                  disabled={selection.length === 0}
+                  onClick={() => setForwardIds(selection)}
+                  data-testid="selection-forward"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Forward className="h-4 w-4" strokeWidth={1.8} /> Reenviar
+                </button>
+              </div>
+            ) : (
             <Composer
               conversation={selected}
               onSend={sendText}
@@ -1004,6 +1107,24 @@ export function InboxClient() {
                   void refetchMessages(selectedIdRef.current);
                 void refetchConversations();
               }}
+            />
+            )}
+            {forwardNote && (
+              <p
+                role="status"
+                data-testid="forward-notice"
+                className="pointer-events-none absolute bottom-20 left-1/2 z-20 max-w-[90%] -translate-x-1/2 rounded-full border bg-background px-3.5 py-1.5 text-center text-xs font-medium shadow-md"
+              >
+                {forwardNote}
+              </p>
+            )}
+            <ForwardDialog
+              open={forwardIds !== null}
+              sourceConversationId={selected.id}
+              messageIds={forwardIds ?? []}
+              instagramHumanAgent={pageMeta.instagramHumanAgent}
+              onClose={() => setForwardIds(null)}
+              onDone={onForwarded}
             />
           </>
         ) : (

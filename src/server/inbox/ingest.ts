@@ -9,6 +9,8 @@ import { notifyInboundMessage } from "@/server/push/events";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
 import { planInboundMedia, reactionSnippet } from "@/lib/inbound-media";
+import type { SharedContact } from "@/lib/contact-card";
+import { contactsOf } from "@/lib/history-import";
 import { scoped } from "@/lib/db/tenant";
 import { mediaLabel } from "@/components/inbox/helpers";
 import { processInboundMedia, type InboundMediaSource } from "@/server/inbox/media";
@@ -160,6 +162,8 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       mediaId: attachment?.id ?? null,
       mediaMime: attachment?.mime_type ?? null,
       mediaFileName: attachment?.filename ?? null,
+      // 054: la tarjeta de contacto que compartió (nombre y teléfonos).
+      contacts: contactsOf(msg) ?? null,
       timestamp: msg.timestamp,
       // 035: llegó tocando un anuncio Click-to-WhatsApp. Ilegible → null y el
       // mensaje entra igual.
@@ -322,6 +326,8 @@ export async function ingestInboundMessage(input: {
   mediaMime?: string | null;
   /** 026: nombre original de un documento. */
   mediaFileName?: string | null;
+  /** 054: tarjetas de contacto de un mensaje `contacts` (ya saneadas). */
+  contacts?: SharedContact[] | null;
   timestamp: string;
   /** 035: el anuncio Click-to-WhatsApp que trajo a la persona (ya validado). */
   referral?: WhatsAppReferral | null;
@@ -404,6 +410,7 @@ export async function ingestInboundMessage(input: {
         }
       : null,
     at,
+    details: input.contacts?.length ? { contacts: input.contacts } : null,
   });
 }
 

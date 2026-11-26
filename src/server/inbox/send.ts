@@ -45,7 +45,7 @@ export async function sendText(input: {
    * 042: marcas del agente para el seguimiento automático (`awaitingReply`)
    * o el paso del seguimiento (`followUp`). Solo WhatsApp en esta versión.
    */
-  details?: Pick<MessageDetails, "awaitingReply" | "followUp" | "receiptAck"> | null;
+  details?: Pick<MessageDetails, "awaitingReply" | "followUp" | "receiptAck" | "forwarded"> | null;
 }): Promise<SendResult> {
   const db = getDb();
 
@@ -88,7 +88,13 @@ export async function sendText(input: {
       aiGenerated: input.aiGenerated ?? false,
       interactive: input.interactive ?? null,
       sentByUserId: input.sentByUserId ?? null,
-      details: input.details?.receiptAck ? { receiptAck: true } : null,
+      details:
+        input.details?.receiptAck || input.details?.forwarded
+          ? {
+              ...(input.details.receiptAck ? { receiptAck: true } : {}),
+              ...(input.details.forwarded ? { forwarded: true } : {}),
+            }
+          : null,
     });
   }
   // 030: WhatsApp no muestra estos formatos acá: los enlaces van en el texto.

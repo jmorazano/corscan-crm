@@ -5,6 +5,7 @@
  * carga (el `import type` de abajo se borra al compilar).
  */
 import type { ConversationOrigin, ConversationOriginKind } from "../conversation-origin";
+import type { SharedContact } from "../contact-card";
 
 /**
  * De dónde llegó una conversación (`conversation.ig_origin`). 035 generalizó
@@ -76,6 +77,16 @@ export type MessageDetails = {
   receiptAck?: boolean;
   /** CRM-6: adjunto que solo se guarda (026): su descarga no reprograma el turno. */
   storeOnly?: boolean;
+  /**
+   * 054: el equipo lo REENVIÓ desde otro chat del CRM. Solo se ve en el hilo:
+   * la Cloud API no deja marcarlo como reenviado para el cliente.
+   */
+  forwarded?: boolean;
+  /**
+   * 054: tarjetas de contacto de WhatsApp (`type: "contacts"`): las que
+   * manda el cliente, el celular del negocio o el equipo desde el CRM.
+   */
+  contacts?: SharedContact[];
 };
 
 /** Opción del menú persistente de Instagram (030, US4). */

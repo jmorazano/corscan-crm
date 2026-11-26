@@ -1,4 +1,5 @@
 import type { WebhookMessage } from "@/server/inbox/webhook";
+import { parseWhatsAppContacts, type SharedContact } from "@/lib/contact-card";
 
 /**
  * Reglas puras de la importación del historial del celular (017): mapeo de
@@ -20,7 +21,16 @@ export type HistoryRow = {
   text: string | null;
   status: MessageStatus;
   at: Date;
+  /** 054: tarjetas de contacto (`type: "contacts"`). */
+  contacts?: SharedContact[];
 };
+
+/** 054: las tarjetas de un mensaje `contacts` (vacío si no trae ninguna legible). */
+export function contactsOf(m: WebhookMessage): SharedContact[] | undefined {
+  if (m.type !== "contacts") return undefined;
+  const cards = parseWhatsAppContacts(m.contacts);
+  return cards.length > 0 ? cards : undefined;
+}
 
 export function digitsOf(phone: string | null | undefined): string {
   return (phone ?? "").replace(/\D/g, "");
@@ -92,6 +102,7 @@ export function mapHistoryMessage(m: WebhookMessage, threadId: string): HistoryR
     text: textOf(m),
     status: statusFor(m.history_context?.status, direction),
     at: new Date(n * 1000),
+    contacts: contactsOf(m),
   };
 }
 
@@ -108,6 +119,7 @@ export function mapEchoMessage(m: WebhookMessage): HistoryRow | null {
     text: textOf(m),
     status: "sent",
     at,
+    contacts: contactsOf(m),
   };
 }
 

@@ -54,6 +54,11 @@ export function buildInboundPayload(input: {
   /** 038: `type: "reaction"` — wamid del mensaje reaccionado y el emoji ("" = la quita). */
   reactTo?: string;
   emoji?: string;
+  /**
+   * 054: `type: "contacts"` — las tarjetas CRUDAS, como las manda Meta (o
+   * malformadas, para el camino infeliz). Sin esto va una de ejemplo.
+   */
+  contacts?: unknown;
 }) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
@@ -64,6 +69,14 @@ export function buildInboundPayload(input: {
   };
   if (type === "text") message.text = { body: input.text ?? "hola" };
   if (input.referral !== undefined) message.referral = input.referral;
+  if (type === "contacts") {
+    message.contacts = input.contacts ?? [
+      {
+        name: { formatted_name: "Contacto de Prueba", first_name: "Contacto" },
+        phones: [{ phone: "+54 9 351 555-0100", wa_id: "5493515550100", type: "CELL" }],
+      },
+    ];
+  }
   if (type === "reaction") {
     message.reaction = { message_id: input.reactTo ?? "", emoji: input.emoji ?? "👍" };
   }

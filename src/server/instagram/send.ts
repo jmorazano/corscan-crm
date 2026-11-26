@@ -48,7 +48,7 @@ export async function sendInstagramConversationText(input: {
   /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
   sentByUserId?: string | null;
   /** CRM-6: marca del acuse de comprobante (se combina con la del formato). */
-  details?: Pick<MessageDetails, "receiptAck"> | null;
+  details?: Pick<MessageDetails, "receiptAck" | "forwarded"> | null;
 }): Promise<{ messageId: string }> {
   const { organizationId, conversation, contact } = input;
 
@@ -84,7 +84,14 @@ export async function sendInstagramConversationText(input: {
   let plan: PlannedIgMessage[] = planIgMessages(chunks, interactive);
   const db = getDb();
   const storedDetails = (planned: MessageDetails | null): MessageDetails | null =>
-    input.details?.receiptAck ? { ...(planned ?? {}), receiptAck: true } : planned;
+    input.details?.receiptAck || input.details?.forwarded
+      ? {
+          ...(planned ?? {}),
+          ...(input.details.receiptAck ? { receiptAck: true } : {}),
+          // 054: reenviado desde otro chat del CRM.
+          ...(input.details.forwarded ? { forwarded: true } : {}),
+        }
+      : planned;
   let lastId: string | null = null;
   for (let index = 0; index < plan.length; index++) {
     const planned = plan[index]!;

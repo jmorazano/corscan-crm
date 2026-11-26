@@ -31,6 +31,8 @@ const schema = z.object({
   /** 038: reacción (`type: "reaction"`). */
   reactTo: z.string().optional(),
   emoji: z.string().optional(),
+  /** 054: tarjetas de contacto crudas (`type: "contacts"`). */
+  contacts: z.unknown().optional(),
 });
 
 export async function POST(req: Request) {

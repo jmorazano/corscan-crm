@@ -15,6 +15,8 @@
  *    falló— produce una línea que el modelo puede leer.
  */
 
+import { contactsLine, type SharedContact } from "@/lib/contact-card";
+
 /**
  * Tipos de mensaje entrante que traen un binario adjunto en el webhook.
  * 023: `share` (publicación o reel compartido), `story` (mención o respuesta
@@ -184,7 +186,7 @@ export type AttachmentView = {
   /** Descripción generada por IA (imágenes; 027: resumen de un PDF). */
   mediaSummary: string | null;
   /** 038: a qué mensaje reaccionó (solo `reaction`). 039: si el video se mira. */
-  details?: { reactionTo?: string; videoRead?: boolean } | null;
+  details?: { reactionTo?: string; videoRead?: boolean; contacts?: SharedContact[] } | null;
 };
 
 /**
@@ -346,12 +348,33 @@ export function commentAgentText(m: { text: string | null; mediaSummary: string 
 }
 
 /**
+ * 054: una tarjeta de contacto en el historial del agente. Sin esta línea el
+ * mensaje desaparecía del contexto (no tiene texto). El nombre lo escribió un
+ * tercero: va entre «» y ya viene saneado (`contact-card.ts`).
+ */
+export function contactsAgentText(
+  cards: readonly SharedContact[] | null | undefined,
+  direction: "in" | "out",
+  status?: string | null
+): string {
+  const who = cards?.length ? ` de «${contactsLine(cards)}»` : "";
+  if (direction === "in") {
+    return `${ATTACHMENT_MARKER} El cliente compartió la tarjeta de contacto${who}.`;
+  }
+  return status === "failed"
+    ? `${ATTACHMENT_MARKER} Intentaste mandarle al cliente la tarjeta de contacto${who}, pero no se entregó.`
+    : `${ATTACHMENT_MARKER} Le mandaste al cliente la tarjeta de contacto${who}.`;
+}
+
+/**
  * El texto con el que un mensaje entra al historial del agente: el marcador
  * del adjunto y, si además hay texto real del cliente (un epígrafe, o la
  * transcripción), los dos. Devuelve `null` cuando no hay nada que decir.
  */
 export function agentTextFor(m: AttachmentView): string | null {
   if (m.type === "comment") return commentAgentText(m);
+  // 054: la tarjeta de contacto que compartió (nombre y teléfono son DATO).
+  if (m.type === "contacts") return contactsAgentText(m.details?.contacts ?? null, "in");
   if (m.type === "reaction") return reactionAgentText({ text: m.text, reactionTo: m.details?.reactionTo });
   const marker = attachmentMarker(m);
   const text = m.text?.trim() || null;

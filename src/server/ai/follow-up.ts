@@ -83,7 +83,12 @@ export function followUpHistory(messages: readonly Message[]): ChatMessage[] {
               mediaSummary: m.mediaSummary,
               details: m.details,
             })
-          : outboundAgentText({ type: m.type, text: m.text, status: m.status }),
+          : outboundAgentText({
+              type: m.type,
+              text: m.text,
+              status: m.status,
+              contacts: m.details?.contacts,
+            }),
     }))
     .filter((m): m is { role: "user" | "assistant"; content: string } => !!m.content);
 }

@@ -52,6 +52,11 @@ export type WebhookMessage = {
   audio?: WebhookMedia;
   document?: WebhookMedia;
   sticker?: WebhookMedia;
+  /**
+   * 054: tarjetas de contacto (`type: "contacts"`). Crudo: son datos que
+   * escribió un tercero y los valida `parseWhatsAppContacts`.
+   */
+  contacts?: unknown;
   /** 038: reacción a un mensaje; `emoji` vacío = la quitó. */
   reaction?: { message_id?: string; emoji?: string };
   /** Historial del celular (017): estado de entrega del mensaje original. */

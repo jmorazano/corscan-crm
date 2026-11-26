@@ -82,6 +82,8 @@ export async function insertRows(
           status: r.status,
           aiGenerated: false,
           source,
+          // 054: la tarjeta de contacto que mandó el negocio o el cliente.
+          details: r.contacts?.length ? { contacts: r.contacts } : null,
           waTimestamp: r.at,
           createdAt: source === "phone" ? new Date() : r.at,
         }))

@@ -12,6 +12,7 @@ import {
 import { igsidFromPhone, instagramSendMode } from "@/lib/instagram/messaging";
 import { mediaLinkSecret, signMediaLinkPath } from "@/lib/media-link";
 import { toMediaDto } from "@/lib/message-media";
+import type { MessageDetails } from "@/lib/instagram/types";
 import { transcribeAudio } from "@/lib/ai";
 import { audioFormatForMime, type VoiceMime } from "@/lib/voice-note";
 import { getAiConfig } from "@/server/ai/credentials";
@@ -66,7 +67,7 @@ export function isWhatsAppVoiceNote(file: Pick<OutboundFile, "kind" | "mime" | "
 type Conversation = typeof schema.conversation.$inferSelect;
 type Contact = typeof schema.contact.$inferSelect;
 
-type Target =
+export type SendTarget =
   | { channel: "whatsapp"; credentials: Credentials; to: string }
   | {
       channel: "instagram";
@@ -75,7 +76,7 @@ type Target =
       humanAgent: boolean;
     };
 
-async function loadConversation(organizationId: string, conversationId: string) {
+export async function loadConversation(organizationId: string, conversationId: string) {
   const rows = await getDb()
     .select({ conversation: schema.conversation, contact: schema.contact })
     .from(schema.conversation)
@@ -97,11 +98,11 @@ async function loadConversation(organizationId: string, conversationId: string) 
  * Guardas + destino. Lanza `SendError` sin haber escrito nada. ASERCIÓN DURA
  * (FR-031 de 001): el Laboratorio y el Entrenador jamás llegan a un canal.
  */
-async function resolveTarget(
+export async function resolveTarget(
   organizationId: string,
   conversation: Conversation,
   contact: Contact
-): Promise<Target> {
+): Promise<SendTarget> {
   if (conversation.isTest) {
     throw new SendError(
       "sandbox_violation",
@@ -169,12 +170,26 @@ export async function sendMedia(input: {
   caption: string | null;
   /** 031: la persona del equipo que lo manda desde el CRM (callará al agente). */
   sentByUserId?: string | null;
+  /** 054: marca «Reenviado» del adjunto (y de su epígrafe aparte). */
+  details?: Pick<MessageDetails, "forwarded"> | null;
+  /**
+   * 054: transcripción que ya existe (un audio reenviado): se copia a `text`
+   * y no se vuelve a transcribir.
+   */
+  transcript?: string | null;
+  /**
+   * 054: subidas a WhatsApp de ESTE binario ya hechas (`phone_number_id` →
+   * id de Meta). Un reenvío a varios chats sube el archivo una sola vez.
+   */
+  uploadCache?: Map<string, string>;
 }): Promise<{ messageId: string; captionError: string | null }> {
   const { organizationId, conversationId, file } = input;
   const { conversation, contact } = await loadConversation(organizationId, conversationId);
   const target = await resolveTarget(organizationId, conversation, contact);
   const caption = input.caption?.trim() || null;
   const inline = captionTravelsInline(target.channel, file.kind);
+  const transcript = file.kind === "audio" ? input.transcript?.trim() || null : null;
+  const details = input.details?.forwarded ? { forwarded: true } : null;
 
   // Guardar primero (una transacción: mensaje + binario + marca).
   const db = getDb();
@@ -190,9 +205,10 @@ export async function sendMedia(input: {
         type: file.kind,
         // El epígrafe que el canal no lleva en el adjunto sale aparte, como
         // su propio mensaje de texto.
-        text: inline ? caption : null,
+        text: inline ? caption : transcript,
         status: "pending",
         mediaState: "ready",
+        details,
         aiGenerated: false,
         sentByUserId: input.sentByUserId ?? null,
         sentByName: await authorName(input.sentByUserId),
@@ -236,8 +252,9 @@ export async function sendMedia(input: {
     media: { id: mediaId, ...file },
     caption: inline ? caption : null,
     target,
+    uploadCache: input.uploadCache,
   });
-  if (file.kind === "audio") {
+  if (file.kind === "audio" && !transcript) {
     void transcribeOutboundAudio({
       organizationId,
       conversationId,
@@ -250,7 +267,13 @@ export async function sendMedia(input: {
   let captionError: string | null = null;
   if (caption && !inline) {
     try {
-      await sendText({ organizationId, conversationId, text: caption, sentByUserId: input.sentByUserId ?? null });
+      await sendText({
+        organizationId,
+        conversationId,
+        text: caption,
+        sentByUserId: input.sentByUserId ?? null,
+        details,
+      });
     } catch (err) {
       // El adjunto ya salió: el texto se informa aparte para reenviarlo.
       captionError = err instanceof Error ? err.message : String(err);
@@ -355,13 +378,20 @@ async function deliver(input: {
   messageId: string;
   media: OutboundFile & { id: string };
   caption: string | null;
-  target: Target;
+  target: SendTarget;
+  uploadCache?: Map<string, string>;
 }): Promise<void> {
   const { organizationId, messageId, media, target } = input;
   let providerId: string;
   try {
     if (target.channel === "whatsapp") {
-      providerId = await deliverWhatsApp(target.credentials, target.to, media, input.caption);
+      providerId = await deliverWhatsApp(
+        target.credentials,
+        target.to,
+        media,
+        input.caption,
+        input.uploadCache
+      );
     } else {
       providerId = await deliverInstagram(organizationId, target, media);
     }
@@ -389,17 +419,21 @@ async function deliverWhatsApp(
   credentials: Credentials,
   to: string,
   media: OutboundFile,
-  caption: string | null
+  caption: string | null,
+  uploadCache?: Map<string, string>
 ): Promise<string> {
   let mediaId: string;
   try {
-    mediaId = await uploadWhatsAppMedia({
-      phoneNumberId: credentials.phoneNumberId,
-      token: credentials.token,
-      bytes: media.bytes,
-      mimeType: media.mime,
-      fileName: media.fileName,
-    });
+    mediaId =
+      uploadCache?.get(credentials.phoneNumberId) ??
+      (await uploadWhatsAppMedia({
+        phoneNumberId: credentials.phoneNumberId,
+        token: credentials.token,
+        bytes: media.bytes,
+        mimeType: media.mime,
+        fileName: media.fileName,
+      }));
+    uploadCache?.set(credentials.phoneNumberId, mediaId);
   } catch (err) {
     if (err instanceof MetaApiError) {
       if (err.isAuthError) {
@@ -433,7 +467,7 @@ async function deliverWhatsApp(
 
 async function deliverInstagram(
   organizationId: string,
-  target: Extract<Target, { channel: "instagram" }>,
+  target: Extract<SendTarget, { channel: "instagram" }>,
   media: OutboundFile & { id: string }
 ): Promise<string> {
   const base = getEnv().APP_BASE_URL.replace(/\/$/, "");

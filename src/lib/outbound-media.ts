@@ -1,4 +1,5 @@
-import { ATTACHMENT_MARKER } from "@/lib/inbound-media";
+import { ATTACHMENT_MARKER, contactsAgentText } from "@/lib/inbound-media";
+import type { SharedContact } from "@/lib/contact-card";
 import { sniffAudioMime } from "@/lib/voice-note";
 
 /**
@@ -530,8 +531,11 @@ export function outboundAgentText(m: {
   type: string;
   text: string | null;
   status?: string | null;
+  /** 054: tarjetas de contacto (`type: "contacts"`). */
+  contacts?: readonly SharedContact[] | null;
 }): string | null {
   const text = m.text?.trim() || null;
+  if (m.type === "contacts") return contactsAgentText(m.contacts, "out", m.status);
   if (!(OUTBOUND_KINDS as readonly string[]).includes(m.type)) return text;
   const label = AGENT_LABEL[m.type as OutboundKind];
   const marker =
