@@ -372,6 +372,12 @@ function EmbeddedSignupCard({
               superior. No quedan disponibles los grupos, las llamadas ni el
               catálogo.
             </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Para traer los chats de los últimos 60 días: cuando el teléfono
+              lo pregunte, aceptá compartir el historial, y dejá WhatsApp
+              Business abierto unos minutos después de conectar. Meta lo
+              entrega una sola vez por conexión.
+            </p>
             <Button
               className="mt-3"
               disabled={(!sdkReady && !config.mock) || busy}

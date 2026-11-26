@@ -67,6 +67,7 @@ export function serializeHistoryImport(row: Row): HistoryImportDto {
 export function toHistoryImportState(row: Row): HistoryImportState {
   return {
     status: row.status,
+    days: row.days,
     requestedAt: row.requestedAt,
     lastChunkAt: row.lastChunkAt,
     attemptAt: row.updatedAt,
@@ -96,12 +97,15 @@ export async function connectionUpdatedAt(organizationId: string): Promise<Date 
  */
 export async function historyImportStats(
   organizationId: string
-): Promise<{ importedMessages: number; threads: number }> {
+): Promise<{ importedMessages: number; threads: number; oldestImportedAt: string | null }> {
   const db = getDb();
   const rows = await db
     .select({
       importedMessages: sql<number>`count(*)`,
       threads: sql<number>`count(distinct ${schema.message.conversationId})`,
+      // `created_at` es timestamp SIN zona guardado en UTC: en segundos, para
+      // no depender de cómo lo interprete el driver.
+      oldestEpoch: sql<number | null>`extract(epoch from min(${schema.message.createdAt}))::float8`,
     })
     .from(schema.message)
     .where(
@@ -110,6 +114,10 @@ export async function historyImportStats(
   return {
     importedMessages: Number(rows[0]?.importedMessages ?? 0),
     threads: Number(rows[0]?.threads ?? 0),
+    oldestImportedAt:
+      rows[0]?.oldestEpoch != null
+        ? new Date(Number(rows[0].oldestEpoch) * 1000).toISOString()
+        : null,
   };
 }
 

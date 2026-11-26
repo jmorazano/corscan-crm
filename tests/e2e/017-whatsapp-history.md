@@ -88,3 +88,29 @@ con `(#4) … Synchronization Request limit exceeded`. Reglas puras en
 
 Resultado (26-nov-2026): los 6 ✅ en el navegador contra los mocks. Unit:
 `history-import` suma 9 casos de `historyImportView`.
+
+## Rastro de eventos de Meta y período completo (26-nov-2026)
+
+Pedido del dueño tras el caso Distrito: saber qué llegó sin deducirlo del
+tamaño de los pedidos HTTP, y que «44 %» no parezca una importación a medias.
+
+1. **Rastro** (`src/lib/webhook-trace.ts`, línea `[meta]` en el log por cada
+   POST que trae algo que no es tráfico de mensajes): importar con los mocks
+   deja `history pn=… tramos=1 hilos=2 mensajes=7 fase=1 orden=1 progreso=100`,
+   `smb_app_state_sync pn=… contactos=1` y `history pn=… media=1`, cada una
+   con `bytes=`. Sin contenido: ni textos ni teléfonos de contactos.
+2. **Campo que el CRM no procesa**: `POST` al webhook local con
+   `field: "account_update"`, `event: "PARTNER_REMOVED"` → 200 y
+   `account_update waba=… evento=PARTNER_REMOVED claves=event,phone_number,waba_info`
+   (el teléfono del valor no aparece).
+3. **Período completo**: fila `receiving` al 44 %, último tramo hace 20 min y
+   el mensaje importado más viejo a 6 h del borde de los 60 días → «Importado»
+   (no «Importado en parte») con «Los últimos 60 días están completos: lo
+   importado llega hasta el …», sin ruedita ni botón.
+4. **Aviso de app abierta**: con `historySilent: true`, «Solicitado a Meta»
+   muestra «Dejá WhatsApp Business abierto en el celular hasta que termine…»;
+   el bloque «Ya uso este número en el celular» del alta suma el párrafo de
+   aceptar el historial y dejar la app abierta.
+
+Resultado: los 4 ✅ en el navegador contra los mocks. Unit: `webhook-trace`
+(10) y un caso más de `historyImportView` (período cubierto).

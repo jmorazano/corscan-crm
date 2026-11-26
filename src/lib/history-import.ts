@@ -177,6 +177,14 @@ export const HISTORY_TOO_LATE_CODE = "135000";
  */
 export const HISTORY_STALLED_MS = 10 * 60_000;
 
+/**
+ * `progress` de Meta mide los 180 días que ofrece, y el CRM guarda menos
+ * (60 por defecto): si lo importado ya llega hasta el borde de esa ventana,
+ * no falta nada aunque Meta se haya quedado en 40 y pico por ciento. Margen
+ * de dos días: el chat más viejo rara vez cae justo en el corte.
+ */
+export const HISTORY_WINDOW_SLACK_MS = 2 * 86_400_000;
+
 export const HISTORY_SYNC_LIMIT_TEXT =
   "Meta permite pedir el historial una sola vez por conexión del número, y ese pedido ya se usó.";
 
@@ -197,6 +205,8 @@ export type HistoryImportStatus =
 
 export type HistoryImportState = {
   status: HistoryImportStatus;
+  /** Ventana que se conserva al importar. */
+  days: number;
   requestedAt: Date | null;
   lastChunkAt: Date | null;
   /** Última vez que se tocó la fila (pedido, tramo o error). */
@@ -221,7 +231,23 @@ export type HistoryImportView = {
   canRequest: boolean;
   /** El único camino es desconectar y volver a conectar el número. */
   needsReconnect: boolean;
+  /**
+   * Meta dejó de mandar antes del 100 %, pero lo importado ya cubre toda la
+   * ventana que guarda el CRM: está completo para lo que importa.
+   */
+  windowCovered: boolean;
 };
+
+/** ¿Lo importado llega hasta el borde de la ventana de `days` días? */
+export function coversWindow(
+  oldestImportedAt: Date | null | undefined,
+  requestedAt: Date | null,
+  days: number
+): boolean {
+  if (!oldestImportedAt || !requestedAt) return false;
+  const windowStart = requestedAt.getTime() - days * 86_400_000;
+  return oldestImportedAt.getTime() <= windowStart + HISTORY_WINDOW_SLACK_MS;
+}
 
 function problemOf(row: HistoryImportState): HistoryImportView["problem"] {
   if (
@@ -250,7 +276,7 @@ export function isFromOlderConnection(at: Date | null, connectedAt: Date | null)
  */
 export function historyImportView(
   row: HistoryImportState | null,
-  opts: { connectedAt: Date | null; now?: Date }
+  opts: { connectedAt: Date | null; now?: Date; oldestImportedAt?: Date | null }
 ): HistoryImportView {
   const now = (opts.now ?? new Date()).getTime();
   const open: HistoryImportView = {
@@ -258,6 +284,7 @@ export function historyImportView(
     problem: null,
     canRequest: true,
     needsReconnect: false,
+    windowCovered: false,
   };
   if (!row || row.status === "idle") return open;
 
@@ -267,27 +294,30 @@ export function historyImportView(
   if (row.status === "requested") {
     if (older(row.requestedAt)) return open;
     return quietSince(row.requestedAt) >= HISTORY_STALLED_MS
-      ? { kind: "stalled", problem: null, canRequest: false, needsReconnect: true }
-      : { kind: "waiting", problem: null, canRequest: false, needsReconnect: false };
+      ? { ...open, kind: "stalled", canRequest: false, needsReconnect: true }
+      : { ...open, kind: "waiting", canRequest: false };
   }
   if (row.status === "receiving") {
     const last = row.lastChunkAt ?? row.requestedAt;
-    return {
-      kind: quietSince(last) >= HISTORY_STALLED_MS ? "paused" : "receiving",
-      problem: null,
-      canRequest: false,
-      needsReconnect: false,
-    };
+    if (quietSince(last) < HISTORY_STALLED_MS) {
+      return { ...open, kind: "receiving", canRequest: false };
+    }
+    // Meta se quedó callada. Si ya pasó el borde de la ventana, para el CRM
+    // terminó; si no, quedó en parte.
+    return coversWindow(opts.oldestImportedAt, row.requestedAt, row.days)
+      ? { ...open, kind: "done", canRequest: false, windowCovered: true }
+      : { ...open, kind: "paused", canRequest: false };
   }
 
   const problem = older(row.attemptAt) ? null : problemOf(row);
   if (row.status === "done") {
-    return { kind: "done", problem, canRequest: problem === null, needsReconnect: false };
+    return { ...open, kind: "done", problem, canRequest: problem === null };
   }
   if (row.status === "declined") {
-    return { kind: "declined", problem: null, canRequest: true, needsReconnect: false };
+    return { ...open, kind: "declined" };
   }
   return {
+    ...open,
     kind: "failed",
     problem,
     canRequest: problem === null,

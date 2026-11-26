@@ -16,6 +16,8 @@ type ImportDto = {
   threads: number;
   requestedAt: string | null;
   lastChunkAt: string | null;
+  /** Fecha del mensaje importado más viejo (hasta dónde llega el historial). */
+  oldestImportedAt?: string | null;
   finishedAt: string | null;
   lastErrorCode: string | null;
   lastError: string | null;
@@ -37,10 +39,12 @@ const IDLE_VIEW: HistoryImportView = {
   problem: null,
   canRequest: true,
   needsReconnect: false,
+  windowCovered: false,
 };
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+const dayOnly = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { dateStyle: "short" });
 
 /**
  * Meta admite un solo pedido de historial por conexión: cuando ese pedido no
@@ -179,6 +183,11 @@ export function HistoryImportCard() {
                 style={{ width: `${Math.max(3, data?.progress ?? 0)}%` }}
               />
             </div>
+            <p className="text-xs text-text-3" data-testid="history-import-keep-open">
+              Dejá WhatsApp Business abierto en el celular hasta que termine:
+              los chats salen del teléfono. El porcentaje es sobre los 180 días
+              que ofrece Meta; el CRM guarda los últimos {data?.days ?? DAYS}.
+            </p>
           </div>
         )}
         {kind === "stalled" && (
@@ -210,6 +219,17 @@ export function HistoryImportCard() {
               ? ` · ${data.skippedOld.toLocaleString("es-AR")} más viejos que ${data.days} días, descartados`
               : ""}
             {data.finishedAt ? ` · terminado el ${shortDate(data.finishedAt)}` : ""}
+          </p>
+        )}
+        {kind === "done" && view.windowCovered && (
+          <p className="text-sm text-text-2" data-testid="history-import-covered">
+            Los últimos {data?.days ?? DAYS} días están completos
+            {data?.oldestImportedAt
+              ? `: lo importado llega hasta el ${dayOnly(data.oldestImportedAt)}`
+              : ""}
+            . Meta dejó de mandar al {data?.progress ?? 0} %, pero ese
+            porcentaje es sobre 180 días; lo que faltaba es más viejo y el CRM
+            no lo guarda.
           </p>
         )}
         {kind === "done" && view.problem === "sync_limit" && (

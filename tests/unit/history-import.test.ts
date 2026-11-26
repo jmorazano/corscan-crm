@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  coversWindow,
   HISTORY_SYNC_LIMIT_CODE,
   historyImportView,
   isFromOlderConnection,
@@ -100,6 +101,7 @@ describe("historyImportView", () => {
   const min = (n: number) => new Date(T0.getTime() + n * 60_000);
   const base = {
     status: "requested" as const,
+    days: 60,
     requestedAt: T0,
     lastChunkAt: null,
     attemptAt: T0,
@@ -120,12 +122,14 @@ describe("historyImportView", () => {
       problem: null,
       canRequest: false,
       needsReconnect: false,
+      windowCovered: false,
     });
     expect(historyImportView(base, { connectedAt: min(-1), now: min(10) })).toEqual({
       kind: "stalled",
       problem: null,
       canRequest: false,
       needsReconnect: true,
+      windowCovered: false,
     });
   });
 
@@ -149,6 +153,7 @@ describe("historyImportView", () => {
         problem: "sync_limit",
         canRequest: false,
         needsReconnect: true,
+        windowCovered: false,
       });
     }
   });
@@ -185,7 +190,36 @@ describe("historyImportView", () => {
     expect(historyImportView(done, { connectedAt: null })).toMatchObject({ kind: "done", canRequest: true });
     expect(
       historyImportView({ ...done, lastErrorCode: HISTORY_SYNC_LIMIT_CODE, lastError: "x" }, { connectedAt: null })
-    ).toEqual({ kind: "done", problem: "sync_limit", canRequest: false, needsReconnect: false });
+    ).toEqual({
+      kind: "done",
+      problem: "sync_limit",
+      canRequest: false,
+      needsReconnect: false,
+      windowCovered: false,
+    });
+  });
+
+  it("Meta se quedó callada pero lo importado llega al borde de los 60 días → importado, no «en parte»", () => {
+    // Caso real (Comercial, 25-nov-2026): progreso 44 % sobre 180 días.
+    const day = 86_400_000;
+    const receiving = { ...base, status: "receiving" as const, lastChunkAt: min(7) };
+    const cutoff = new Date(T0.getTime() - 60 * day);
+    const at = (ms: number) => new Date(cutoff.getTime() + ms);
+    expect(
+      historyImportView(receiving, { connectedAt: null, now: min(30), oldestImportedAt: at(6 * 3_600_000) })
+    ).toEqual({ kind: "done", problem: null, canRequest: false, needsReconnect: false, windowCovered: true });
+    // Mientras siguen llegando tramos no se adelanta el final.
+    expect(
+      historyImportView(receiving, { connectedAt: null, now: min(9), oldestImportedAt: at(0) }).kind
+    ).toBe("receiving");
+    // Lo importado se quedó a 20 días del borde: en parte.
+    expect(
+      historyImportView(receiving, { connectedAt: null, now: min(30), oldestImportedAt: at(20 * day) })
+    ).toMatchObject({ kind: "paused", windowCovered: false });
+    expect(coversWindow(at(2 * day), T0, 60)).toBe(true);
+    expect(coversWindow(at(2 * day + 1), T0, 60)).toBe(false);
+    expect(coversWindow(null, T0, 60)).toBe(false);
+    expect(coversWindow(at(0), null, 60)).toBe(false);
   });
 
   it("el número se reconectó después → el botón vuelve (es otra conexión)", () => {

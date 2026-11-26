@@ -12,6 +12,7 @@ import {
   processStateSyncValue,
 } from "@/server/inbox/history";
 import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
+import { describeWebhookPayload } from "@/lib/webhook-trace";
 
 /**
  * Webhook público de WhatsApp (contrato webhook.md).
@@ -60,6 +61,15 @@ export async function POST(req: Request, { params }: Params) {
   } catch {
     // body ilegible: 200 igualmente (Meta reintenta y termina desactivando)
     return Response.json({ received: true });
+  }
+
+  // Rastro de lo que no es tráfico de mensajes (historial, agenda, estado de
+  // la cuenta y campos que el CRM aún no procesa): tipo, número y tamaño.
+  try {
+    const trace = describeWebhookPayload(payload, rawBody.length);
+    if (trace) console.info(trace);
+  } catch {
+    // El rastro es accesorio: nunca tumba el webhook.
   }
 
   after(async () => {

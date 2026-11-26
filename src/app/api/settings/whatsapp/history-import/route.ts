@@ -26,7 +26,10 @@ export const GET = withAuth(async (session) => {
     connected: Boolean(creds),
     import: row ? { ...serializeHistoryImport(row), ...stats } : null,
     // Qué mostrar y si tiene sentido ofrecer el pedido (reglas puras).
-    view: historyImportView(row ? toHistoryImportState(row) : null, { connectedAt }),
+    view: historyImportView(row ? toHistoryImportState(row) : null, {
+      connectedAt,
+      oldestImportedAt: stats.oldestImportedAt ? new Date(stats.oldestImportedAt) : null,
+    }),
   });
 });
 
