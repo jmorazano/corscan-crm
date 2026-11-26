@@ -144,3 +144,141 @@ export function canOverwriteContactName(contact: {
   if (contact.nameEditedAt) return false;
   return contact.consentSource === "inbound" || contact.consentSource === null;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Estado de la importación: qué se muestra y cuándo tiene sentido pedirla   */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Meta acepta UN pedido de sincronización por conexión del número. El segundo
+ * responde `(#4) Application request limit reached: Synchronization Request
+ * limit exceeded…` (visto el 26-nov-2026). Código propio: el 4 a secas es el
+ * límite genérico de la app y no significa lo mismo.
+ */
+export const HISTORY_SYNC_LIMIT_CODE = "sync_limit";
+/** Meta: el pedido llegó fuera de las 24 h del onboarding. */
+export const HISTORY_TOO_LATE_CODE = "135000";
+/**
+ * Cuando la importación anda, el primer tramo llega en uno o dos minutos y
+ * los siguientes cada pocos segundos. Pasado este tiempo sin novedades, Meta
+ * no está mandando nada: se deja de mostrar como «en curso».
+ */
+export const HISTORY_STALLED_MS = 10 * 60_000;
+
+export const HISTORY_SYNC_LIMIT_TEXT =
+  "Meta permite pedir el historial una sola vez por conexión del número, y ese pedido ya se usó.";
+
+export function isSyncLimitError(
+  code: number | string | null | undefined,
+  message: string | null | undefined
+): boolean {
+  return String(code ?? "") === "4" && /synchroni[sz]ation/i.test(message ?? "");
+}
+
+export type HistoryImportStatus =
+  | "idle"
+  | "requested"
+  | "receiving"
+  | "done"
+  | "failed"
+  | "declined";
+
+export type HistoryImportState = {
+  status: HistoryImportStatus;
+  requestedAt: Date | null;
+  lastChunkAt: Date | null;
+  /** Última vez que se tocó la fila (pedido, tramo o error). */
+  attemptAt: Date | null;
+  lastErrorCode: string | null;
+  lastError: string | null;
+};
+
+export type HistoryImportView = {
+  kind:
+    | "idle"
+    | "waiting"
+    | "stalled"
+    | "receiving"
+    | "paused"
+    | "done"
+    | "failed"
+    | "declined";
+  /** Motivo conocido por el que pedirla otra vez no sirve. */
+  problem: "sync_limit" | "too_late" | null;
+  /** ¿Se ofrece el botón de pedir la importación? */
+  canRequest: boolean;
+  /** El único camino es desconectar y volver a conectar el número. */
+  needsReconnect: boolean;
+};
+
+function problemOf(row: HistoryImportState): HistoryImportView["problem"] {
+  if (
+    row.lastErrorCode === HISTORY_SYNC_LIMIT_CODE ||
+    // Filas anteriores al arreglo: código y texto crudos de Meta.
+    isSyncLimitError(row.lastErrorCode, row.lastError)
+  ) {
+    return "sync_limit";
+  }
+  if (row.lastErrorCode === HISTORY_TOO_LATE_CODE) return "too_late";
+  return null;
+}
+
+/**
+ * ¿El número se (re)conectó DESPUÉS de este momento? Entonces lo que se sabe
+ * del pedido es de una conexión anterior y Meta admite uno nuevo.
+ */
+export function isFromOlderConnection(at: Date | null, connectedAt: Date | null): boolean {
+  return Boolean(at && connectedAt && at.getTime() < connectedAt.getTime());
+}
+
+/**
+ * Qué mostrar en la tarjeta «Historial del celular». Regla de fondo: no se
+ * ofrece volver a pedir cuando ya se sabe que Meta lo va a rechazar; el botón
+ * vuelve solo si el número se reconectó después.
+ */
+export function historyImportView(
+  row: HistoryImportState | null,
+  opts: { connectedAt: Date | null; now?: Date }
+): HistoryImportView {
+  const now = (opts.now ?? new Date()).getTime();
+  const open: HistoryImportView = {
+    kind: "idle",
+    problem: null,
+    canRequest: true,
+    needsReconnect: false,
+  };
+  if (!row || row.status === "idle") return open;
+
+  const older = (at: Date | null) => isFromOlderConnection(at, opts.connectedAt);
+  const quietSince = (at: Date | null) => (at ? now - at.getTime() : 0);
+
+  if (row.status === "requested") {
+    if (older(row.requestedAt)) return open;
+    return quietSince(row.requestedAt) >= HISTORY_STALLED_MS
+      ? { kind: "stalled", problem: null, canRequest: false, needsReconnect: true }
+      : { kind: "waiting", problem: null, canRequest: false, needsReconnect: false };
+  }
+  if (row.status === "receiving") {
+    const last = row.lastChunkAt ?? row.requestedAt;
+    return {
+      kind: quietSince(last) >= HISTORY_STALLED_MS ? "paused" : "receiving",
+      problem: null,
+      canRequest: false,
+      needsReconnect: false,
+    };
+  }
+
+  const problem = older(row.attemptAt) ? null : problemOf(row);
+  if (row.status === "done") {
+    return { kind: "done", problem, canRequest: problem === null, needsReconnect: false };
+  }
+  if (row.status === "declined") {
+    return { kind: "declined", problem: null, canRequest: true, needsReconnect: false };
+  }
+  return {
+    kind: "failed",
+    problem,
+    canRequest: problem === null,
+    needsReconnect: problem !== null,
+  };
+}

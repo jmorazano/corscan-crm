@@ -348,6 +348,24 @@ export async function POST(req: Request, ctx: Params) {
         { status: 400 }
       );
     }
+    // Como Meta el 26-nov-2026: el segundo pedido de sync de un número.
+    if (getWaMockState().historySyncLimit) {
+      return Response.json(
+        {
+          error: {
+            message:
+              "(#4) Application request limit reached: Synchronization Request limit exceeded: You have exceeded the maximum number of times to call the synchronization api for this phone number.",
+            type: "OAuthException",
+            code: 4,
+          },
+        },
+        { status: 400 }
+      );
+    }
+    // Aceptado, pero el historial no llega nunca (la agenda sí).
+    if (syncType === "history" && getWaMockState().historySilent) {
+      return Response.json({ messaging_product: "whatsapp", request_id: `syncreq_${nextN()}` });
+    }
     const creds = await getCredentialsByPhoneNumberId(path[0]!);
     scheduleSyncDelivery({
       wabaId: creds?.wabaId ?? "WABA-MOCK",

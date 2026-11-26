@@ -1,26 +1,32 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { historyImportView } from "@/lib/history-import";
 import {
+  connectionUpdatedAt,
   getHistoryImport,
   historyImportStats,
   HistorySyncError,
   requestHistorySync,
   serializeHistoryImport,
+  toHistoryImportState,
 } from "@/server/whatsapp/history-sync";
 
 export const dynamic = "force-dynamic";
 
 /** Estado de la importación del historial del celular (017). */
 export const GET = withAuth(async (session) => {
-  const [creds, row, stats] = await Promise.all([
+  const [creds, row, stats, connectedAt] = await Promise.all([
     getCredentialsByOrg(session.organizationId),
     getHistoryImport(session.organizationId),
     historyImportStats(session.organizationId),
+    connectionUpdatedAt(session.organizationId),
   ]);
   return Response.json({
     connected: Boolean(creds),
     import: row ? { ...serializeHistoryImport(row), ...stats } : null,
+    // Qué mostrar y si tiene sentido ofrecer el pedido (reglas puras).
+    view: historyImportView(row ? toHistoryImportState(row) : null, { connectedAt }),
   });
 });
 

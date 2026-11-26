@@ -56,6 +56,13 @@ type WaMockState = {
   syncRequests: { phoneNumberId: string; syncType: string; at: string }[];
   /** Knob 017: el próximo sync de historial devuelve «rechazado» (2593109). */
   historyDeclined: boolean;
+  /**
+   * Knob: `smb_app_data` responde el límite de Meta (#4, un pedido por
+   * conexión). Queda prendido hasta apagarlo: el pedido son dos llamadas.
+   */
+  historySyncLimit: boolean;
+  /** Knob: Meta acepta el pedido de historial pero no manda ningún tramo. */
+  historySilent: boolean;
   /** Knob 020: la próxima descarga de un adjunto falla con 404. */
   mediaDownloadFails: boolean;
   /** Knob 020: el próximo adjunto se declara más grande que el tope. */
@@ -86,6 +93,8 @@ export function getWaMockState(): WaMockState {
       failSends: 0,
       syncRequests: [],
       historyDeclined: false,
+      historySyncLimit: false,
+      historySilent: false,
       mediaDownloadFails: false,
       mediaTooLarge: false,
       mediaUploads: [],
@@ -100,6 +109,12 @@ export function getWaMockState(): WaMockState {
   }
   if (globalForMock.__waMockState.historyDeclined === undefined) {
     globalForMock.__waMockState.historyDeclined = false;
+  }
+  if (globalForMock.__waMockState.historySyncLimit === undefined) {
+    globalForMock.__waMockState.historySyncLimit = false;
+  }
+  if (globalForMock.__waMockState.historySilent === undefined) {
+    globalForMock.__waMockState.historySilent = false;
   }
   if (globalForMock.__waMockState.failUploads === undefined) {
     globalForMock.__waMockState.failUploads = false;
@@ -145,6 +160,8 @@ export function resetWaMockState(): void {
     failSends: 0,
     syncRequests: [],
     historyDeclined: false,
+    historySyncLimit: false,
+    historySilent: false,
     mediaDownloadFails: false,
     mediaTooLarge: false,
     mediaUploads: [],

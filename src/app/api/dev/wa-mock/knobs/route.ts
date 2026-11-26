@@ -18,6 +18,10 @@ const bodySchema = z.object({
   failSends: z.number().int().min(0).max(20).optional(),
   /** 017: el próximo sync de historial llega rechazado. */
   historyDeclined: z.boolean().optional(),
+  /** Meta rechaza el pedido de historial: ya se usó el único por conexión (#4). */
+  historySyncLimit: z.boolean().optional(),
+  /** Meta acepta el pedido de historial pero no manda ningún tramo. */
+  historySilent: z.boolean().optional(),
   /** 020: la próxima descarga de un adjunto falla con 404. */
   mediaDownloadFails: z.boolean().optional(),
   /** 020: el próximo adjunto se declara más grande que el tope. */
@@ -50,6 +54,12 @@ export async function POST(req: Request) {
   if (body.data.historyDeclined !== undefined) {
     state.historyDeclined = body.data.historyDeclined;
   }
+  if (body.data.historySyncLimit !== undefined) {
+    state.historySyncLimit = body.data.historySyncLimit;
+  }
+  if (body.data.historySilent !== undefined) {
+    state.historySilent = body.data.historySilent;
+  }
   if (body.data.mediaDownloadFails !== undefined) {
     state.mediaDownloadFails = body.data.mediaDownloadFails;
   }
@@ -71,6 +81,8 @@ export async function POST(req: Request) {
     failNextSend: state.failNextSend,
     failSends: state.failSends,
     historyDeclined: state.historyDeclined,
+    historySyncLimit: state.historySyncLimit,
+    historySilent: state.historySilent,
     mediaDownloadFails: state.mediaDownloadFails,
     mediaTooLarge: state.mediaTooLarge,
     mediaUploadFails: state.mediaUploadFails,

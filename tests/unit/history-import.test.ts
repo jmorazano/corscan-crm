@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  HISTORY_SYNC_LIMIT_CODE,
+  historyImportView,
+  isFromOlderConnection,
+  isSyncLimitError,
   clampDays,
   isValidThreadId,
   isWithinDays,
@@ -83,5 +87,114 @@ describe("canOverwriteContactName", () => {
     expect(canOverwriteContactName({ name: "Juanchi 🚀", phone: "1", consentSource: "inbound" })).toBe(true);
     expect(canOverwriteContactName({ name: "Juan Pérez (cliente)", phone: "1", consentSource: "import" })).toBe(false);
     expect(canOverwriteContactName({ name: "Juan", phone: "1", consentSource: "manual" })).toBe(false);
+  });
+});
+
+/**
+ * Meta acepta UN pedido de historial por conexión del número (26-nov-2026,
+ * Distrito Inmobiliario): la tarjeta no ofrece repetirlo cuando ya se sabe
+ * que lo va a rechazar, y el botón vuelve si el número se reconecta.
+ */
+describe("historyImportView", () => {
+  const T0 = new Date("2026-11-25T13:46:51Z");
+  const min = (n: number) => new Date(T0.getTime() + n * 60_000);
+  const base = {
+    status: "requested" as const,
+    requestedAt: T0,
+    lastChunkAt: null,
+    attemptAt: T0,
+    lastErrorCode: null,
+    lastError: null,
+  };
+  const META_LIMIT =
+    "Meta rechazó la solicitud: (#4) Application request limit reached: Synchronization Request limit exceeded: You have exceeded the maximum number of times to call the synchronization api for this phone number.";
+
+  it("sin fila o sin pedir → se ofrece importar", () => {
+    expect(historyImportView(null, { connectedAt: null })).toMatchObject({ kind: "idle", canRequest: true });
+    expect(historyImportView({ ...base, status: "idle" }, { connectedAt: null }).canRequest).toBe(true);
+  });
+
+  it("recién pedida → espera; a los 10 min sin un solo chat → sin respuesta, sin botón y con reconexión", () => {
+    expect(historyImportView(base, { connectedAt: min(-1), now: min(9) })).toEqual({
+      kind: "waiting",
+      problem: null,
+      canRequest: false,
+      needsReconnect: false,
+    });
+    expect(historyImportView(base, { connectedAt: min(-1), now: min(10) })).toEqual({
+      kind: "stalled",
+      problem: null,
+      canRequest: false,
+      needsReconnect: true,
+    });
+  });
+
+  it("recibiendo → en curso; sin tramos hace 10 min → en parte, sin ruedita ni botón", () => {
+    const receiving = { ...base, status: "receiving" as const, lastChunkAt: min(7) };
+    expect(historyImportView(receiving, { connectedAt: null, now: min(12) }).kind).toBe("receiving");
+    expect(historyImportView(receiving, { connectedAt: null, now: min(17) })).toMatchObject({
+      kind: "paused",
+      canRequest: false,
+      needsReconnect: false,
+    });
+  });
+
+  it("el límite de Meta (código propio o fila vieja con el texto crudo) → no se ofrece reintentar", () => {
+    for (const row of [
+      { ...base, status: "failed" as const, lastErrorCode: HISTORY_SYNC_LIMIT_CODE, lastError: "x" },
+      { ...base, status: "failed" as const, lastErrorCode: "4", lastError: META_LIMIT },
+    ]) {
+      expect(historyImportView(row, { connectedAt: min(-1), now: min(600) })).toEqual({
+        kind: "failed",
+        problem: "sync_limit",
+        canRequest: false,
+        needsReconnect: true,
+      });
+    }
+  });
+
+  it("un #4 que no es de sincronización es el límite genérico: se puede reintentar", () => {
+    const row = {
+      ...base,
+      status: "failed" as const,
+      lastErrorCode: "4",
+      lastError: "Meta rechazó la solicitud: (#4) Application request limit reached",
+    };
+    expect(historyImportView(row, { connectedAt: null })).toMatchObject({ problem: null, canRequest: true });
+    expect(isSyncLimitError(4, "(#4) Application request limit reached")).toBe(false);
+    expect(isSyncLimitError(4, META_LIMIT)).toBe(true);
+    expect(isSyncLimitError(100, META_LIMIT)).toBe(false);
+  });
+
+  it("fuera de las 24 h (135000) → reconexión, sin botón", () => {
+    const row = { ...base, status: "failed" as const, lastErrorCode: "135000", lastError: "tarde" };
+    expect(historyImportView(row, { connectedAt: null })).toMatchObject({
+      problem: "too_late",
+      canRequest: false,
+      needsReconnect: true,
+    });
+  });
+
+  it("otro fallo (red, Meta caída) → se puede volver a pedir", () => {
+    const row = { ...base, status: "failed" as const, lastErrorCode: "network", lastError: "No se pudo hablar con Meta ahora" };
+    expect(historyImportView(row, { connectedAt: null })).toMatchObject({ problem: null, canRequest: true, needsReconnect: false });
+  });
+
+  it("importada y después el límite → sigue importada, solo sin botón", () => {
+    const done = { ...base, status: "done" as const };
+    expect(historyImportView(done, { connectedAt: null })).toMatchObject({ kind: "done", canRequest: true });
+    expect(
+      historyImportView({ ...done, lastErrorCode: HISTORY_SYNC_LIMIT_CODE, lastError: "x" }, { connectedAt: null })
+    ).toEqual({ kind: "done", problem: "sync_limit", canRequest: false, needsReconnect: false });
+  });
+
+  it("el número se reconectó después → el botón vuelve (es otra conexión)", () => {
+    const reconnected = { connectedAt: min(90), now: min(95) };
+    expect(historyImportView(base, reconnected)).toMatchObject({ kind: "idle", canRequest: true });
+    const failed = { ...base, status: "failed" as const, lastErrorCode: HISTORY_SYNC_LIMIT_CODE, lastError: "x", attemptAt: min(60) };
+    expect(historyImportView(failed, reconnected)).toMatchObject({ kind: "failed", problem: null, canRequest: true, needsReconnect: false });
+    expect(isFromOlderConnection(min(60), min(90))).toBe(true);
+    expect(isFromOlderConnection(min(91), min(90))).toBe(false);
+    expect(isFromOlderConnection(null, min(90))).toBe(false);
   });
 });

@@ -57,3 +57,34 @@ Pendiente de verificación humana: la sincronización REAL contra Meta para
 el número de Corscan (onboardeado hace semanas: Meta exige pedirla dentro
 de las 24 h del onboarding; si la rechaza, hay que reconectar el número
 por Embedded Signup y la importación se pide sola al terminar).
+
+## Un solo pedido por conexión (fix 26-nov-2026)
+
+Caso real: «Distrito Inmobiliario (Administración)». Meta aceptó el pedido,
+mandó la agenda y nunca un tramo de historial; el segundo pedido lo rechazó
+con `(#4) … Synchronization Request limit exceeded`. Reglas puras en
+`historyImportView` (`src/lib/history-import.ts`); perillas del wa-mock
+`historySyncLimit` (queda prendida: el pedido son dos llamadas) y
+`historySilent` (acepta y no manda nada).
+
+1. **Rechazo con historial ya importado**: `historySyncLimit: true` +
+   «Volver a importar» → el estado SIGUE «Importado» con sus contadores, sale
+   la nota «Meta permite pedir el historial una sola vez por conexión…» y el
+   botón desaparece (`last_error_code = sync_limit`).
+2. **Rechazo sin historial**: fila `requested` de hace 2 h + `POST
+   /api/settings/whatsapp/history-import` → 422 con el texto en criollo; la
+   tarjeta queda «Falló» con los pasos para reconectar y SIN botón.
+3. **Fila vieja** (`last_error_code = '4'` + texto crudo de Meta, como quedó
+   en producción): misma tarjeta que el punto 2, sin una palabra en inglés.
+4. **Sin respuesta**: `requested` de hace 11 min → «Sin respuesta de Meta»,
+   sin ruedita ni botón, con la explicación y los pasos.
+5. **Reconexión**: `meta_credentials.updated_at = ahora` → vuelve «Importar
+   últimos 60 días» aunque el pedido anterior tenga menos de una hora (antes
+   respondía `in_progress` y el pedido automático de la reconexión se perdía).
+   Con `historySilent: true` → «Solicitado a Meta» con ruedita y botón
+   deshabilitado; con las perillas apagadas → «Importado».
+6. **Meta dejó de mandar**: `receiving` con el último tramo hace 20 min →
+   «Importado en parte», contadores a la vista, sin ruedita ni botón.
+
+Resultado (26-nov-2026): los 6 ✅ en el navegador contra los mocks. Unit:
+`history-import` suma 9 casos de `historyImportView`.

@@ -1,7 +1,16 @@
 import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
-import { clampDays, HISTORY_IMPORT_DEFAULT_DAYS } from "@/lib/history-import";
+import {
+  clampDays,
+  HISTORY_IMPORT_DEFAULT_DAYS,
+  HISTORY_SYNC_LIMIT_CODE,
+  HISTORY_SYNC_LIMIT_TEXT,
+  isFromOlderConnection,
+  isSyncLimitError,
+  type HistoryImportState,
+} from "@/lib/history-import";
+import { scoped } from "@/lib/db/tenant";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 
 /**
@@ -20,6 +29,7 @@ export type HistoryImportDto = {
   skippedOld: number;
   threads: number;
   requestedAt: string | null;
+  lastChunkAt: string | null;
   finishedAt: string | null;
   lastErrorCode: string | null;
   lastError: string | null;
@@ -46,10 +56,38 @@ export function serializeHistoryImport(row: Row): HistoryImportDto {
     skippedOld: row.skippedOld,
     threads: row.threads,
     requestedAt: row.requestedAt?.toISOString() ?? null,
+    lastChunkAt: row.lastChunkAt?.toISOString() ?? null,
     finishedAt: row.finishedAt?.toISOString() ?? null,
     lastErrorCode: row.lastErrorCode,
     lastError: row.lastError,
   };
+}
+
+/** Lo que necesitan las reglas puras (`historyImportView`). */
+export function toHistoryImportState(row: Row): HistoryImportState {
+  return {
+    status: row.status,
+    requestedAt: row.requestedAt,
+    lastChunkAt: row.lastChunkAt,
+    attemptAt: row.updatedAt,
+    lastErrorCode: row.lastErrorCode,
+    lastError: row.lastError,
+  };
+}
+
+/**
+ * Última vez que se guardó la conexión del número (alta o reconexión por
+ * Embedded Signup). Un pedido anterior a esto es de OTRA conexión: Meta
+ * admite uno nuevo.
+ */
+export async function connectionUpdatedAt(organizationId: string): Promise<Date | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ updatedAt: schema.metaCredentials.updatedAt })
+    .from(schema.metaCredentials)
+    .where(scoped(schema.metaCredentials.organizationId, organizationId))
+    .limit(1);
+  return rows[0]?.updatedAt ?? null;
 }
 
 /**
@@ -99,8 +137,15 @@ export async function requestHistorySync(
   const current = await getHistoryImport(organizationId);
   if (current && (current.status === "requested" || current.status === "receiving")) {
     const ageMs = Date.now() - (current.requestedAt?.getTime() ?? 0);
-    // Una solicitud colgada (>1 h sin terminar) se puede volver a pedir.
-    if (ageMs < 60 * 60 * 1000) {
+    // Una solicitud colgada (>1 h sin terminar) se puede volver a pedir. Y
+    // una de ANTES de reconectar el número no cuenta: si alguien desconecta y
+    // reconecta dentro de la hora, el pedido automático tiene que salir (es
+    // el único que Meta va a aceptar para esa conexión).
+    const olderConnection = isFromOlderConnection(
+      current.requestedAt,
+      await connectionUpdatedAt(organizationId)
+    );
+    if (ageMs < 60 * 60 * 1000 && !olderConnection) {
       throw new HistorySyncError("in_progress", "Ya hay una importación en curso");
     }
   }
@@ -125,17 +170,29 @@ export async function requestHistorySync(
     });
     requestId = res.request_id ?? null;
   } catch (err) {
-    const message =
-      err instanceof MetaApiError
+    // Meta admite un solo pedido por conexión: el rechazo se explica en
+    // criollo y queda con código propio (la tarjeta deja de ofrecer el botón).
+    const limit = err instanceof MetaApiError && isSyncLimitError(err.code, err.message);
+    const message = limit
+      ? HISTORY_SYNC_LIMIT_TEXT
+      : err instanceof MetaApiError
         ? `Meta rechazó la solicitud: ${err.message}`
         : "No se pudo hablar con Meta ahora";
     const code = err instanceof MetaApiError ? "meta_error" : "meta_unavailable";
-    await upsertImport(organizationId, {
-      status: "failed",
-      days,
-      lastErrorCode: err instanceof MetaApiError ? String(err.code ?? err.status) : "network",
-      lastError: message,
-    });
+    const lastErrorCode = limit
+      ? HISTORY_SYNC_LIMIT_CODE
+      : err instanceof MetaApiError
+        ? String(err.code ?? err.status)
+        : "network";
+    // Si el pedido anterior SÍ trajo chats, ese resultado no se pisa con un
+    // «Falló»: solo se anota por qué no se puede repetir.
+    const hadChunks = current?.status === "done" || current?.status === "receiving";
+    await upsertImport(
+      organizationId,
+      limit && hadChunks
+        ? { lastErrorCode, lastError: message }
+        : { status: "failed", days, lastErrorCode, lastError: message }
+    );
     throw new HistorySyncError(code, message);
   }
 
