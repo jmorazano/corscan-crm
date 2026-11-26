@@ -62,7 +62,30 @@ export async function getAiConfig(
     judgeModel: row.judgeModel ?? row.model ?? DEFAULT_JUDGE_MODEL,
     transcriptionModel: row.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL,
     visionModel: row.visionModel ?? DEFAULT_VISION_MODEL,
+    zeroRetention: await usesGoogleData(organizationId),
   };
+}
+
+/**
+ * ¿La empresa conectó Google Calendar o Google Sheets (en cualquier estado:
+ * una conexión que pide reconectar igual conserva las copias de planillas)?
+ * Entonces sus pedidos de chat a la IA van con retención cero (ver
+ * `AiConfig.zeroRetention`). Desconectar borra la fila y vuelve a `deny`.
+ */
+export async function usesGoogleData(organizationId: string): Promise<boolean> {
+  const db = getDb();
+  const [calendar] = await db
+    .select({ id: schema.calendarIntegration.id })
+    .from(schema.calendarIntegration)
+    .where(scoped(schema.calendarIntegration.organizationId, organizationId))
+    .limit(1);
+  if (calendar) return true;
+  const [sheets] = await db
+    .select({ id: schema.sheetsIntegration.id })
+    .from(schema.sheetsIntegration)
+    .where(scoped(schema.sheetsIntegration.organizationId, organizationId))
+    .limit(1);
+  return Boolean(sheets);
 }
 
 /** ¿La empresa tiene IA configurada? (sin descifrar el token). */

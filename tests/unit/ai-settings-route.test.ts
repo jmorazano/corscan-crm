@@ -50,6 +50,7 @@ vi.mock("@/server/ai/credentials", async (importOriginal) => {
       state.modelsUpdated.push(input);
       return Promise.resolve(true);
     },
+    usesGoogleData: () => Promise.resolve(false),
     deleteAiConfig: (organizationId: string) => {
       state.deleted.push(organizationId);
       return Promise.resolve();

@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   inserted: [] as Row[],
   wheres: [] as { sql: string; params: unknown[] }[],
   deletes: [] as { sql: string; params: unknown[] }[],
+  googleOrgs: [] as string[],
 }));
 
 vi.mock("@/lib/db", async (importOriginal) => {
@@ -25,9 +26,19 @@ vi.mock("@/lib/db", async (importOriginal) => {
     ...actual,
     getDb: () => ({
       select: () => ({
-        from: () => ({
+        from: (table: unknown) => ({
           where: (cond: unknown) => {
             const q = render(cond);
+            // Retención cero: las conexiones de Google son otra tabla; acá
+            // la empresa tiene Google solo si el test lo cargó.
+            if (table !== actual.schema.aiCredentials) {
+              return {
+                limit: () =>
+                  Promise.resolve(
+                    state.googleOrgs.filter((o) => q.params.includes(o)).map((o) => ({ id: o }))
+                  ),
+              };
+            }
             state.wheres.push({ sql: q.sql, params: q.params });
             return {
               limit: () =>
@@ -126,7 +137,20 @@ describe("config de IA por empresa (US3)", () => {
       transcriptionModel: "google/gemini-2.5-flash",
       // 022: el de visión también (aparte, elegible por empresa).
       visionModel: "google/gemini-2.5-flash",
+      // Sin Google Calendar ni Sheets: solo `data_collection: deny`.
+      zeroRetention: false,
     });
+  });
+
+  it("empresa con Google conectado → retención cero en la config resuelta", async () => {
+    const { getAiConfig } = await import("@/server/ai/credentials");
+    await seedRow("org_g", "sk-or-google", null, null);
+    state.googleOrgs.push("org_g");
+    try {
+      expect((await getAiConfig("org_g"))?.zeroRetention).toBe(true);
+    } finally {
+      state.googleOrgs.length = 0;
+    }
   });
 
   it("getAiConfig aplica los defaults de producto cuando la empresa no eligió modelos", async () => {

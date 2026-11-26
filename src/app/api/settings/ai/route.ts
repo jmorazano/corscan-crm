@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { ZDR_FALLBACK_MODEL } from "@/lib/ai";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_JUDGE_MODEL,
@@ -10,6 +11,7 @@ import {
   saveAiConfig,
   tokenLast4,
   updateAiModels,
+  usesGoogleData,
 } from "@/server/ai/credentials";
 import { publish } from "@/server/events/bus";
 
@@ -40,6 +42,8 @@ export const GET = withAuth(async (session) => {
       transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
       visionModel: DEFAULT_VISION_MODEL,
     },
+    zeroRetention: await usesGoogleData(session.organizationId),
+    zdrFallbackModel: ZDR_FALLBACK_MODEL,
   });
 });
 

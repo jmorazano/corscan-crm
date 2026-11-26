@@ -37,6 +37,9 @@ type AiSettingsResponse = {
     transcriptionModel: string;
     visionModel: string;
   };
+  /** Conectó Google Calendar o Sheets: el chat va solo a proveedores con retención cero. */
+  zeroRetention?: boolean;
+  zdrFallbackModel?: string;
 };
 
 export function AiCard() {
@@ -53,6 +56,8 @@ export function AiCard() {
   const [judgeModel, setJudgeModel] = useState("");
   const [transcriptionModel, setTranscriptionModel] = useState("");
   const [visionModel, setVisionModel] = useState("");
+  const [zeroRetention, setZeroRetention] = useState(false);
+  const [zdrFallbackModel, setZdrFallbackModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -68,6 +73,8 @@ export function AiCard() {
     setJudgeModel(data.config?.judgeModel ?? "");
     setTranscriptionModel(data.config?.transcriptionModel ?? "");
     setVisionModel(data.config?.visionModel ?? "");
+    setZeroRetention(data.zeroRetention === true);
+    setZdrFallbackModel(data.zdrFallbackModel ?? "");
     setLoaded(true);
   }, []);
 
@@ -243,6 +250,14 @@ export function AiCard() {
               </p>
             </div>
           </div>
+          {zeroRetention && (
+            <p className="text-xs text-muted-foreground">
+              Como conectaste Google (Calendar o Sheets), las respuestas del
+              agente y la lectura de comprobantes usan solo proveedores que no
+              guardan los datos (retención cero). Si el modelo elegido no tiene
+              ninguno, se usa {zdrFallbackModel || "otro que sí lo tenga"}.
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             Vacíos usan los defaults de producto que ves de guía. El token no
             se valida contra el proveedor al guardar: el primer turno del

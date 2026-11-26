@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { chatJson, extractJson } from "@/lib/ai";
+import { chatJson, extractJson, ZDR_FALLBACK_MODEL } from "@/lib/ai";
 
 describe("extractJson (extracción robusta)", () => {
   it("JSON limpio", () => {
@@ -121,6 +121,44 @@ describe("chatJson (reintentos y errores tipados)", () => {
     await chatJson(config, schema, [{ role: "user", content: "hola" }]);
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as { provider?: unknown };
     expect(body.provider).toEqual({ data_collection: "deny" });
+  });
+
+  it("empresa con Google conectado: el pedido exige además retención cero (zdr)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+    await chatJson({ ...config, zeroRetention: true }, schema, [{ role: "user", content: "hola" }]);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as { provider?: unknown };
+    expect(body.provider).toEqual({ data_collection: "deny", zdr: true });
+  });
+
+  it("modelo sin endpoint de retención cero → pasa al de respaldo, nunca relaja la política", async () => {
+    const noZdr = () =>
+      new Response(
+        JSON.stringify({ error: { message: "No endpoints found matching your data policy (Zero data retention)." } }),
+        { status: 404 }
+      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(noZdr())
+      .mockResolvedValueOnce(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await chatJson({ ...config, zeroRetention: true }, schema, [{ role: "user", content: "hola" }], {
+      model: "google/gemini-2.5-flash",
+    });
+    expect(result.ok).toBe(true);
+    const bodies = fetchMock.mock.calls.map(
+      (c) => JSON.parse(String(c[1]!.body)) as { model: string; provider: unknown }
+    );
+    expect(bodies.map((b) => b.model)).toEqual(["google/gemini-2.5-flash", ZDR_FALLBACK_MODEL]);
+    expect(bodies.every((b) => JSON.stringify(b.provider) === JSON.stringify({ data_collection: "deny", zdr: true }))).toBe(true);
+  });
+
+  it("sin Google, un 404 del modelo no cambia de modelo", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("No endpoints found", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await chatJson(config, schema, [{ role: "user", content: "hola" }]);
+    expect(result.ok).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("proveedor caído (500 persistente) → error tipado, jamás excepción", async () => {

@@ -63,7 +63,43 @@ export type AiConfig = {
   transcriptionModel?: string;
   /** 022: modelo con entrada de imagen; ausente = DEFAULT_VISION_MODEL. */
   visionModel?: string;
+  /**
+   * Retención cero (verificación de Google, nov-2026): la empresa conectó
+   * Google Calendar o Google Sheets, así que sus pedidos de chat pueden
+   * llevar datos de Google (horarios libres, filas de planillas, encabezados
+   * de la planilla de comprobantes). Esos pedidos van SOLO a endpoints de
+   * OpenRouter con Zero Data Retention (`zdr: true`), además de
+   * `data_collection: "deny"`. Lo resuelve `getAiConfig`.
+   */
+  zeroRetention?: boolean;
 };
+
+/**
+ * Modelo al que se pasa un pedido con retención cero cuando el elegido por
+ * la empresa no tiene ningún endpoint ZDR en OpenRouter (p. ej.
+ * google/gemini-2.5-flash, el de visión por defecto que lee los
+ * comprobantes). Acepta texto, imágenes y PDF; ZDR en Amazon Bedrock y Google
+ * Vertex (probado en vivo el 26-nov-2026).
+ */
+export const ZDR_FALLBACK_MODEL = "anthropic/claude-sonnet-4.5";
+
+/**
+ * Política de proveedor de cada pedido a OpenRouter. Siempre: solo
+ * proveedores que no guardan ni entrenan con lo que les mandamos. Con datos
+ * de Google: además, solo endpoints con retención cero.
+ */
+export function providerPolicy(zeroRetention: boolean): Record<string, boolean | string> {
+  return zeroRetention ? { data_collection: "deny", zdr: true } : { data_collection: "deny" };
+}
+
+/** OpenRouter no tiene endpoint de ese modelo que cumpla la política (404). */
+export function isZdrUnavailable(err: unknown): boolean {
+  return (
+    err instanceof ProviderHttpError &&
+    err.status === 404 &&
+    /data policy|no endpoints found/i.test(err.message)
+  );
+}
 
 export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
@@ -122,7 +158,7 @@ export async function chatJson<T>(
       detail: "La empresa no tiene token de IA configurado",
     };
   }
-  const model =
+  let model =
     opts?.model ?? (opts?.judge ? config.judgeModel : config.model);
   if (!model?.trim()) {
     return {
@@ -162,13 +198,18 @@ export async function chatJson<T>(
           ];
     try {
       lastStatus = undefined;
-      const raw = await callProvider(
-        config.token,
-        model,
-        attemptMessages,
-        maxTokens,
-        opts?.timeoutMs
-      );
+      const zeroRetention = config.zeroRetention === true;
+      let raw: string;
+      try {
+        raw = await callProvider(config.token, model, attemptMessages, maxTokens, opts?.timeoutMs, {}, zeroRetention);
+      } catch (err) {
+        // Con datos de Google el pedido NO se relaja: si el modelo elegido no
+        // tiene endpoint con retención cero, va a uno que sí lo tiene.
+        if (!zeroRetention || !isZdrUnavailable(err) || model === ZDR_FALLBACK_MODEL) throw err;
+        console.warn(`[ia] ${model} sin endpoint de retención cero: se usa ${ZDR_FALLBACK_MODEL}`);
+        model = ZDR_FALLBACK_MODEL;
+        raw = await callProvider(config.token, model, attemptMessages, maxTokens, opts?.timeoutMs, {}, zeroRetention);
+      }
       lastRaw = raw;
       const extracted = extractJson(raw);
       if (extracted === null) {
@@ -212,7 +253,8 @@ async function callProvider(
   messages: ChatMessage[],
   maxTokens: number,
   timeoutMs = 60_000,
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  zeroRetention = false
 ): Promise<string> {
   const env = getEnv();
   const controller = new AbortController();
@@ -230,12 +272,12 @@ async function callProvider(
         messages,
         max_tokens: maxTokens,
         ...extra,
-        // Solo proveedores que no guardan ni entrenan con lo que les mandamos
-        // (conversaciones, horarios de la agenda, planillas). Lo exige la
-        // política de privacidad y el «Limited Use» de los datos de Google.
-        // `zdr` sería más estricto pero deja a Gemini sin proveedor (probado
-        // el 25-nov-2026 con los modelos en uso: todos responden con `deny`).
-        provider: { data_collection: "deny" },
+        // Solo proveedores que no guardan ni entrenan con lo que les mandamos.
+        // Con datos de Google (empresa con Calendar o Sheets), además solo
+        // endpoints con retención cero (`zdr`): lo exige el «Limited Use».
+        // Los pedidos de audio/imagen/PDF/video del cliente no llevan datos
+        // de Google y van solo con `deny` (Gemini 2.5 Flash no tiene ZDR).
+        provider: providerPolicy(zeroRetention),
       }),
       signal: controller.signal,
     });
