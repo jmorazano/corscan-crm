@@ -11,6 +11,8 @@ import {
   type Credentials,
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
+import { metaFailureSummary } from "@/lib/meta-errors";
+import { withSendRetry } from "@/lib/send-retry";
 import { serializeMessage } from "@/server/inbox/ingest";
 
 // 023: la clase vive en su propio módulo para que el envío de Instagram la
@@ -186,6 +188,27 @@ export async function sendText(input: {
   return { messageId: message.id };
 }
 
+/**
+ * El texto que escribe una persona del equipo en el compositor, con el MISMO
+ * reintento que el agente (036): un 5xx, un corte o un timeout de Meta se
+ * reintentan dos veces (2 s y 5 s) antes de mostrar «Meta no está disponible
+ * ahora». Caso Distrito (26-nov-2026): un único 5xx de Meta dejó el mensaje
+ * sin salir hasta que la persona volvió a tocar enviar, minuto y medio
+ * después. Los errores definitivos salen al primer intento. Mismo riesgo
+ * aceptado que en 036: Graph no tiene clave de idempotencia.
+ */
+export async function sendTextWithRetry(
+  input: Parameters<typeof sendText>[0],
+  opts: { sleep?: (ms: number) => Promise<void> } = {}
+): Promise<SendResult> {
+  return withSendRetry(() => sendText(input), {
+    codeOf: (err) => (err instanceof SendError ? err.code : null),
+    sleep: opts.sleep,
+    onRetry: (attempt, code) =>
+      console.warn(`[send] reintento ${attempt} del envío manual en ${input.conversationId}: ${code}`),
+  });
+}
+
 export type GraphSendResult = {
   waMessageId: string;
   /**
@@ -201,6 +224,7 @@ export async function callGraphSend(
   credentials: Credentials,
   payload: unknown
 ): Promise<GraphSendResult> {
+  const startedAt = Date.now();
   try {
     const res = await graphRequest<{
       messages?: { id: string }[];
@@ -223,6 +247,12 @@ export async function callGraphSend(
         );
       }
       if (err.status === 0 || err.status >= 500) {
+        // Rastro del motivo (5xx de Meta, corte o plazo vencido): sin él no
+        // se distinguía una caída de Meta de un problema de red.
+        console.warn(
+          `[send] Meta no disponible (${credentials.organizationId}): ` +
+            metaFailureSummary(err, Date.now() - startedAt)
+        );
         throw new SendError("meta_unavailable", "Meta no está disponible ahora");
       }
       throw new SendError("meta_error", err.message);

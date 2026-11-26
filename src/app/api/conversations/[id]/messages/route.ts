@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, ownerOnlyError, parseBody, withAuth } from "@/lib/api";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
-import { SendError, sendText } from "@/server/inbox/send";
+import { SendError, sendTextWithRetry } from "@/server/inbox/send";
 import { SEND_ERROR_STATUS } from "@/server/inbox/send-error";
 import { postTrainerMessage, TrainerError } from "@/server/ai/trainer";
 import { canManageConfig } from "@/lib/roles";
@@ -80,7 +80,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   }
 
   try {
-    const result = await sendText({
+    const result = await sendTextWithRetry({
       conversationId: id,
       organizationId: session.organizationId,
       text: body.data.text,

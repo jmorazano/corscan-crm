@@ -69,3 +69,75 @@ export function friendlyDeliveryError(
   }
   return text;
 }
+
+/**
+ * Resumen de una falla «Meta no disponible» (5xx, corte de red o timeout)
+ * para los logs, PURO. Antes el envío solo decía `meta_unavailable` y no se
+ * podía saber si Meta contestó con un error, si se cortó la conexión o si
+ * venció el plazo (caso Distrito, 26-nov-2026). Lleva SOLO metadatos: estado,
+ * códigos, el mensaje de error de Meta recortado, el `fbtrace_id` (lo pide el
+ * soporte de Meta) y la causa de red; jamás el cuerpo del envío ni el token.
+ */
+export function metaFailureSummary(
+  err: {
+    status: number;
+    code: number | null;
+    type: string | null;
+    message: string;
+    details: unknown;
+  },
+  elapsedMs?: number
+): string {
+  const parts: string[] = [`status=${err.status}`];
+  if (err.status === 0) {
+    parts.push(`causa=${networkCause(err.details) ?? oneLine(err.message)}`);
+  } else {
+    const body = graphErrorBody(err.details);
+    if (err.code !== null) parts.push(`code=${err.code}`);
+    if (body?.subcode !== undefined) parts.push(`subcode=${body.subcode}`);
+    if (err.type) parts.push(`type=${err.type}`);
+    parts.push(`msg=${JSON.stringify(oneLine(err.message))}`);
+    if (body?.fbtraceId) parts.push(`fbtrace_id=${body.fbtraceId}`);
+  }
+  if (elapsedMs !== undefined) parts.push(`tras ${Math.round(elapsedMs)} ms`);
+  return parts.join(" ");
+}
+
+function oneLine(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 160 ? `${flat.slice(0, 159)}…` : flat;
+}
+
+/** `TimeoutError`, `TypeError: fetch failed (ECONNRESET)`… del `fetch`. */
+function networkCause(details: unknown): string | null {
+  if (!details || typeof details !== "object") return null;
+  const d = details as { name?: unknown; message?: unknown; cause?: unknown };
+  const name = typeof d.name === "string" ? d.name : null;
+  if (!name) return null;
+  const cause = d.cause as { code?: unknown; message?: unknown } | undefined;
+  const inner =
+    cause && typeof cause === "object"
+      ? typeof cause.code === "string"
+        ? cause.code
+        : typeof cause.message === "string"
+          ? oneLine(cause.message)
+          : null
+      : null;
+  const message = typeof d.message === "string" ? oneLine(d.message) : "";
+  return inner ? `${name}: ${message} (${inner})` : message ? `${name}: ${message}` : name;
+}
+
+function graphErrorBody(
+  details: unknown
+): { subcode?: number; fbtraceId?: string } | null {
+  if (!details || typeof details !== "object") return null;
+  const error = (details as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return null;
+  const e = error as { error_subcode?: unknown; fbtrace_id?: unknown };
+  return {
+    ...(typeof e.error_subcode === "number" ? { subcode: e.error_subcode } : {}),
+    ...(typeof e.fbtrace_id === "string" && /^[\w-]{1,64}$/.test(e.fbtrace_id)
+      ? { fbtraceId: e.fbtrace_id }
+      : {}),
+  };
+}

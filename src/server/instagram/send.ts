@@ -21,6 +21,7 @@ import { isInstagramHumanAgentEnabled } from "@/lib/env";
 import { publish } from "@/server/events/bus";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError } from "@/server/inbox/send-error";
+import { metaFailureSummary } from "@/lib/meta-errors";
 import {
   ensureInstagramToken,
   getInstagramIntegration,
@@ -229,6 +230,17 @@ export async function toSendError(err: unknown, organizationId: string): Promise
       );
     }
     if (err.isUnavailable) {
+      console.warn(
+        `[send] Instagram no disponible (${organizationId}): ` +
+          metaFailureSummary({
+            status: err.status,
+            code: err.code,
+            type: null,
+            message: err.message,
+            details: null,
+          }) +
+          (err.subcode !== null ? ` subcode=${err.subcode}` : "")
+      );
       return new SendError("meta_unavailable", "Instagram no está disponible ahora");
     }
     return new SendError("meta_error", friendlyInstagramError(err));
