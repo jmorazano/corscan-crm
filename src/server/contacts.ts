@@ -16,6 +16,9 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     optedOutAt: c.optedOutAt?.toISOString() ?? null,
     isTest: c.isTest,
     archivedAt: c.archivedAt?.toISOString() ?? null,
+    /** Nombre puesto a mano por alguien del equipo: cuándo y quién. */
+    nameEditedAt: c.nameEditedAt?.toISOString() ?? null,
+    nameEditedByName: c.nameEditedByName ?? null,
   };
 }
 

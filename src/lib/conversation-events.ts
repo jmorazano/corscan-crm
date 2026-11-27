@@ -22,7 +22,13 @@ export type ConversationEventKind =
   /** 042: el agente dio de baja al contacto («no me interesa»). */
   | "ai_opt_out"
   /** 044: el lead pasó a perdido por días sin respuesta (regla de la empresa). */
-  | "lead_stale";
+  | "lead_stale"
+  /**
+   * Cambió el nombre del contacto: `reason` = `team` (lo editó una persona
+   * del equipo, `actorName`) o `agent` (el nombre que dio el cliente, 021).
+   * `details.from`/`details.to` = antes y después.
+   */
+  | "contact_renamed";
 
 export type HandoffReason = "cliente" | "modelo" | "error" | "ventana" | "visita";
 
@@ -59,6 +65,9 @@ export type ConversationEventDetails = {
   stage?: string;
   /** CRM-5: el mensaje del cliente (una reacción) al que respondió el turno. */
   inboundId?: string;
+  /** Cambio de nombre del contacto: antes y después. */
+  from?: string;
+  to?: string;
 };
 
 export type ConversationEventDto = {
@@ -132,12 +141,37 @@ export function eventText(
         text: "La IA dio de baja al contacto: no recibe seguimientos ni campañas. Si vuelve a escribir, la IA le responde.",
         tone: "warning",
       };
+    case "contact_renamed":
+      return renameText(ev.reason, who, d);
     case "lead_stale":
       return {
         text: `Pasó a ${d.stage ?? "Perdido"}: ${d.days ?? "varios"} días sin respuesta. Si vuelve a escribir, pasa solo a la etapa de conversación.`,
         tone: "neutral",
       };
   }
+}
+
+/**
+ * Un nombre que todavía es el número (contacto creado por un eco o un
+ * mensaje sin perfil) se muestra como teléfono.
+ */
+export function displayContactName(name: string | undefined): string {
+  const value = (name ?? "").trim();
+  if (!value) return "sin nombre";
+  return /^\d{7,15}$/.test(value) ? `+${value}` : value;
+}
+
+function renameText(
+  reason: string | null,
+  who: string,
+  d: ConversationEventDetails
+): { text: string; tone: EventTone } {
+  const from = displayContactName(d.from);
+  const to = displayContactName(d.to);
+  if (reason === "agent") {
+    return { text: `La IA anotó el nombre que dio el cliente: «${to}» (antes «${from}»).`, tone: "neutral" };
+  }
+  return { text: `${who} cambió el nombre del contacto: «${from}» → «${to}».`, tone: "neutral" };
 }
 
 /** 042: solo las omisiones que conviene ver en el hilo (el resto, en el registro). */

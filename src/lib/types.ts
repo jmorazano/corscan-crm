@@ -122,4 +122,7 @@ export type ContactDto = {
   optedOutAt: string | null;
   isTest: boolean;
   archivedAt: string | null;
+  /** Nombre puesto a mano por alguien del equipo: cuándo y quién (null = sin registro). */
+  nameEditedAt?: string | null;
+  nameEditedByName?: string | null;
 };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, Forward, Mail, PanelRight, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatPhone } from "@/lib/utils";
 import { serializeTagsParam, type TagOps } from "@/lib/tags";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
 import { inboxShortcut, neighborIndex } from "@/lib/gestures";
@@ -1016,17 +1016,15 @@ export function InboxClient() {
                       Tu asistente de WhatsApp · lo que le digas se aplica al instante
                     </span>
                   ) : (
-                    <span
-                      className={cn(
-                        "block truncate text-xs",
-                        selected.windowOpen ? "font-medium text-success" : "text-text-3"
-                      )}
-                    >
+                    <span className="block truncate text-xs text-text-3" data-testid="thread-subtitle">
+                      {/* El número SIEMPRE a la vista: un nombre puesto a mano
+                          no puede tapar de quién es el chat. */}
                       {selected.kind === "instagram"
-                        ? `${contactHandle(selected.contact)} · Instagram${selected.windowOpen ? " · ventana abierta" : ""}`
-                        : selected.windowOpen
-                          ? "ventana abierta"
-                          : `+${selected.contact.phone}`}
+                        ? `${contactHandle(selected.contact)} · Instagram`
+                        : formatPhone(selected.contact.phone)}
+                      {selected.windowOpen && (
+                        <span className="font-medium text-success"> · ventana abierta</span>
+                      )}
                     </span>
                   )}
                 </span>

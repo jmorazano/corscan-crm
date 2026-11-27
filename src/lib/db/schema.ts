@@ -180,6 +180,15 @@ export const contact = pgTable(
      */
     nameEditedAt: timestamp("name_edited_at"),
     /**
+     * Quién de la cuenta le puso el nombre a mano (lo de `name_edited_at`).
+     * El nombre se COPIA: la marca se sigue leyendo si la cuenta se borra.
+     * NULL con `name_edited_at` = edición anterior a este registro.
+     */
+    nameEditedByUserId: text("name_edited_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    nameEditedByName: text("name_edited_by_name"),
+    /**
      * 025: cuándo supimos que el DUEÑO ya conocía este contacto desde su
      * celular (coexistence): está en la agenda del teléfono (state sync),
      * tiene historial importado, o el dueño le escribió primero desde el
@@ -494,6 +503,8 @@ export const conversationEvent = pgTable(
         "ai_opt_out",
         // 044: el lead pasó a perdido por días sin respuesta.
         "lead_stale",
+        // Cambio de nombre del contacto (equipo o agente).
+        "contact_renamed",
       ],
     }).notNull(),
     reason: text("reason"),

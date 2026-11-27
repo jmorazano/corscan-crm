@@ -45,6 +45,7 @@ import {
   isTeamBroadcastMessage,
   lastConversationEvent,
   lastTeamMessageAt,
+  recordContactRenamed,
   recordConversationEvent,
   recordSilence,
 } from "@/server/ai/events";
@@ -1945,6 +1946,8 @@ async function learnContactName(
     .update(schema.contact)
     .set({ name, updatedAt: new Date() })
     .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)));
+  // Que en el hilo quede que el nombre lo puso la IA (y cuál tenía antes).
+  await recordContactRenamed({ organizationId, contactId, from: contact.name, to: name, by: "agent" });
   publish(organizationId, {
     type: "conversations.updated",
     data: { conversationIds: [] },

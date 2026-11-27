@@ -11,6 +11,8 @@ import {
   serializeContact,
 } from "@/server/contacts";
 import { publish } from "@/server/events/bus";
+import { recordContactRenamed } from "@/server/ai/events";
+import { authorName } from "@/server/inbox/author";
 import { isTrainerContact } from "@/server/trainer/conversation";
 
 export const dynamic = "force-dynamic";
@@ -48,11 +50,12 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
+  const current = await getContactById(session.organizationId, id);
+  if (!current) return apiError(404, "not_found", "Contacto no encontrado");
+
   // Sandbox (004): la única marca visible de un contacto del Laboratorio es
   // su archivo — desarchivarlo lo volvería elegible para envíos reales.
   if (body.data.archived === false) {
-    const current = await getContactById(session.organizationId, id);
-    if (!current) return apiError(404, "not_found", "Contacto no encontrado");
     if (current.isTest) {
       return apiError(
         403,
@@ -63,11 +66,19 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   }
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
-  if (body.data.name !== undefined) {
+  // «Editar contacto» manda el nombre siempre: solo cuenta como edición si
+  // CAMBIÓ (guardar etiquetas o notas no es ponerle nombre a nadie).
+  const renamed = body.data.name !== undefined && body.data.name !== current.name;
+  let editorName: string | null = null;
+  if (renamed) {
+    editorName = await authorName(session.userId);
     set.name = body.data.name;
     // 021: lo editó una PERSONA del equipo. A partir de acá ni la sync de la
-    // agenda del celular (017) ni el agente (021) pueden pisarlo.
+    // agenda del celular (017) ni el agente (021) pueden pisarlo. Queda quién
+    // fue: el nombre se copia para que se lea aunque la cuenta se borre.
     set.nameEditedAt = new Date();
+    set.nameEditedByUserId = session.userId;
+    set.nameEditedByName = editorName;
   }
   if (body.data.notes !== undefined) set.notes = body.data.notes;
   if (body.data.tags !== undefined) set.tags = sanitizeTags(body.data.tags);
@@ -88,6 +99,20 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     )
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Contacto no encontrado");
+  if (renamed) {
+    await recordContactRenamed({
+      organizationId: session.organizationId,
+      contactId: id,
+      from: current.name,
+      to: updated[0].name,
+      by: "team",
+      actor: { userId: session.userId, name: editorName },
+    });
+    publish(session.organizationId, {
+      type: "conversations.updated",
+      data: { conversationIds: [] },
+    });
+  }
   return Response.json({ contact: serializeContact(updated[0]) });
 });
 

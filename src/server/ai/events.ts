@@ -382,3 +382,47 @@ async function markBroadcast(
     console.error("[agente] no se pudo marcar la difusión:", err instanceof Error ? err.message : err);
   }
 }
+
+/**
+ * El nombre del contacto cambió: deja la línea en CADA conversación del
+ * contacto (WhatsApp e Instagram; nunca la del Entrenador), para que en el
+ * hilo quede quién lo cambió, de qué a qué y cuándo. Nunca lanza.
+ */
+export async function recordContactRenamed(input: {
+  organizationId: string;
+  contactId: string;
+  from: string;
+  to: string;
+  by: "team" | "agent";
+  actor?: { userId: string; name: string | null } | null;
+}): Promise<void> {
+  if (input.from === input.to) return;
+  try {
+    const conversations = await getDb()
+      .select({ id: schema.conversation.id })
+      .from(schema.conversation)
+      .where(
+        scoped(
+          schema.conversation.organizationId,
+          input.organizationId,
+          eq(schema.conversation.contactId, input.contactId),
+          ne(schema.conversation.kind, "trainer")
+        )
+      );
+    for (const c of conversations) {
+      await recordConversationEvent({
+        organizationId: input.organizationId,
+        conversationId: c.id,
+        kind: "contact_renamed",
+        reason: input.by,
+        actor: input.by === "team" ? input.actor ?? null : null,
+        details: { from: input.from, to: input.to },
+      });
+    }
+  } catch (err) {
+    console.error(
+      `[eventos] no se pudo registrar el cambio de nombre de ${input.contactId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+}

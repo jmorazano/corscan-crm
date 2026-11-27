@@ -39,6 +39,7 @@ import { TagChip } from "@/components/tags/tag-chip";
 import { TagEditor } from "@/components/tags/tag-editor";
 import { TagFilter } from "@/components/tags/tag-filter";
 import { useTagFacets, type TagFacet } from "@/components/tags/use-tag-facets";
+import { nameEditFrom, nameEditedLabel } from "@/lib/contact-name-edit";
 
 /** Filtro de la lista tal como viaja en el bulk (033, `contactFilterSchema`). */
 type ContactFilterBody = {
@@ -1215,6 +1216,7 @@ function EditDialog({
   }) => Promise<void>;
 }) {
   const [name, setName] = useState(contact.name);
+  const nameEdit = nameEditFrom(contact);
   const [notes, setNotes] = useState(contact.notes ?? "");
   const [tags, setTags] = useState<string[]>(contact.tags);
 
@@ -1253,6 +1255,11 @@ function EditDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          {nameEdit && (
+            <p className="text-xs text-text-3" data-testid="edit-name-edited">
+              {nameEditedLabel(nameEdit)}
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <span className="text-sm font-medium">Etiquetas</span>

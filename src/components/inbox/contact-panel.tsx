@@ -8,6 +8,7 @@ import { cn, formatPhone } from "@/lib/utils";
 import { presenceHint, TEAM_SILENCE_DEFAULT_MS } from "@/lib/agent-presence";
 import { ChannelIcon } from "@/components/channel-icon";
 import { contactHandle } from "@/lib/instagram/messaging";
+import { nameEditFrom, nameEditedLabel, type NameEdit } from "@/lib/contact-name-edit";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -76,6 +77,7 @@ export function ContactPanel({
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState("");
+  const [nameEdit, setNameEdit] = useState<NameEdit | null>(null);
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [stages, setStages] = useState<StageDto[]>([]);
@@ -146,6 +148,7 @@ export function ContactPanel({
       fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
     ]).catch(() => [null, null, null]);
     if (detail) {
+      setNameEdit(nameEditFrom(detail.contact));
       setNotes(detail.contact?.notes ?? "");
       setContactTags(detail.contact?.tags ?? []);
       setCurrentStageId(detail.stage?.id ?? null);
@@ -171,6 +174,7 @@ export function ContactPanel({
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
       setContactTags(detail.contact?.tags ?? []);
+      setNameEdit(nameEditFrom(detail.contact));
     }
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
@@ -276,6 +280,11 @@ export function ContactPanel({
                   ? contactHandle(conversation.contact)
                   : formatPhone(conversation.contact.phone)}
               </p>
+              {nameEdit && (
+                <p className="text-xs text-text-3" data-testid="contact-name-edited">
+                  {nameEditedLabel(nameEdit)}
+                </p>
+              )}
             </div>
           </div>
 
