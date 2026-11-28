@@ -42,7 +42,7 @@ const STAGE_DOT: Record<string, string> = {
 /** Chips de etiqueta visibles por fila; el resto se resume como "+n". */
 const ROW_TAGS_MAX = 3;
 
-export type ListFilter = "all" | "unread";
+export type ListFilter = "all" | "unread" | "ai_on";
 
 /** Acciones por fila (012, FR-006): gesto de deslizar y hoja «Más». */
 export type RowActions = {
@@ -109,6 +109,8 @@ export function ConversationList({
   onBulkTags,
   total,
   unreadTotal,
+  aiOnTotal = 0,
+  showAiOnFilter = false,
   hasMore,
   loadingMore,
   onLoadMore,
@@ -138,6 +140,9 @@ export function ConversationList({
   /** Totales del servidor (006, FR-009): la lista es una página. */
   total: number;
   unreadTotal: number;
+  /** Modo de prueba del agente: pastilla «IA prendida» y su conteo. */
+  aiOnTotal?: number;
+  showAiOnFilter?: boolean;
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -164,7 +169,7 @@ export function ConversationList({
   const visible = conversations;
   const filtered =
     query.trim().length > 0 ||
-    filter === "unread" ||
+    filter !== "all" ||
     tagFilter.tags.length > 0 ||
     channel !== null;
 
@@ -319,7 +324,9 @@ export function ConversationList({
           [
             { id: "all", label: "Todas", count: total },
             { id: "unread", label: "No leídas", count: unreadTotal },
-          ] as const
+            // Modo de prueba del agente: los chats donde la IA está prendida.
+            ...(showAiOnFilter ? [{ id: "ai_on", label: "IA prendida", count: aiOnTotal }] : []),
+          ] as { id: ListFilter; label: string; count: number }[]
         ).map((f) => (
           <button
             key={f.id}
@@ -519,7 +526,7 @@ export function ConversationList({
                 >
                   {loadingMore
                     ? "Cargando…"
-                    : `Cargar más (${visible.length} de ${filter === "unread" ? unreadTotal : total})`}
+                    : `Cargar más (${visible.length} de ${filter === "unread" ? unreadTotal : filter === "ai_on" ? aiOnTotal : total})`}
                 </Button>
               </li>
             )}

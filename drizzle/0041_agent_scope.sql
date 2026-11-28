@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "agent_scope" text DEFAULT 'all' NOT NULL;

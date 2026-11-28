@@ -41,6 +41,9 @@ type ConversationPage = {
   trainer?: ConversationDto | null;
   total: number;
   unreadTotal: number;
+  /** Modo de prueba del agente: chats con la IA prendida. */
+  aiOnTotal?: number;
+  agentScope?: "all" | "selected";
   nextCursor: string | null;
   /** 023: la empresa usa Instagram (conexión o conversaciones): filtro por canal. */
   hasInstagram?: boolean;
@@ -66,12 +69,16 @@ export function InboxClient() {
   const [pageMeta, setPageMeta] = useState<{
     total: number;
     unreadTotal: number;
+    aiOnTotal: number;
+    agentScope: "all" | "selected";
     nextCursor: string | null;
     hasInstagram: boolean;
     instagramHumanAgent: boolean;
   }>({
     total: 0,
     unreadTotal: 0,
+    aiOnTotal: 0,
+    agentScope: "all",
     nextCursor: null,
     hasInstagram: false,
     instagramHumanAgent: false,
@@ -135,8 +142,9 @@ export function InboxClient() {
   const tagFilter = useMemo(() => readTagFilter(params), [params]);
   const tagsKey = serializeTagsParam(tagFilter.tags);
   const listQuery = params.get("q") ?? "";
+  const filterParam = params.get("filter");
   const listFilter: ListFilter =
-    params.get("filter") === "unread" ? "unread" : "all";
+    filterParam === "unread" ? "unread" : filterParam === "ai_on" ? "ai_on" : "all";
   // 023: filtro por canal (Todos / WhatsApp / Instagram) en la URL.
   const channelParam = params.get("channel");
   const listChannel: "whatsapp" | "instagram" | null =
@@ -190,7 +198,7 @@ export function InboxClient() {
       if (f.mode === "all") qs.set("mode", "all");
     }
     if (f.q.trim()) qs.set("q", f.q.trim());
-    if (f.filter === "unread") qs.set("filter", "unread");
+    if (f.filter !== "all") qs.set("filter", f.filter);
     if (f.channel) qs.set("channel", f.channel);
     for (const [k, v] of Object.entries(extra ?? {})) qs.set(k, v);
     return `/api/conversations?${qs}`;
@@ -215,6 +223,8 @@ export function InboxClient() {
     setPageMeta({
       total: data.total,
       unreadTotal: data.unreadTotal,
+      aiOnTotal: data.aiOnTotal ?? 0,
+      agentScope: data.agentScope ?? "all",
       nextCursor: data.nextCursor,
       hasInstagram: data.hasInstagram ?? false,
       instagramHumanAgent: data.instagramHumanAgent ?? false,
@@ -929,7 +939,7 @@ export function InboxClient() {
           query={listQuery}
           onQueryChange={(q) => setParams({ q: q || null })}
           filter={listFilter}
-          onFilterChange={(f) => setParams({ filter: f === "unread" ? "unread" : null })}
+          onFilterChange={(f) => setParams({ filter: f === "all" ? null : f })}
           channel={listChannel}
           onChannelChange={(ch) => setParams({ channel: ch })}
           showChannelFilter={pageMeta.hasInstagram || listChannel !== null}
@@ -939,6 +949,8 @@ export function InboxClient() {
           onBulkTags={bulkTags}
           total={pageMeta.total}
           unreadTotal={pageMeta.unreadTotal}
+          aiOnTotal={pageMeta.aiOnTotal}
+          showAiOnFilter={pageMeta.agentScope === "selected" || listFilter === "ai_on"}
           hasMore={pageMeta.nextCursor !== null}
           loadingMore={loadingMore}
           onLoadMore={() => void loadMore()}

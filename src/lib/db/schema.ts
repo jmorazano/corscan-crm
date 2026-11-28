@@ -652,6 +652,14 @@ export const agentProfile = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     enabled: boolean("enabled").notNull().default(false),
+    /**
+     * En qué conversaciones responde el agente. `all` = en todas (las
+     * nuevas nacen con la IA prendida, lo de siempre). `selected` = modo de
+     * prueba: las nuevas nacen con la IA APAGADA y el equipo la prende chat
+     * por chat (`conversation.ai_enabled`). Lo lee `getOrCreateConversation`
+     * al crear; reglas puras en `src/lib/agent-scope.ts`.
+     */
+    agentScope: text("agent_scope", { enum: ["all", "selected"] }).notNull().default("all"),
     name: text("name").notNull().default("Asistente"),
     tone: text("tone"),
     instructions: text("instructions"),

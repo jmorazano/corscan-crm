@@ -55,6 +55,8 @@ export type ListConversationsOptions = {
   /** Búsqueda por nombre, teléfono, etiqueta o último mensaje (006). */
   q?: string;
   unreadOnly?: boolean;
+  /** Modo de prueba del agente: solo las conversaciones con la IA prendida. */
+  aiOnOnly?: boolean;
   /** Página por cursor keyset (006): tamaño y cursor del último elemento. */
   limit?: number;
   cursor?: Cursor | null;
@@ -73,6 +75,8 @@ export type ConversationPage = {
   total: number;
   /** Conversaciones con mensajes sin leer (tags + q). */
   unreadTotal: number;
+  /** Conversaciones con la IA prendida (tags + q), para el filtro del modo de prueba. */
+  aiOnTotal: number;
   /** Suma de mensajes sin leer (tags + q): el badge del menú lateral. */
   unreadMessages: number;
   /** Cursor para la página siguiente; null si no hay más. */
@@ -126,6 +130,7 @@ export async function listConversationsPage(
     mode = "any",
     q,
     unreadOnly = false,
+    aiOnOnly = false,
     limit = DEFAULT_PAGE_SIZE,
     cursor = null,
     contactId,
@@ -144,9 +149,11 @@ export async function listConversationsPage(
     channel ? eq(schema.conversation.kind, channel) : undefined
   );
   const unreadWhere = gt(schema.conversation.unreadCount, 0);
+  const aiOnWhere = eq(schema.conversation.aiEnabled, true);
   const pageWhere = and(
     baseWhere,
     unreadOnly ? unreadWhere : undefined,
+    aiOnOnly ? aiOnWhere : undefined,
     cursor
       ? sql`(${sortKeySql}, ${schema.conversation.id}) < (${cursor.ts.toISOString()}::timestamp, ${cursor.id})`
       : undefined
@@ -174,6 +181,7 @@ export async function listConversationsPage(
       .select({
         total: count(),
         unreadTotal: sql<number>`count(*) filter (where ${unreadWhere})`,
+        aiOnTotal: sql<number>`count(*) filter (where ${aiOnWhere})`,
         unreadMessages: sql<number>`coalesce(sum(${schema.conversation.unreadCount}), 0)`,
       })
       .from(schema.conversation)
@@ -194,6 +202,7 @@ export async function listConversationsPage(
     trainer: null,
     total: Number(aggRows[0]?.total ?? 0),
     unreadTotal: Number(aggRows[0]?.unreadTotal ?? 0),
+    aiOnTotal: Number(aggRows[0]?.aiOnTotal ?? 0),
     unreadMessages: Number(aggRows[0]?.unreadMessages ?? 0),
     nextCursor:
       hasMore && last

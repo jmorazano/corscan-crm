@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { FollowUpSection } from "@/components/agent/follow-up-section";
+import { AgentScopeSection, EnableAgentDialog } from "@/components/agent/agent-scope-section";
+import type { AgentScopeSummary } from "@/lib/agent-scope";
 import {
   INSTRUCTIONS_EXTENDED_MAX,
   instructionsLimit,
@@ -70,13 +72,17 @@ export function AgentClient() {
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [scope, setScope] = useState<AgentScopeSummary | null>(null);
+  const [enableOpen, setEnableOpen] = useState(false);
 
   const refetch = useCallback(async () => {
-    const [p, kb, size] = await Promise.all([
+    const [p, kb, size, sc] = await Promise.all([
       fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/kb").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/kb/size").then((r) => (r.ok ? r.json() : null)),
-    ]).catch(() => [null, null, null]);
+      fetch("/api/agent/scope").then((r) => (r.ok ? r.json() : null)),
+    ]).catch(() => [null, null, null, null]);
+    if (sc?.summary) setScope(sc.summary);
     if (p) {
       setProfile(p.profile);
       setAiConfigured(p.aiConfigured);
@@ -98,7 +104,7 @@ export function AgentClient() {
     );
   }
 
-  async function saveProfile(patch: Partial<Profile>) {
+  async function saveProfile(patch: Partial<Profile>): Promise<boolean> {
     const res = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -114,12 +120,13 @@ export function AgentClient() {
           ? body.error.message
           : "No se guardó: revisá los topes de cada campo."
       );
-      return;
+      return false;
     }
     setSaveError(null);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     void refetch();
+    return true;
   }
 
   return (
@@ -140,10 +147,30 @@ export function AgentClient() {
             checked={profile.enabled}
             aria-label="Agente encendido"
             disabled={!aiConfigured}
-            onClick={() => void saveProfile({ enabled: !profile.enabled })}
+            onClick={() => {
+              // Al prender: elegir en qué conversaciones responde (modo de
+              // prueba). Sin el conteo, como siempre.
+              if (!profile.enabled && scope) setEnableOpen(true);
+              else void saveProfile({ enabled: !profile.enabled });
+            }}
+            data-testid="agent-enabled-switch"
           />
         </div>
       </header>
+      {enableOpen && scope && (
+        <EnableAgentDialog
+          open
+          summary={scope}
+          onClose={() => setEnableOpen(false)}
+          enableWithProfile={() => saveProfile({ enabled: true })}
+          onDone={() => {
+            setEnableOpen(false);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+            void refetch();
+          }}
+        />
+      )}
 
       {!aiConfigured && (
         <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-4 text-center md:mx-6 md:mt-6 md:p-6">
@@ -165,6 +192,7 @@ export function AgentClient() {
 
       <div className="grid gap-6 p-4 md:p-6 lg:grid-cols-2">
         <div className="space-y-6">
+          {scope && <AgentScopeSection summary={scope} onChanged={() => void refetch()} />}
           <ProfileSection profile={profile} onSave={saveProfile} />
           <DelaySection
             replyDelayMs={profile.replyDelayMs}
@@ -191,7 +219,7 @@ function ProfileSection({
   onSave,
 }: {
   profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   const [form, setForm] = useState(profile);
   // Al llegar un perfil nuevo (se guardó algo en cualquier tarjeta) se
@@ -353,7 +381,7 @@ function PersonalNumberSection({
   onSave,
 }: {
   enabled: boolean;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   return (
     <Card>
@@ -399,7 +427,7 @@ function ReceiptTagSection({
   onSave,
 }: {
   enabled: boolean;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   return (
     <Card>
@@ -454,7 +482,7 @@ function VideoReadingSection({
   onSave,
 }: {
   enabled: boolean;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   return (
     <Card>
@@ -506,7 +534,7 @@ function DelaySection({
 }: {
   replyDelayMs: number | null;
   defaultMs: number;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   const [raw, setRaw] = useState(
     replyDelayMs === null ? "" : String(replyDelayMsToSeconds(replyDelayMs))
@@ -583,7 +611,7 @@ function TeamSilenceSection({
   onSave,
 }: {
   teamSilenceMs: number | null;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<unknown>;
 }) {
   const toRaw = (ms: number | null) => (ms === null ? "" : String(teamSilenceMsToMinutes(ms)));
   const [raw, setRaw] = useState(toRaw(teamSilenceMs));

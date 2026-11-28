@@ -37,7 +37,10 @@ export const GET = withAuth(async (session, req: Request) => {
     url.searchParams.get("tag")
   );
   const q = url.searchParams.get("q") ?? undefined;
-  const unreadOnly = url.searchParams.get("filter") === "unread";
+  const filterParam = url.searchParams.get("filter");
+  const unreadOnly = filterParam === "unread";
+  // Modo de prueba del agente: solo los chats con la IA prendida.
+  const aiOnOnly = filterParam === "ai_on";
   const cursor = decodeCursor(url.searchParams.get("cursor"));
   const contactId = url.searchParams.get("contactId") ?? undefined;
   // 023: filtro por canal; cualquier otro valor = todos.
@@ -52,6 +55,7 @@ export const GET = withAuth(async (session, req: Request) => {
     mode: parseTagMode(url.searchParams.get("mode")),
     q,
     unreadOnly,
+    aiOnOnly,
     limit: parseLimit(url.searchParams.get("limit")),
     cursor,
     contactId,
@@ -69,7 +73,7 @@ export const GET = withAuth(async (session, req: Request) => {
       if (
         !channel &&
         trainerVisible({
-          filter: unreadOnly ? "unread" : null,
+          filter: unreadOnly ? "unread" : aiOnOnly ? "ai_on" : null,
           q,
           tags,
           unreadCount: trainerRow.conversation.unreadCount,
@@ -86,8 +90,24 @@ export const GET = withAuth(async (session, req: Request) => {
   // 023: el filtro por canal solo se ofrece si la empresa usa Instagram.
   const hasInstagram = await companyUsesInstagram(session.organizationId);
   // 027: el composer tiene que saber si ofrecer la ventana de 7 días.
-  return Response.json({ ...page, hasInstagram, instagramHumanAgent: isInstagramHumanAgentEnabled() });
+  // Modo de prueba: la Bandeja ofrece el filtro «IA prendida».
+  const agentScope = await agentScopeFor(session.organizationId);
+  return Response.json({
+    ...page,
+    hasInstagram,
+    agentScope,
+    instagramHumanAgent: isInstagramHumanAgentEnabled(),
+  });
 });
+
+async function agentScopeFor(organizationId: string): Promise<"all" | "selected"> {
+  const [row] = await getDb()
+    .select({ scope: schema.agentProfile.agentScope })
+    .from(schema.agentProfile)
+    .where(scoped(schema.agentProfile.organizationId, organizationId))
+    .limit(1);
+  return row?.scope === "selected" ? "selected" : "all";
+}
 
 async function companyUsesInstagram(organizationId: string): Promise<boolean> {
   const db = getDb();

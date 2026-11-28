@@ -23,6 +23,7 @@ const profile = {
   readVideos: false,
   tagPaymentReceipts: false,
   extendedInstructions: false,
+  agentScope: "all" as const,
   followUpEnabled: true,
   followUpTimezone: "America/Argentina/Cordoba",
   followUpStartHour: 9,

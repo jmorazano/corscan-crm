@@ -21,7 +21,7 @@ export type ConversationKind = "whatsapp" | "trainer" | "instagram";
  * solo cuando no tiene pendientes.
  */
 export function trainerVisible(input: {
-  filter: "unread" | null | undefined;
+  filter: "unread" | "ai_on" | null | undefined;
   q: string | null | undefined;
   tags: readonly string[];
   unreadCount: number;
@@ -29,6 +29,8 @@ export function trainerVisible(input: {
   if (input.q?.trim()) return false;
   if (input.tags.length > 0) return false;
   if (input.filter === "unread" && input.unreadCount <= 0) return false;
+  // El Entrenador no es un chat con un cliente: fuera del filtro del modo de prueba.
+  if (input.filter === "ai_on") return false;
   return true;
 }
 

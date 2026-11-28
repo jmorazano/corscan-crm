@@ -92,7 +92,17 @@ export async function getOrCreateConversation(
   const db = getDb();
   const inserted = await db
     .insert(schema.conversation)
-    .values({ id: newId("conversation"), organizationId, contactId, kind })
+    .values({
+      id: newId("conversation"),
+      organizationId,
+      contactId,
+      kind,
+      // Modo de prueba del agente: con `agent_scope = 'selected'` la
+      // conversación NUEVA nace con la IA apagada (el equipo la prende chat
+      // por chat). Se lee en el mismo INSERT: sin perfil, prendida como
+      // siempre. La existente conserva su valor (va por el conflicto).
+      aiEnabled: sql`coalesce((select ${schema.agentProfile.agentScope} <> 'selected' from ${schema.agentProfile} where ${schema.agentProfile.organizationId} = ${organizationId} limit 1), true)`,
+    })
     .onConflictDoNothing()
     .returning();
   if (inserted[0]) return inserted[0];
