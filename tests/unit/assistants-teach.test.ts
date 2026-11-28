@@ -119,7 +119,7 @@ describe("applyAssistantChanges", () => {
     expect(out.rejected.map((r) => r.index)).toEqual([1, 2]);
     expect(out.rejected[0]!.reason).toContain("pagos.rapidos");
     expect(out.rejected[1]!.reason).toContain("nuevo (pagos-rapidos.xyz)");
-    expect(out.remaining_this_hour).toBe(29);
+    expect(out.remaining_this_hour).toBe(499);
     expect(executed).toHaveLength(1); // el lock por empresa
   });
 
@@ -139,13 +139,13 @@ describe("applyAssistantChanges", () => {
     expect(applied).toHaveLength(0);
   });
 
-  it("tope por hora: con 29 en la hora, de dos cambios entra uno", async () => {
+  it("tope por hora: con 499 en la hora, de dos cambios entra uno", async () => {
     const { applyAssistantChanges } = await import("@/server/assistants/teach");
-    queueFor({ recent: 29, contacts: [[], []] });
+    queueFor({ recent: 499, contacts: [[], []] });
     const out = await applyAssistantChanges("org_1", "teach", [qa("¿Wifi?", "Sí."), qa("¿Pileta?", "Sí, climatizada.")]);
     expect(out.applied).toHaveLength(1);
     expect(out.rejected[0]).toMatchObject({ index: 1 });
-    expect(out.rejected[0]!.reason).toMatch(/Tope de 30 cambios por hora.*desde las \d{2}:\d{2}/);
+    expect(out.rejected[0]!.reason).toMatch(/Tope de 500 cambios por hora.*desde las \d{2}:\d{2}/);
     expect(out.remaining_this_hour).toBe(0);
   });
 

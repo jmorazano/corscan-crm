@@ -551,18 +551,11 @@ async function teach() {
     check(`deshacer «${c.summary.slice(0, 40)}»`, !r.result?.isError, r.text);
   }
 
-  // 8. tope por hora: 6 aplicados en esta hora → entran 24 y el siguiente se rechaza
-  let remaining = edited.data?.remaining_this_hour ?? 0;
-  check("quedan 24 en la hora", remaining === 24, remaining);
-  let n = 0;
-  while (remaining > 0) {
-    const batch = Array.from({ length: Math.min(10, remaining) }, () => ({ op: "kb_add", kind: "block", content: `Bloque de tope 041 número ${++n}.` }));
-    const r = await t("teach_agent", { changes: batch });
-    remaining = r.data?.remaining_this_hour ?? -1;
-    if (r.result?.isError || remaining < 0) break;
-  }
-  const over = await t("teach_agent", { changes: [{ op: "kb_add", kind: "block", content: "Uno de más 041." }] });
-  check("pasado el tope → rechazado con la hora", over.data?.applied?.length === 0 && /Tope de 30 cambios por hora.*desde las \d{2}:\d{2}/.test(over.data?.rejected?.[0]?.reason ?? ""), over.text);
+  // 8. tope por hora (500, freno de seguridad): 6 aplicados en esta hora → quedan 494.
+  // El rechazo al pasarlo lo cubre tests/unit/assistants-teach.test.ts (agotarlo acá
+  // serían ~50 llamadas y chocaría con el límite de 60 por minuto de la conexión).
+  const remaining = edited.data?.remaining_this_hour ?? 0;
+  check("quedan 494 en la hora", remaining === 494, remaining);
   const stillReads = await t("get_agent_knowledge", { query: "pileta" });
   check("las lecturas siguen andando", !stillReads.result?.isError, stillReads.text);
 

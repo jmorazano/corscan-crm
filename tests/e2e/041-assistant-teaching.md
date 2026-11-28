@@ -51,8 +51,9 @@ En el mismo pedido de B, 6 rechazados con su índice y motivo: enlace nuevo
 marcador interno (`[ENTRENADOR]`), P/R repetida (nombra `kb_a41check`) y
 alias de pago nuevo (`pagos.rapidos`). Después:
 
-- Tope: con 6 en la hora entran 24 más y el siguiente se rechaza con «Tope
-  de 30 cambios por hora… desde las HH:MM»; las lecturas siguen.
+- Tope (500 por hora desde el 28-nov-2026, antes 30): con 6 en la hora
+  quedan 494; el rechazo «Tope de 500 cambios por hora… desde las HH:MM» lo
+  cubre el test unitario.
 - `seed-assistant.mjs --switch off` → enseñar denegado; `--role member` →
   denegado; ambos se restauran.
 

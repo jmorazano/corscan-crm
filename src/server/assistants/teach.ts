@@ -34,7 +34,12 @@ import { ToolInputError, ToolNotFoundError } from "./tools/common";
  * y el tope por hora, todo dentro de una transacción con lock por empresa.
  */
 
-export const MAX_ASSISTANT_CHANGES_PER_HOUR = 30;
+/**
+ * Freno de seguridad, no de ritmo: con 30 por hora un propietario que entrena
+ * al agente en una sesión quedaba trabado a los 25 minutos (Bosque Douglas,
+ * 28-nov-2026). 500 no lo alcanza nadie a mano; corta solo un uso desbocado.
+ */
+export const MAX_ASSISTANT_CHANGES_PER_HOUR = 500;
 export const KNOWLEDGE_SNIPPET_CHARS = 600;
 export const KNOWLEDGE_MAX_ENTRIES = 200;
 

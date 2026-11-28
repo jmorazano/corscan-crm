@@ -132,7 +132,7 @@ un mensaje armado para engañar a Claude):
 - Datos de tus clientes (teléfono, correo o usuario de un contacto).
 - Textos con marcadores internos del sistema.
 - Una pregunta que ya existe (Claude la tiene que corregir, no duplicar).
-- Más de 30 cambios por hora en la misma empresa.
+- Más de 500 cambios por hora en la misma empresa (un freno de seguridad: a mano no se alcanza).
 
 Los precios **sí** se pueden enseñar. Desde Claude solo se deshacen los
 cambios hechos desde Claude; los que hiciste en el CRM se deshacen en el
